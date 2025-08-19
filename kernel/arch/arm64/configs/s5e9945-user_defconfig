@@ -5,7 +5,7 @@ CONFIG_PRINTK_PROCESS=y
 CONFIG_USE_SIGNED_BINARY=y
 
 # Watchdog Device Drivers
-CONFIG_S3C2410_BUILTIN_WATCHDOG=y
+CONFIG_S3C2410_BUILTIN_WATCHDOG=n
 
 #
 # please don't remove new line on this file
