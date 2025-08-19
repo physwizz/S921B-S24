@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -5125,7 +5125,8 @@ void csr_clear_sae_single_pmk(struct wlan_objmgr_psoc *psoc,
 		return;
 	}
 
-	if (!(keymgmt & (1 << WLAN_CRYPTO_KEY_MGMT_SAE))) {
+	if (!(QDF_HAS_PARAM(keymgmt, WLAN_CRYPTO_KEY_MGMT_SAE) ||
+	      QDF_HAS_PARAM(keymgmt, WLAN_CRYPTO_KEY_MGMT_SAE_EXT_KEY))) {
 		wlan_objmgr_vdev_release_ref(vdev, WLAN_LEGACY_SME_ID);
 		return;
 	}
@@ -5603,7 +5604,8 @@ static void csr_fill_connected_profile(struct mac_context *mac_ctx,
 
 	if (rsp->connect_rsp.is_reassoc ||
 	    csr_is_link_switch_in_progress(vdev))
-		mlme_set_mbssid_info(vdev, &cur_node->entry->mbssid_info);
+		mlme_set_mbssid_info(vdev, &cur_node->entry->mbssid_info,
+				     bss_desc->chan_freq);
 
 	if (bcn_ies->Country.present)
 		qdf_mem_copy(country_code, bcn_ies->Country.country,

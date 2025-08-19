@@ -23,9 +23,16 @@
 #include <linux/slab.h>
 #include <linux/debugfs.h>
 #include <soc/samsung/exynos-smc.h>
+#include <linux/panic_notifier.h>
 
 #include <soc/samsung/exynos/exynos-tzasc.h>
+#if IS_ENABLED(CONFIG_DEBUG_SNAPSHOT)
+#include <soc/samsung/exynos/debug-snapshot.h>
+#endif
 
+#define NOT_INCLUDE_TZASC_REGION	0xFF
+
+static unsigned int tzasc_log_printed = 0;
 
 static irqreturn_t exynos_tzasc_irq_handler(int irq, void *dev_id)
 {
@@ -59,6 +66,97 @@ static irqreturn_t exynos_tzasc_irq_handler(int irq, void *dev_id)
 	return IRQ_WAKE_THREAD;
 }
 
+enum master_info {
+	UNKNOWN,
+	CPU,
+	GPU,
+	PERI,
+};
+
+#if defined(CONFIG_SOC_S5E9945)
+static int find_gpu_info(int master_id)
+{
+	int ret = UNKNOWN;
+	int gpu_id[4] = { 0x18, 0x19, 0x1A, 0x1B };
+	int i = 0;
+
+	for (i = 0; i < sizeof(gpu_id) / sizeof(int); i++) {
+		if (master_id == gpu_id[i]) {
+			return GPU;
+		}
+	}
+
+	return ret;
+}
+
+static int find_cpu_info(int master_id)
+{
+	int ret = UNKNOWN;
+	int cpu_id[2] = { 0x13, 0x10 };
+	int i = 0;
+
+	for (i = 0; i < sizeof(cpu_id) / sizeof(int); i++) {
+		if (master_id == cpu_id[i]) {
+			return CPU;
+		}
+	}
+
+	return ret;
+}
+
+static int find_peri_info(int master_id)
+{
+	int ret = UNKNOWN;
+	int peri_id[4] = { 0x0, 0x1, 0x2, 0x3 };
+	int i = 0;
+
+	for (i = 0; i < sizeof(peri_id) / sizeof(int); i++) {
+		if (master_id == peri_id[i]) {
+			return PERI;
+		}
+	}
+
+	return ret;
+}
+#elif defined(CONFIG_SOC_S5E8845)
+static int find_master_info(int master_id)
+{
+	int ret = UNKNOWN;
+	if (!(master_id & CPU_MASTER_MASK)) {
+		return CPU;
+	} else {
+		master_id &= PERI_MASTER_MASK;
+		ret = master_id + 2;	// Add for master_name print
+	}
+	return ret;
+}
+#endif
+
+static int get_master_info_from_fail_id(unsigned int fail_id)
+{
+	int ret = UNKNOWN;
+#if defined(CONFIG_SOC_S5E9945)
+	int master_id = (fail_id & TZASC_SMC_FAIL_ID_MASTER_MASK) >> TZASC_SMC_FAIL_ID_MASTER_SHIFT;
+
+	ret = find_gpu_info(master_id);
+	if (ret) return ret;
+	ret = find_cpu_info(master_id);
+	if (ret) return ret;
+	ret = find_peri_info(master_id);
+	return ret;
+#elif defined(CONFIG_SOC_S5E8845)
+	int master_id = fail_id & TZASC_SMC_FAIL_ID_MASTER_MASK;
+
+	ret = find_master_info(master_id);
+	return ret;
+#endif
+}
+
+static bool is_false_alarm(struct tzasc_info_data *data, int i)
+{
+	return (data->fail_info[i].tzasc_fail_region_num == NOT_INCLUDE_TZASC_REGION);
+}
+
 static irqreturn_t exynos_tzasc_irq_handler_thread(int irq, void *dev_id)
 {
 	struct tzasc_info_data *data = dev_id;
@@ -66,6 +164,12 @@ static irqreturn_t exynos_tzasc_irq_handler_thread(int irq, void *dev_id)
 	unsigned int dir_mask;
 	unsigned long addr_high;
 	int i;
+	int master_id = UNKNOWN;
+#if defined(CONFIG_SOC_S5E9945)
+	char master_name[4][8] = { "UNKNOWN", "CPU", "GPU", "PERI" };
+#elif defined(CONFIG_SOC_S5E8845)
+	char master_name[32][9] = { "UNKNOWN", "CPU", "D_ICPU", "D1_CSIS", "C0_CSTAT", "D0_RGBP", "D1_RGBP", "D_YUVP", "D0_CSIS", "D1_CSTAT", "D2_RGBP", "D3_RGBP", "D_HSI", "D0_DNC", "D1_DNC", "D_PERIC", "D_AUD", "D0_M2M", "D1_M2M", "D_WLBT", "D0_MFC", "D1_MFC", "D0_MODEM", "D1_MODEM", "D2_MODEM", "G_CSSYS", "D0_DPU", "D1_DPU", "D_PSP", "D_ALIVE", "D_USB", "D_G3D" };
+#endif
 
 	if (data->need_handle == TZASC_DO_NOT_HANDLE_INTERRUPT_THREAD)
 		return IRQ_HANDLED;
@@ -92,6 +196,8 @@ static irqreturn_t exynos_tzasc_irq_handler_thread(int irq, void *dev_id)
 			pr_info("NO access failure in this Channel\n\n");
 			continue;
 		}
+
+		master_id = get_master_info_from_fail_id(fail_id);
 
 		addr_low = data->fail_info[i].tzasc_fail_addr_low;
 		addr_high = data->fail_info[i].tzasc_fail_addr_high &
@@ -138,6 +244,14 @@ static irqreturn_t exynos_tzasc_irq_handler_thread(int irq, void *dev_id)
 
 			pr_info("- Fail ID : %#x\n",
 					fail_id & TZASC_SMC_FAIL_ID_FAIL_ID_MASK);
+
+			pr_info("- Master : %s\n", master_name[master_id]);
+
+			pr_info("- Region Num : %d\n", data->fail_info[i].tzasc_fail_region_num);
+
+			pr_info("- Region Start : %#lx\n", data->fail_info[i].tzasc_fail_region_start);
+
+			pr_info("- Region End : %#lx\n", data->fail_info[i].tzasc_fail_region_end);
 		}
 
 		pr_info("- Interrupt Status : %s\n",
@@ -187,10 +301,53 @@ static irqreturn_t exynos_tzasc_irq_handler_thread(int irq, void *dev_id)
 
 	pr_info("====================================================\n");
 
+	if (!is_false_alarm(data, i)) {
+		tzasc_log_printed = 1;
+
 #ifdef CONFIG_EXYNOS_TZASC_ILLEGAL_ACCESS_PANIC
-	BUG();
+		BUG();
 #endif
+	}
+
 	return IRQ_HANDLED;
+}
+
+#if IS_ENABLED(CONFIG_DEBUG_SNAPSHOT)
+static int exynos_tzasc_panic_handler(struct notifier_block *nb, unsigned long l, void *buf)
+{
+	pr_info("%s: tzasc panic handler is called!\n", __func__);
+	if (tzasc_log_printed) {
+		pr_info("%s: tzasc fail log is printed\n", __func__);
+		/* WDT reset */
+		return dbg_snapshot_expire_watchdog();
+	} else {
+		pr_info("%s: tzasc fail log is not printed\n", __func__);
+		/* Do nothing */
+		return 0;
+	}
+}
+#endif
+
+static void set_irq_affinity(struct tzasc_info_data *data,
+				   unsigned int irq, unsigned long affinity)
+{
+	struct cpumask affinity_mask;
+	unsigned long bit;
+	char *buf = (char *)__get_free_page(GFP_KERNEL);
+
+	cpumask_clear(&affinity_mask);
+
+	if (affinity) {
+		for_each_set_bit(bit, &affinity, nr_cpu_ids)
+			cpumask_set_cpu(bit, &affinity_mask);
+	} else {
+		cpumask_copy(&affinity_mask, cpu_online_mask);
+	}
+	irq_set_affinity_hint(irq, &affinity_mask);
+
+	cpumap_print_to_pagebuf(true, buf, &affinity_mask);
+	dev_dbg(data->dev, "tzasc affinity of irq%d is %s\n", irq, buf);
+	free_page((unsigned long)buf);
 }
 
 static int exynos_tzasc_probe(struct platform_device *pdev)
@@ -336,6 +493,14 @@ static int exynos_tzasc_probe(struct platform_device *pdev)
 			ret = -EINVAL;
 			goto out_with_dma_free;
 		}
+		ret = of_property_read_u32(data->dev->of_node, "interrupt-affinity", &data->affinity);
+		if (ret) {
+			dev_err(data->dev,
+				"Fail to get interrupt-affinity(%x) from dt\n",
+				data->affinity);
+			goto out_with_dma_free;
+		}
+		set_irq_affinity(data, data->irq[i], (unsigned long)data->affinity);
 
 		ret = devm_request_threaded_irq(data->dev,
 				data->irq[i],
@@ -353,6 +518,12 @@ static int exynos_tzasc_probe(struct platform_device *pdev)
 	}
 
 	dev_info(data->dev, "Exynos TZASC driver probe done!\n");
+
+#if IS_ENABLED(CONFIG_DEBUG_SNAPSHOT)
+	/* Register panic notifier */
+	data->panic_nb.notifier_call = exynos_tzasc_panic_handler;
+	atomic_notifier_chain_register(&panic_notifier_list, &data->panic_nb);
+#endif
 
 	return 0;
 

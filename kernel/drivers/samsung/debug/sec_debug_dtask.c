@@ -254,6 +254,7 @@ static __init_or_module int secdbg_dtsk_init(void)
 {
 	pr_info("%s: init\n", __func__);
 
+#if defined(CONFIG_TRACEPOINTS) && defined(CONFIG_ANDROID_VENDOR_HOOKS)
 	register_dump_one_task_notifier(&nb_dss_one_task_block);
 	register_trace_android_vh_sched_show_task(secdbg_dtsk_sched_show_task, NULL);
 
@@ -267,6 +268,7 @@ static __init_or_module int secdbg_dtsk_init(void)
 	register_trace_android_vh_rwsem_write_wait_start(secdbg_dtsk_rwsem_start, NULL);
 	register_trace_android_vh_rwsem_read_wait_finish(secdbg_dtsk_rwsem_finish, NULL);
 	register_trace_android_vh_rwsem_write_wait_finish(secdbg_dtsk_rwsem_finish, NULL);
+#endif
 
 	return 0;
 }

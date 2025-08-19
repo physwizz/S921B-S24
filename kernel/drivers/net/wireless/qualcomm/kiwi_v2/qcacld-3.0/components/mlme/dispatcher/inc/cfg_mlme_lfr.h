@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -2239,6 +2239,29 @@
 		CFG_VALUE_OR_DEFAULT, \
 		"bss load threshold")
 
+ /*
+  * <ini>
+  * bss_load_alpha - bss load multiplier value in percentage of the current
+  * channel utilization which should be used to calculate the bss load average
+  * @Min: 0
+  * @Max: 100
+  * @Default: 70
+  *
+  * Related: None
+  *
+  * Supported Feature: Roaming
+  *
+  * Usage: External
+  *
+  * </ini>
+  */
+#define CFG_BSS_LOAD_ALPHA CFG_INI_UINT( \
+		"bss_load_alpha", \
+		0, \
+		100, \
+		70, \
+		CFG_VALUE_OR_DEFAULT, \
+		"bss load alpha")
 /*
  * <ini>
  * bss_load_sample_time - Time in milliseconds for which the bss load values
@@ -3297,6 +3320,31 @@
 		CFG_VALUE_OR_DEFAULT, \
 		"Roam information cache number in wlan driver")
 
+/*
+ * <ini>
+ * hs20_btm_offload_disable - To enable/disable BTM offload
+ * @Min: 0
+ * @Max: 1
+ * @Default: 1
+ *
+ * This ini is used to enable/disable BTM offload for Hotspot 2.0.
+ * Some solutions may not have Hotspot 2.0 certification
+ * and there is no need to forward the BTM frame to wpa_supplicant,
+ * in such solutions Let firmware handle the frame, in such cases by
+ * enabling btm_offload so that it doesn't wakeup the host.
+ * Firmware may roam to another AP upon BTM reception.
+ *
+ * Related: LFR
+ *
+ * Usage: External
+ *
+ * </ini>
+ */
+#define CFG_HS_20_BTM_OFFLOAD_DISABLE CFG_INI_BOOL( \
+		"hs20_btm_offload_disable", \
+		true, \
+		"To Enable/disable BTM offload for hotspot 2.0")
+
 #define CFG_LFR_ALL \
 	CFG(CFG_LFR_MAWC_ROAM_ENABLED) \
 	CFG(CFG_LFR_MAWC_ROAM_TRAFFIC_THRESHOLD) \
@@ -3372,6 +3420,7 @@
 	CFG(CFG_LFR_DELAY_BEFORE_VDEV_STOP) \
 	CFG(CFG_ENABLE_BSS_LOAD_TRIGGERED_ROAM) \
 	CFG(CFG_BSS_LOAD_THRESHOLD) \
+	CFG(CFG_BSS_LOAD_ALPHA) \
 	CFG(CFG_BSS_LOAD_SAMPLE_TIME) \
 	CFG(CFG_ROAM_CU_MONITOR_TIME) \
 	CFG(CFG_LFR3_ROAM_HO_DELAY_FOR_RX) \
@@ -3398,6 +3447,7 @@
 	ROAM_REASON_VSIE_ALL \
 	CFG(CFG_LFR_BEACONLOSS_TIMEOUT_ON_WAKEUP) \
 	CFG(CFG_LFR_BEACONLOSS_TIMEOUT_ON_SLEEP) \
-	CFG(CFG_LFR3_ROAM_INFO_STATS_NUM)
+	CFG(CFG_LFR3_ROAM_INFO_STATS_NUM) \
+	CFG(CFG_HS_20_BTM_OFFLOAD_DISABLE)
 
 #endif /* CFG_MLME_LFR_H__ */

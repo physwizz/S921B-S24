@@ -14,7 +14,6 @@
  #define pr_fmt(fmt)	"[USB_PHY] " fmt
 
 #include "ptn3222_repeater.h"
-struct ptn3222_ddata *g_ddata;
 
 static int ptn3222_write_reg(struct ptn3222_ddata *ddata,
 	u8 reg, u8 *data, int len)
@@ -98,9 +97,9 @@ err:
 	return ret;
 }
 
-int eusb_repeater_set_bypass(bool enable)
+int ptn3222_repeater_set_bypass(void *_data, bool enable)
 {
-	struct ptn3222_ddata *ddata = g_ddata;
+	struct ptn3222_ddata *ddata = (struct ptn3222_ddata *)_data;
 	struct ptn3222_pdata *pdata = NULL;
 	u8 write_data = 0, read_data = 0;
 	int ret = 0;
@@ -128,7 +127,6 @@ int eusb_repeater_set_bypass(bool enable)
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(eusb_repeater_set_bypass);
 
 static ssize_t ptn3222_repeater_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -215,7 +213,6 @@ static struct ptn3222_pdata *ptn3222_parse_dt(struct device *dev)
 			return pdata;
 		}
 		pdata->tune_cnt = ret;
-
 		pdata->tune = devm_kcalloc(dev, pdata->tune_cnt,
 					sizeof(pdata->tune[0]), GFP_KERNEL);
 		if (!pdata->tune)
@@ -295,10 +292,9 @@ static int ptn3222_probe(struct i2c_client *client,
 
 	ddata->rdata.enable = ptn3222_power;
 	ddata->rdata.private_data = ddata;
+	ddata->rdata.set_bypass = ptn3222_repeater_set_bypass;
 	repeater_core_register(&ddata->rdata);
-	g_ddata = ddata;
 	return 0;
-
 err:
 	pr_err("%s err(%d)\n", __func__, ret);
 

@@ -18,6 +18,7 @@
 #include <linux/cpumask.h>
 #include <linux/fs.h>
 #include <linux/kernel.h>
+#include <linux/mm.h>
 #include <linux/types.h>
 #include <linux/version.h>
 
@@ -198,5 +199,7 @@ int sysdep_cpufreq_register_notifier(struct notifier_block *nb, unsigned int lis
 void sysdep_pinned_vm_add(struct mm_struct *mm, unsigned long nr_pages);
 void sysdep_pinned_vm_sub(struct mm_struct *mm, unsigned long nr_pages);
 struct file *sysdep_get_exe_file(struct task_struct *task);
+void sysdep_vm_flags_mod(struct vm_area_struct *vma,
+		vm_flags_t set, vm_flags_t clear);
 
 #endif /* __SYSDEP_H__ */

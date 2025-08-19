@@ -23,15 +23,6 @@
 #include <linux/printk.h>
 #include <linux/types.h>
 
-#define PER_USER_RANGE 100000
-
-#define KNOX_PERSONA_BASE_ID 100
-#define DEK_USER_ID_OFFSET	100
-
-#define BASE_ID KNOX_PERSONA_BASE_ID
-#define GET_ARR_IDX(__userid) (__userid - BASE_ID)
-
-#define SDP_CACHE_CLEANUP_DEBUG   0
 typedef uid_t appid_t;
 
 #define AID_USER_OFFSET     100000 /* offset for uid ranges for each user */

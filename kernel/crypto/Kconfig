@@ -33,6 +33,27 @@ config CRYPTO_FIPS
 	  certification.  You should say no unless you know what
 	  this is.
 
+config CRYPTO_SKC_FIPS
+	bool "FIPS 140-3 compliance"
+	select CRYPTO_HMAC
+	select CRYPTO_SHA512
+	select CRYPTO_SHA256
+	select CRYPTO_SHA1
+	select CRYPTO_ECB
+	select CRYPTO_CBC
+	select CRYPTO_GCM
+	select CRYPTO_AUTHENC
+	select CRYPTO_DRBG_HMAC
+	select CRYPTO_JITTERENTROPY
+	select CRYPTO_SEQIV
+	select CRYPTO_ECHAINIV
+	select CRYPTO_SHA1_ARM64_CE
+	select CRYPTO_SHA2_ARM64_CE
+	select CRYPTO_AES_ARM64_CE_BLK
+	help
+	  This option enables FIPS 140-3 capability which meets
+	  CMVP requirement.
+
 config CRYPTO_FIPS_NAME
 	string "FIPS Module Name"
 	default "Linux Kernel Cryptographic API"
@@ -57,7 +78,9 @@ config CRYPTO_FIPS_VERSION
 config CRYPTO_FIPS140_MOD
 	tristate "Enable FIPS 140 cryptographic module"
 	depends on ARM64 && ARM64_MODULE_PLTS
+	depends on CC_IS_CLANG
 	depends on m
+	select CRYPTO_FIPS140_MERGE_MOD_SECTIONS
 	help
 	  This option enables building a loadable module fips140.ko, which
 	  contains various crypto algorithms that are also built into vmlinux.
@@ -78,6 +101,42 @@ config CRYPTO_FIPS140_MOD_EVAL_TESTING
 	  for lab evaluation testing of the module, e.g. support for injecting
 	  errors and support for a userspace interface to some of the module's
 	  services.  This option should not be enabled in production builds.
+
+config CRYPTO_FIPS140_MERGE_MOD_SECTIONS
+	bool
+	help
+	  This option causes the module linker script to place the delimeters
+	  of the text and rodata sections at the appropriate places so that
+	  the FIPS 140 integrity check can be performed. This option is required
+	  by the Crypto FIPS 140 module, and can be enabled by other FIPS 140
+	  modules using the same logic to perform the self integrity check.
+
+config CRYPTO_FIPS140_MOD_DEBUG_INTEGRITY_CHECK
+	bool "Debug the integrity check in FIPS 140 module"
+	depends on CRYPTO_FIPS140_MOD
+	help
+	  This option makes the FIPS 140 module provide debugfs files containing
+	  the text and rodata that were used for the integrity check, i.e. the
+	  runtime text and rodata with relocations and code patches unapplied.
+	  This option also makes the module load even if the integrity check
+	  fails so that these files can be used to debug the failure.  (A
+	  possible failure mode is that the kernel has added a new type of code
+	  patching and the module needs to be updated to disable or unapply it.)
+
+	  This option must not be enabled in production builds.
+
+	  Example commands for debugging an integrity check failure:
+
+		adb root
+		adb shell mount debugfs -t debugfs /sys/kernel/debug
+		adb shell cp /sys/kernel/debug/fips140/{text,rodata} /data/local/tmp/
+		adb pull /data/local/tmp/text text.checked
+		adb pull /data/local/tmp/rodata rodata.checked
+		llvm-objcopy -O binary --only-section=.text fips140.ko text.orig
+		llvm-objcopy -O binary --only-section=.rodata fips140.ko rodata.orig
+		for f in {text,rodata}.{orig,checked}; do xxd -g1 $f > $f.xxd; done
+		vimdiff text.{orig,checked}.xxd
+		vimdiff rodata.{orig,checked}.xxd
 
 config CRYPTO_ALGAPI
 	tristate
@@ -249,7 +308,7 @@ config CRYPTO_AUTHENC
 
 config CRYPTO_TEST
 	tristate "Testing module"
-	depends on m || EXPERT
+	default n
 	select CRYPTO_MANAGER
 	help
 	  Quick & dirty crypto test module.
@@ -1310,10 +1369,11 @@ config CRYPTO_JITTERENTROPY
 
 	  A non-physical non-deterministic ("true") RNG (e.g., an entropy source
 	  compliant with NIST SP800-90B) intended to provide a seed to a
-	  deterministic RNG (e.g.  per NIST SP800-90C).
+	  deterministic RNG (e.g., per NIST SP800-90C).
 	  This RNG does not perform any cryptographic whitening of the generated
+	  random numbers.
 
-	  See https://www.chronox.de/jent.html
+	  See https://www.chronox.de/jent/
 
 config CRYPTO_KDF800108_CTR
 	tristate

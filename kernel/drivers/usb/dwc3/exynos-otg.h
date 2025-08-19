@@ -42,6 +42,8 @@
 #define CONNECTION_FAIL_SET		1
 #define CONNECTION_FAIL_DUMP		2
 
+#define MAX_WAIT_SUSPEND_CNT		20 /* 20ms * 20 = 400ms */
+
 struct dwc3_ext_otg_ops {
 	int	(*setup)(struct device *dev, struct otg_fsm *fsm);
 	void	(*exit)(struct device *dev);
@@ -105,7 +107,7 @@ static inline int dwc3_ext_otg_setup(struct dwc3_otg *dotg)
 {
 	struct device *dev = dotg->exynos->dev;
 
-	pr_info("%s, fsm = %8llx\n", __func__, (u64)&dotg->fsm);
+	pr_info("%s, fsm = %pK\n", __func__, &dotg->fsm);
 
 	if (!dotg->ext_otg_ops->setup)
 		return -EOPNOTSUPP;

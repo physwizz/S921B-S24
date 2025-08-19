@@ -35,10 +35,10 @@ int get_capturing_buf_idx(struct shared_buffer *bufs, int *buf_idx)
 	uint64_t oldest_time_us = 0xFFFFFFFFFFFFFFFF;
 	int captured_buf_index = -1;
 
-	print_repeater_debug(RPT_SHR_BUF_INFO, "++\n");
+	print_repeater_wfdlogger(RPT_SHR_BUF_INFO, "++\n");
 
 	for (i = 0; i < bufs->buffer_count; i++) {
-		print_repeater_debug(RPT_SHR_BUF_INFO,
+		print_repeater_wfdlogger(RPT_SHR_BUF_INFO,
 			"bufs->buf_status[%d] %d, time %lld\n",
 			i, bufs->buf_status[i], bufs->captured_timestamp_us[i]);
 	}
@@ -84,11 +84,11 @@ int get_capturing_buf_idx(struct shared_buffer *bufs, int *buf_idx)
 		}
 	}
 
-	print_repeater_debug(RPT_SHR_BUF_INFO,
+	print_repeater_wfdlogger(RPT_SHR_BUF_INFO,
 		"ret %d, buf_idx %d, oldest_time_us %lld\n",
 		ret, *buf_idx, oldest_time_us);
 
-	print_repeater_debug(RPT_SHR_BUF_INFO, "--\n");
+	print_repeater_wfdlogger(RPT_SHR_BUF_INFO, "--\n");
 
 	return ret;
 }
@@ -100,7 +100,7 @@ int set_captured_buf_idx(struct shared_buffer *bufs, int buf_idx, int cap_idx)
 	ktime_t cur_ktime;
 	uint64_t cur_timestamp;
 
-	print_repeater_debug(RPT_SHR_BUF_INFO, "++\n");
+	print_repeater_wfdlogger(RPT_SHR_BUF_INFO, "++\n");
 
 	if ((buf_idx >= 0 && buf_idx < MAX_SHARED_BUF_NUM) &&
 			bufs->buf_status[buf_idx] == SHARED_BUF_CAPTURING) {
@@ -108,7 +108,7 @@ int set_captured_buf_idx(struct shared_buffer *bufs, int buf_idx, int cap_idx)
 			bufs->buf_status[buf_idx] = SHARED_BUF_CAPTURED;
 		} else {
 			bufs->buf_status[buf_idx] = SHARED_BUF_INIT;
-			print_repeater_debug(RPT_ERROR, "blending error, buf_idx %d, cap_idx %d\n",
+			print_repeater_wfdlogger(RPT_ERROR, "blending error, buf_idx %d, cap_idx %d\n",
 				buf_idx, cap_idx);
 		}
 		cur_ktime = ktime_get();
@@ -116,18 +116,18 @@ int set_captured_buf_idx(struct shared_buffer *bufs, int buf_idx, int cap_idx)
 		bufs->captured_timestamp_us[buf_idx] = cur_timestamp;
 		ret = 0;
 
-		print_repeater_debug(RPT_SHR_BUF_INFO,
+		print_repeater_wfdlogger(RPT_SHR_BUF_INFO,
 			"buf_idx %d, captured_timestamp_us %lld, cur_timestamp %lld\n",
 			buf_idx, bufs->captured_timestamp_us[buf_idx], cur_timestamp);
 	}
 
 	for (i = 0; i < bufs->buffer_count; i++) {
-		print_repeater_debug(RPT_SHR_BUF_INFO,
+		print_repeater_wfdlogger(RPT_SHR_BUF_INFO,
 			"bufs->buf_status[%d] %d, captured_timestamp_us %lld\n",
 			i, bufs->buf_status[i], bufs->captured_timestamp_us[i]);
 	}
 
-	print_repeater_debug(RPT_SHR_BUF_INFO, "--\n");
+	print_repeater_wfdlogger(RPT_SHR_BUF_INFO, "--\n");
 
 	return ret;
 }
@@ -140,7 +140,7 @@ int get_latest_captured_buf_idx(struct shared_buffer *bufs, int *buf_idx)
 	uint64_t latest_time_us = 0;
 	int captured_buf_index = -1;
 
-	print_repeater_debug(RPT_SHR_BUF_INFO, "++\n");
+	print_repeater_wfdlogger(RPT_SHR_BUF_INFO, "++\n");
 
 	for (i = 0; i < bufs->buffer_count; i++) {
 		if (bufs->buf_status[i] == SHARED_BUF_CAPTURED &&
@@ -165,12 +165,12 @@ int get_latest_captured_buf_idx(struct shared_buffer *bufs, int *buf_idx)
 	}
 
 	for (i = 0; i < bufs->buffer_count; i++) {
-		print_repeater_debug(RPT_SHR_BUF_INFO,
+		print_repeater_wfdlogger(RPT_SHR_BUF_INFO,
 			"bufs->buf_status[%d] %d, time %lld\n",
 			i, bufs->buf_status[i], bufs->captured_timestamp_us[i]);
 	}
 
-	print_repeater_debug(RPT_SHR_BUF_INFO, "--\n");
+	print_repeater_wfdlogger(RPT_SHR_BUF_INFO, "--\n");
 
 	return ret;
 }
@@ -180,9 +180,9 @@ int set_encoding_start(struct shared_buffer *bufs, int buf_idx)
 	int i = 0;
 	int ret = -ENOBUFS;
 
-	print_repeater_debug(RPT_SHR_BUF_INFO, "++\n");
+	print_repeater_wfdlogger(RPT_SHR_BUF_INFO, "++\n");
 
-	print_repeater_debug(RPT_SHR_BUF_INFO, "bufs->buf_status[%d] %d",
+	print_repeater_wfdlogger(RPT_SHR_BUF_INFO, "bufs->buf_status[%d] %d",
 		buf_idx, bufs->buf_status[buf_idx]);
 
 	if (bufs->buf_status[buf_idx] == SHARED_BUF_CAPTURED) {
@@ -191,12 +191,12 @@ int set_encoding_start(struct shared_buffer *bufs, int buf_idx)
 	}
 
 	for (i = 0; i < bufs->buffer_count; i++) {
-		print_repeater_debug(RPT_SHR_BUF_INFO,
+		print_repeater_wfdlogger(RPT_SHR_BUF_INFO,
 			"bufs->buf_status[%d] %d, time %lld\n",
 			i, bufs->buf_status[i], bufs->captured_timestamp_us[i]);
 	}
 
-	print_repeater_debug(RPT_SHR_BUF_INFO, "--\n");
+	print_repeater_wfdlogger(RPT_SHR_BUF_INFO, "--\n");
 
 	return ret;
 }
@@ -206,7 +206,7 @@ int set_encoding_done(struct shared_buffer *bufs)
 	int i = 0;
 	int ret = -ENOBUFS;
 
-	print_repeater_debug(RPT_SHR_BUF_INFO, "++\n");
+	print_repeater_wfdlogger(RPT_SHR_BUF_INFO, "++\n");
 
 	for (i = 0; i < bufs->buffer_count; i++) {
 		if (bufs->buf_status[i] == SHARED_BUF_ENCODE) {
@@ -216,12 +216,12 @@ int set_encoding_done(struct shared_buffer *bufs)
 	}
 
 	for (i = 0; i < bufs->buffer_count; i++) {
-		print_repeater_debug(RPT_SHR_BUF_INFO,
+		print_repeater_wfdlogger(RPT_SHR_BUF_INFO,
 			"bufs->buf_status[%d] %d, time %lld\n",
 			i, bufs->buf_status[i], bufs->captured_timestamp_us[i]);
 	}
 
-	print_repeater_debug(RPT_SHR_BUF_INFO, "--\n");
+	print_repeater_wfdlogger(RPT_SHR_BUF_INFO, "--\n");
 
 	return ret;
 }

@@ -14,10 +14,6 @@
 #include <linux/of_address.h>
 #include <linux/clk.h>
 #include <linux/delay.h>
-#include "ufs-cal-if.h"
-#include "ufs-cal-snr-if.h"
-#include "ufs-vs-mmio.h"
-#include "ufs-vs-regs.h"
 #include <ufs/ufshcd.h>
 #include "../core/ufshcd-crypto.h"
 #include "../core/ufshcd-priv.h"
@@ -39,7 +35,6 @@
 #if IS_ENABLED(CONFIG_EXYNOS_CPUPM)
 #include <soc/samsung/exynos-cpupm.h>
 #endif
-#include <soc/samsung/exynos-smc.h>
 
 #include <trace/events/ufs_exynos_perf.h>
 
@@ -139,11 +134,31 @@ static inline void __pm_qos_ctrl(struct exynos_ufs *ufs, bool op)
 {
 #if IS_ENABLED(CONFIG_EXYNOS_PM_QOS) || IS_ENABLED(CONFIG_EXYNOS_PM_QOS_MODULE)
 	struct uic_pwr_mode *pmd = &ufs->device_pmd_parm;
+	struct ufs_vs_handle *handle = &ufs->handle;
+	struct ufs_hba *hba = ufs->hba;
 	s32 int_value, val;
+	u32 reg;
 
 	int_value = (pmd->gear == UFS_HS_G5) ? ufs->pm_qos_gear5_int :
 		ufs->pm_qos_int_value;
+	if (!int_value)
+		return;
 	val = (op) ? int_value : 0;
+
+	if (!handle)
+		return;
+
+	if (!hba)
+		return;
+
+	if (!op && !hba->pm_op_in_progress) {
+		reg = hci_readl(handle, HCI_AH8_STATE);
+
+		if (reg & ~HCI_AH8_HIBERNATION_STATE) {
+			pr_err("%s: skip the release minlock, AH8 state: 0x%08x!!\n", __func__, reg);
+			return;
+		}
+	}
 
 	exynos_pm_qos_update_request(&ufs->pm_qos_int, val);
 #endif
@@ -644,6 +659,24 @@ static void exynos_ufs_set_features(struct ufs_hba *hba)
 			UFSHCD_QUIRK_SKIP_DEF_UNIPRO_TIMEOUT_SETTING;
 }
 
+static int ufs_set_affinity(unsigned int irq, u32 affinity)
+{
+       int num_cpu;
+
+#if defined(CONFIG_VENDOR_NR_CPUS)
+       num_cpu = CONFIG_VENDOR_NR_CPUS;
+#else
+       num_cpu = 8;
+#endif
+       if (affinity >= num_cpu) {
+               pr_err("%s: idx:%d affinity:%d error. cpu max:%d\n", __func__,
+                       irq, affinity, num_cpu);
+               return -EINVAL;
+       }
+
+       return irq_set_affinity_hint(irq, cpumask_of(affinity));
+}
+
 /*
  * Exynos-specific callback functions
  */
@@ -684,6 +717,9 @@ static int exynos_ufs_init(struct ufs_hba *hba)
 		dev_err(ufs->dev, "Not enable UFS performance mode\n");
 
 	hba->ahit = ufs->ah8_ahit;
+
+	if (!hba->mcq_enabled)
+		ufs_set_affinity(hba->irq, 4);
 
 	return 0;
 }
@@ -983,7 +1019,7 @@ static void exynos_ufs_init_host(struct ufs_hba *hba)
 	if (ufshcd_is_auto_hibern8_supported(hba))
 		exynos_enable_vendor_irq(ufs);
 
-#if IS_ENABLED(CONFIG_SEC_UFS_FEATURE) && !IS_ENABLED(CONFIG_SAMSUNG_PRODUCT_SHIP)
+#if IS_ENABLED(CONFIG_SEC_UFS_FEATURE)
 	/* check device_stuck info and call panic before host reset */
 	ufs_sec_check_device_stuck();
 #endif
@@ -1281,7 +1317,8 @@ static void exynos_ufs_check_uac(struct ufs_hba *hba, int tag, bool cmd)
 	struct ufshcd_lrb *lrbp;
 	struct scsi_cmnd *scmd;
 	struct utp_upiu_rsp *ucd_rsp_ptr;
-	int result = 0;
+	u8 sense_key;
+	u32 result = 0;
 
 	if (!cmd)
 		return;
@@ -1296,13 +1333,16 @@ static void exynos_ufs_check_uac(struct ufs_hba *hba, int tag, bool cmd)
 
 	result = be32_to_cpu(ucd_rsp_ptr->header.dword_1);
 	if (result & SAM_STAT_CHECK_CONDITION) {
-		pr_info("%s: lun = %u, opcode = %u, result = 0x%08X\n",
-				__func__, lrbp->lun, scmd->cmnd[0], result);
-		result &= ~SAM_STAT_CHECK_CONDITION;
-		result |= SAM_STAT_BUSY;
-		ucd_rsp_ptr->header.dword_1 = cpu_to_be32(result);
+		sense_key = lrbp->ucd_rsp_ptr->sr.sense_data[2] & 0x0F;
+		if (sense_key == UNIT_ATTENTION) {
+			pr_info("%s: lun = %u, opcode = %u, result = 0x%08X\n",
+					__func__, lrbp->lun, scmd->cmnd[0], result);
+			result &= ~SAM_STAT_CHECK_CONDITION;
+			result |= SAM_STAT_BUSY;
+			ucd_rsp_ptr->header.dword_1 = cpu_to_be32(result);
 
-		scmd->result |= (DID_SOFT_ERROR << 16);
+			scmd->result |= (DID_SOFT_ERROR << 16);
+		}
 	}
 }
 
@@ -1311,7 +1351,6 @@ static void exynos_ufs_compl_nexus_t_xfer_req(void *data, struct ufs_hba *hba,
 {
 	struct exynos_ufs *ufs = to_exynos_ufs(hba);
 	struct ufs_vs_handle *handle = &ufs->handle;
-	struct ufs_perf *perf = ufs->perf;
 	unsigned long completed_reqs;
 	u32 tr_doorbell;
 	int tag;
@@ -1325,9 +1364,7 @@ static void exynos_ufs_compl_nexus_t_xfer_req(void *data, struct ufs_hba *hba,
 	tag = lrbp->task_tag;
 
 	/* check uac from PM_SUSPEND_PREPARE to PM_POST_SUSPEND */
-	if (perf && perf->uac_state) {
-		exynos_ufs_check_uac(hba, tag, (lrbp->cmd ? true : false));
-	}
+	exynos_ufs_check_uac(hba, tag, (lrbp->cmd ? true : false));
 
 	/* cmd_logging */
 	if (lrbp->cmd)
@@ -1414,7 +1451,9 @@ static void __check_int_errors(void *data, struct ufs_hba *hba, bool queue_eh_wo
 				if (reg & HCI_AH8_TIMEOUT) {
 					exynos_ufs_dump_debug_info(hba);
 #if !IS_ENABLED(CONFIG_SAMSUNG_PRODUCT_SHIP)
+#ifndef CONFIG_SCSI_UFS_EXYNOS_BLOCK_WDT_RST
 					dbg_snapshot_expire_watchdog();
+#endif
 #endif
 				}
 #endif
@@ -1435,6 +1474,58 @@ static void __check_int_errors(void *data, struct ufs_hba *hba, bool queue_eh_wo
 		exynos_ufs_dump_debug_info(hba);
 	}
 #endif
+}
+static void __transit_ah8_into_error(struct exynos_ufs *ufs)
+{
+	struct ufs_hba *hba = ufs->hba;
+	struct ufs_vs_handle *handle = &ufs->handle;
+	int retry = 100;
+	u32 ie, state;
+
+	if (!ufs->always_on || ufs->ah8_ahit == 0)
+		return;
+
+	/* interrupt disable */
+	ie = std_readl(handle, REG_INTERRUPT_ENABLE);
+	std_writel(handle, 0, REG_INTERRUPT_ENABLE);
+
+	/*
+	 * AH8 enable right after host reset turn AH8
+	 * state into AH8 ERROR. This intends to prevent
+	 * from turning on UFS clocks by its subsequent
+	 * SW H8 exit.
+	 */
+	ufshcd_auto_hibern8_update(hba, 1);
+	hba->ahit = ufs->ah8_ahit;
+	while (retry--) {
+		state = hci_readl(handle, HCI_AH8_STATE);
+		if (state == HCI_AH8_STATE_ERROR)
+			break;
+
+		udelay(1);
+	}
+
+	/* interrupt re-enable */
+	std_writel(handle, 0xFFFFFFFF, REG_INTERRUPT_STATUS);
+#if defined(CONFIG_SOC_S5E9945)
+	hci_writel(handle, 0xFFFFFFFF, HCI_VENDOR_SPECIFIC_IS_ERR_AH8);
+#endif
+	std_writel(handle, ie, REG_INTERRUPT_ENABLE);
+
+	pr_info("%s: state=0x%08x", __func__, state);
+}
+
+static void __transit_ah8_into_rst(struct exynos_ufs *ufs)
+{
+	struct ufs_vs_handle *handle = &ufs->handle;
+	struct ufs_hba *hba = ufs->hba;
+
+	if (!ufs->always_on || ufs->ah8_ahit == 0)
+		return;
+
+	ufshcd_auto_hibern8_update(hba, 0);
+	hba->ahit = ufs->ah8_ahit;
+	hci_writel(handle, HCI_CLEAR_AH8_FSM, HCI_AH8_RESET);
 }
 
 static void exynos_ufs_hibern8_notify(struct ufs_hba *hba, enum uic_cmd_dme cmd,
@@ -1471,6 +1562,7 @@ static void exynos_ufs_hibern8_notify(struct ufs_hba *hba, enum uic_cmd_dme cmd,
 		}
 	} else {
 		if (notify == PRE_CHANGE) {
+			__transit_ah8_into_error(ufs);
 			ufs->h_state = ufs->h_state_prev;
 
 			/* cal */
@@ -1478,6 +1570,8 @@ static void exynos_ufs_hibern8_notify(struct ufs_hba *hba, enum uic_cmd_dme cmd,
 		} else {
 			int h8_delay_ms_ovly =
 				ufs->params[UFS_S_PARAM_H8_D_MS];
+
+			__transit_ah8_into_rst(ufs);
 
 			/* override h8 enter delay */
 			if (h8_delay_ms_ovly)
@@ -2350,6 +2444,7 @@ UFS_S_RO(eom_version, UFS_S_PARAM_EOM_VER);
 #define DEVICE		1
 
 #define PA_SCRAMBLING	0x1585
+#define PA_PEER_SCRAMBLING 0x155B
 
 static u32 exynos_eom40_pcs_read(struct exynos_ufs *ufs, u32 ofs, u32 lane, int dir)
 {
@@ -2437,8 +2532,11 @@ static int exynos_ufs_eom40_prepare_store(struct exynos_ufs *ufs, const char *bu
 	// unipro power mode chage with ADAPT_INIT
 	ufshcd_dme_configure_adapt(hba, pmd->gear, 1);
 
+	// Turn scrambling on if device supports
+	ufshcd_dme_peer_get(hba, UIC_ARG_MIB(PA_PEER_SCRAMBLING), &data->scrambling);
 	ufshcd_dme_set_attr(hba, UIC_ARG_MIB(PA_SCRAMBLING), ATTR_SET_NOR,
-			0, HOST);
+			data->scrambling, HOST);
+
 	ufshcd_dme_set_attr(hba, UIC_ARG_MIB(PA_HSSERIES), ATTR_SET_NOR,
 			pmd->hs_series, HOST);
 	ufshcd_dme_set_attr(hba, UIC_ARG_MIB(PA_TXTERMINATION), ATTR_SET_NOR,
@@ -2471,9 +2569,9 @@ exynos_ufs_eom40_prepare_show(struct exynos_ufs *ufs, char *buf,
 {
 	struct ufs_eom40_data *data = &ufs->eom;
 
-	return snprintf(buf, PAGE_SIZE, "%d %d %d %d\n",
+	return snprintf(buf, PAGE_SIZE, "%d %d %d %d %d\n",
 			data->v_max_step, data->v_max_offset, data->t_max_step,
-			data->t_max_offset);
+			data->t_max_offset, data->scrambling);
 }
 
 static struct exynos_ufs_sysfs_attr ufs_s_eom40_prepare = {
@@ -2538,7 +2636,7 @@ static int exynos_ufs_eom40_start_store(struct exynos_ufs *ufs,
 		ufshcd_dme_configure_adapt(hba, pmd->gear, 3);
 
 		ufshcd_dme_set_attr(hba, UIC_ARG_MIB(PA_SCRAMBLING), ATTR_SET_NOR,
-				1, HOST);
+				data->scrambling, HOST);
 		ufshcd_dme_set_attr(hba, UIC_ARG_MIB(PA_HSSERIES), ATTR_SET_NOR,
 				pmd->hs_series, HOST);
 		ufshcd_dme_set_attr(hba, UIC_ARG_MIB(PA_TXTERMINATION),
@@ -2643,6 +2741,9 @@ exynos_ufs_sysfs_ufs_eom_show(struct exynos_ufs *ufs, char *buf,
 
 	p = ufs->cal_param.eom[ufs->params[UFS_S_PARAM_LANE]];
 	p += ufs->params[UFS_S_PARAM_EOM_OFS];
+
+	if (!p)
+		return 0;
 
 	for (i = 0; i < EOM_DEF_VREF_MAX; i++) {
 		len += snprintf(buf + len, PAGE_SIZE, "%u %u %u\n", p->v_phase,
@@ -3171,7 +3272,7 @@ static int exynos_ufs_sysfs_init(struct exynos_ufs *ufs)
 	 */
 	ufs->params[UFS_S_PARAM_EOM_VER] = 0;
 	ufs->params[UFS_S_PARAM_MON] = 0;
-	ufs->params[UFS_S_PARAM_H8_D_MS] = 4;
+	ufs->params[UFS_S_PARAM_H8_D_MS] = 8;
 
 	return 0;
 

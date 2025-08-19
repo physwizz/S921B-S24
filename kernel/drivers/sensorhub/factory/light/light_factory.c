@@ -29,15 +29,24 @@
 #include <linux/slab.h>
 #include <linux/delay.h>
 
+#if defined(CONFIG_SHUB_KUNIT)
+#include <kunit/mock.h>
+#define __mockable __weak
+#define __visible_for_testing
+#else
+#define __mockable
+#define __visible_for_testing static
+#endif
+
 /*************************************************************************/
 /* factory Sysfs                                                         */
 /*************************************************************************/
-static struct device *light_sysfs_device;
-static s32 light_position[12];
+__visible_for_testing struct device *light_sysfs_device;
+__visible_for_testing s32 light_position[12];
 
 #define DUAL_CHECK_MODE 13
 static u8 fstate;
-static struct light_cal_data_legacy sub_cal_data;
+static struct light_cal_data sub_cal_data;
 
 static ssize_t name_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -339,20 +348,26 @@ static ssize_t light_cal_store(struct device *dev, struct device_attribute *attr
 			return ret;
 		}
 		if (buffer_length != cal_data_size) {
-			shub_errf("buffer_length(%d) != cal_data_size(%d)", cal_data_size, buffer_length);
+			shub_errf("buffer_length(%d) != cal_data_size(%d)", buffer_length, cal_data_size);
 			return -EINVAL;
 		}
 
 		if (sensor->spec.version >= LIGHT_CAL_CH0_SIZE_4BYTE_VERSION) {
 			memcpy(&(data->cal_data), buffer, sizeof(data->cal_data));
+			if (fstate == DUAL_CHECK_MODE)
+				memcpy(&sub_cal_data, &buffer[sizeof(data->cal_data)], sizeof(sub_cal_data));
 			file_write = data->cal_data.result;
 		} else {
 			memcpy(&(cal_data_legacy), buffer, sizeof(cal_data_legacy));
 			data->cal_data.result = cal_data_legacy.result;
 			data->cal_data.max = (u32)cal_data_legacy.max;
 			data->cal_data.lux = cal_data_legacy.lux;
-			if (fstate == DUAL_CHECK_MODE)
-				memcpy(&sub_cal_data, &buffer[sizeof(data->cal_data)], sizeof(sub_cal_data));
+			if (fstate == DUAL_CHECK_MODE) {
+				memcpy(&(cal_data_legacy), &buffer[sizeof(cal_data_legacy)], sizeof(cal_data_legacy));
+				sub_cal_data.result = cal_data_legacy.result;
+				sub_cal_data.max = (u32)cal_data_legacy.max;
+				sub_cal_data.lux = cal_data_legacy.lux;
+			}
 			file_write = data->cal_data.result;
 		}
 	} else {
@@ -486,13 +501,13 @@ static DEVICE_ATTR(hall_ic, 0220, NULL, hall_ic_store);
 static DEVICE_ATTR_RO(sensorhub_ddi_spi_check);
 static DEVICE_ATTR_RO(test_copr);
 static DEVICE_ATTR_RO(copr_roix);
-static DEVICE_ATTR_RW(light_cal);
+static DEVICE_ATTR(light_cal, 0664, light_cal_show, light_cal_store);
 static DEVICE_ATTR(fac_fstate, 0220, NULL, factory_fstate_store);
 static DEVICE_ATTR_RO(trim_check);
 static DEVICE_ATTR_RO(debug_info);
 static DEVICE_ATTR_RO(fifo_data);
 
-static struct device_attribute *light_attrs[] = {
+__visible_for_testing struct device_attribute *light_attrs[] = {
 	&dev_attr_name,
 	&dev_attr_vendor,
 	&dev_attr_lux,

@@ -88,7 +88,7 @@ struct cmdq_table_info {
 	struct thr_data thr_data;
 };
 
-void start_cmdq_table_read(struct cmdq_table_info *cmdq_info);
+int start_cmdq_table_read(struct cmdq_table_info *cmdq_info);
 int npu_cmdq_table_read_probe(struct cmdq_table_info *cmdq_info);
 void npu_cmdq_table_read_close(struct cmdq_table_info *cmdq_info);
 void init_workload_params(struct npu_session *session);

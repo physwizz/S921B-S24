@@ -291,28 +291,20 @@ int exynos_atomic_enter_tui(void)
 		else
 			DRM_DEV_ERROR(dev->dev, "int qos setting error\n");
 
-#if IS_ENABLED(CONFIG_SOC_S5E8845)
 		if (exynos_pm_qos_request_active(&exynos_crtc->bts->disp_qos)) {
-			unsigned long disp_minlock_freq;
+			unsigned long disp_minlock_freq = 333 * 1000;
 			int index;
 
 			for (index = (exynos_crtc->bts->dfs_lv_cnt - 1); index >= 0; index--) {
-				if (exynos_crtc->bts->resol_clk <= exynos_crtc->bts->dfs_lv[index])
+				if (exynos_crtc->bts->resol_clk <= exynos_crtc->bts->dfs_lv[index]) {
+					disp_minlock_freq = exynos_crtc->bts->dfs_lv[index];
 					break;
+				}
 			}
-
-			disp_minlock_freq = exynos_crtc->bts->dfs_lv[index];
 			exynos_pm_qos_update_request(&exynos_crtc->bts->disp_qos, disp_minlock_freq);
-
 		} else {
 			DRM_DEV_ERROR(dev->dev, "disp qos setting error\n");
 		}
-#else
-		if (exynos_pm_qos_request_active(&exynos_crtc->bts->disp_qos))
-			exynos_pm_qos_update_request(&exynos_crtc->bts->disp_qos, 200 * 1000);
-		else
-			DRM_DEV_ERROR(dev->dev, "disp qos setting error\n");
-#endif
 	}
 
 	DPU_EVENT_LOG("TUI_ENTER", exynos_crtc, 0, "resolution[%ux%u] mode[%s]",

@@ -206,4 +206,12 @@ enum {
 	DSS_CPUIDLE_ON,
 	DSS_CPUIDLE_POWER_MODE,
 };
+
+struct wdt_info {
+	u64 time;
+	u32 cpu;
+	char caller[128];
+	char msg[128];
+} __packed;
+
 #endif

@@ -8,9 +8,10 @@
 			min-cpus = "0-5";
 		};
 
+		gsc { };
+
 		tex {
-			top-app = <1>;
-			prio = <119>;
+			top-app = <119>;
 		};
 
 		support_uclamp {

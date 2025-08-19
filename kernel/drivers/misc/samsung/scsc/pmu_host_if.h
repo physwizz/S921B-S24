@@ -96,6 +96,13 @@ typedef enum
 #define PMU_AP_MSG_WLBT_PCIE_OFF_REJECT                (0x8 << PMU_AP_MSG_SUBSYS_BITS)
 #define PMU_AP_MSG_WLBT_PCIE_OFF_REJECT_CANCEL         (0x9 << PMU_AP_MSG_SUBSYS_BITS)
 
+#ifdef CONFIG_SCSC_XO_CDAC_CON
+#define PMU_AP_MSG_DCXO_CONFIG                        (0xb << PMU_AP_MSG_SUBSYS_BITS)
+#endif
+/* Request to start and recover scan2mem scandump from RAMSD */
+#define PMU_AP_MSG_SCAN2MEM_DUMP_START                 (0xc << PMU_AP_MSG_SUBSYS_BITS)
+#define PMU_AP_MSG_SCAN2MEM_RECOVERY_START             (0xd << PMU_AP_MSG_SUBSYS_BITS)
+
 /*****************************/
 /* Messages to host from PMU */
 /*****************************/
@@ -105,6 +112,9 @@ typedef enum
 #define PMU_AP_MSG_SUBSYS_ERROR_WPAN                  (PMU_AP_MSG_SUBSYS_ERROR_IND | \
                                                        PMU_AP_MSG_SUBSYS_WPAN)
 #define PMU_AP_MSG_SUBSYS_ERROR_WLAN                  (PMU_AP_MSG_SUBSYS_ERROR_IND | \
+                                                       PMU_AP_MSG_SUBSYS_WLAN)
+#define PMU_AP_MSG_SUBSYS_ERROR_WLAN_WPAN             (PMU_AP_MSG_SUBSYS_ERROR_IND | \
+                                                       PMU_AP_MSG_SUBSYS_WPAN | \
                                                        PMU_AP_MSG_SUBSYS_WLAN)
 #define PMU_AP_MSG_SUBSYS_ERROR(subsys)               (PMU_AP_MSG_SUBSYS_ERROR_IND | \
                                                        PMU_AP_MSG_SUBSYS(subsys))

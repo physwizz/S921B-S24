@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -2541,8 +2541,9 @@ bool __qdf_nbuf_data_is_ipv4_mcast_pkt(uint8_t *data)
 		 * Check first word of the IPV4 address and if it is
 		 * equal to 0xE then it represents multicast IP.
 		 */
-		if ((*dst_addr & QDF_NBUF_TRAC_IPV4_ADDR_BCAST_MASK) ==
-				QDF_NBUF_TRAC_IPV4_ADDR_MCAST_MASK)
+		if ((*dst_addr &
+		     QDF_SWAP_U32(QDF_NBUF_TRAC_IPV4_ADDR_BCAST_MASK)) ==
+		     QDF_SWAP_U32(QDF_NBUF_TRAC_IPV4_ADDR_MCAST_MASK))
 			return true;
 		else
 			return false;
@@ -2560,10 +2561,10 @@ bool __qdf_nbuf_data_is_ipv6_mcast_pkt(uint8_t *data)
 
 		/*
 		 * Check first byte of the IP address and if it
-		 * 0xFF00 then it is a IPV6 mcast packet.
+		 * 0xFF then it is a IPV6 mcast packet.
 		 */
-		if (*dst_addr ==
-		     QDF_SWAP_U16(QDF_NBUF_TRAC_IPV6_DEST_ADDR))
+		if ((*dst_addr & QDF_SWAP_U16(QDF_NBUF_TRAC_IPV6_DEST_ADDR)) ==
+		    QDF_SWAP_U16(QDF_NBUF_TRAC_IPV6_DEST_ADDR))
 			return true;
 		else
 			return false;
@@ -5932,24 +5933,6 @@ void __qdf_nbuf_add_rx_frag(__qdf_frag_t buf, __qdf_nbuf_t nbuf,
 
 qdf_export_symbol(__qdf_nbuf_add_rx_frag);
 
-void __qdf_nbuf_ref_frag(__qdf_frag_t buf)
-{
-	struct page *page;
-	skb_frag_t frag = {0};
-
-	page = virt_to_head_page(buf);
-	__skb_frag_set_page(&frag, page);
-
-	/*
-	 * since __skb_frag_ref() just use page to increase ref
-	 * we just decode page alone
-	 */
-	qdf_frag_count_inc(QDF_NBUF_FRAG_DEBUG_COUNT_ONE);
-	__skb_frag_ref(&frag);
-}
-
-qdf_export_symbol(__qdf_nbuf_ref_frag);
-
 #ifdef NBUF_FRAG_MEMORY_DEBUG
 
 QDF_STATUS qdf_nbuf_move_frag_page_offset_debug(qdf_nbuf_t nbuf, uint8_t idx,
@@ -6008,19 +5991,6 @@ void qdf_nbuf_add_rx_frag_debug(qdf_frag_t buf, qdf_nbuf_t nbuf,
 }
 
 qdf_export_symbol(qdf_nbuf_add_rx_frag_debug);
-
-void qdf_nbuf_ref_frag_debug(qdf_frag_t buf, const char *func, uint32_t line)
-{
-	__qdf_nbuf_ref_frag(buf);
-
-	if (qdf_likely(is_initial_mem_debug_disabled))
-		return;
-
-	/* Update frag refcount in frag debug tracking table */
-	qdf_frag_debug_refcount_inc(buf, func, line);
-}
-
-qdf_export_symbol(qdf_nbuf_ref_frag_debug);
 
 void qdf_net_buf_debug_acquire_frag(qdf_nbuf_t buf, const char *func,
 				    uint32_t line)

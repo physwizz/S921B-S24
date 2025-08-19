@@ -548,7 +548,8 @@ static void lb_find_pushable_task_tex(int dst_cpu, int *src_cpu, struct task_str
 					continue;
 
 				if (to_slower) {
-					if (is_boosted_tex_task(qjump_task) || is_render_tex_task(qjump_task))
+					if (is_boosted_tex_task(qjump_task) ||
+					    is_render_tex_task(qjump_task))
 						continue;
 				}
 

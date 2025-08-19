@@ -4922,10 +4922,13 @@ static int aod_enable_save(void *device_data)
 		return SEC_ERROR;
 	}
 
-	if (sec->cmd_param[0])
+	if (sec->cmd_param[0]) {
 		ts->plat_data->lowpower_mode |= SEC_TS_MODE_SPONGE_AOD;
-	else
+		ts->plat_data->sponge_mode |= SEC_TS_MODE_SPONGE_AOD_NOTI_RECT_AOT;
+	} else {
 		ts->plat_data->lowpower_mode &= ~SEC_TS_MODE_SPONGE_AOD;
+		ts->plat_data->sponge_mode &= ~SEC_TS_MODE_SPONGE_AOD_NOTI_RECT_AOT;
+	}
 
 	input_info(true, ts->dev, "%s: %s, %02X\n",
 			__func__, sec->cmd_param[0] ? "on" : "off", ts->plat_data->lowpower_mode);
@@ -4984,6 +4987,41 @@ static void set_aod_rect(void *device_data)
 	set_aod_rect_save(device_data);
 
 	ret = stm_ts_set_aod_rect(ts);
+	if (ret < 0) {
+		input_err(true, ts->dev, "%s: failed. ret: %d\n", __func__, ret);
+		sec->cmd_state = SEC_CMD_STATUS_FAIL;
+	}
+}
+
+static int set_aod_noti_rect_save(void *device_data)
+{
+	struct sec_cmd_data *sec = (struct sec_cmd_data *)device_data;
+	struct stm_ts_data *ts = container_of(sec, struct stm_ts_data, sec);
+	int i;
+
+#if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
+	input_info(true, ts->dev, "%s: w:%d, h:%d, x:%d, y:%d\n",
+			__func__, sec->cmd_param[0], sec->cmd_param[1],
+			sec->cmd_param[2], sec->cmd_param[3]);
+#endif
+
+	for (i = 0; i < 4; i++)
+		ts->plat_data->aod_noti_data.rect_data[i] = sec->cmd_param[i];
+
+	sec->cmd_state = SEC_CMD_STATUS_OK;
+
+	return SEC_SUCCESS;
+}
+
+static void set_aod_noti_rect(void *device_data)
+{
+	struct sec_cmd_data *sec = (struct sec_cmd_data *)device_data;
+	struct stm_ts_data *ts = container_of(sec, struct stm_ts_data, sec);
+	int ret = 0;
+
+	set_aod_noti_rect_save(device_data);
+
+	ret = stm_ts_set_aod_noti_rect(ts);
 	if (ret < 0) {
 		input_err(true, ts->dev, "%s: failed. ret: %d\n", __func__, ret);
 		sec->cmd_state = SEC_CMD_STATUS_FAIL;
@@ -5797,6 +5835,7 @@ struct sec_cmd sec_cmds[] = {
 	{SEC_CMD_V2_H("aot_enable", aot_enable, aot_enable_save, CHECK_ON_LP, EXIT_RESULT),},
 	{SEC_CMD_V2_H("aod_enable", aod_enable, aod_enable_save, CHECK_ON_LP, EXIT_RESULT),},
 	{SEC_CMD_V2("set_aod_rect", set_aod_rect, set_aod_rect_save, CHECK_ON_LP, EXIT_RESULT),},
+	{SEC_CMD_V2("set_aod_noti_rect", set_aod_noti_rect, set_aod_noti_rect_save, CHECK_ON_LP, EXIT_RESULT),},
 	{SEC_CMD_V2("get_aod_rect", get_aod_rect, NULL, CHECK_ON_LP, EXIT_RESULT),},
 	{SEC_CMD_V2("fod_enable", fod_enable, fod_enable_save, CHECK_ON_LP, EXIT_RESULT),},
 	{SEC_CMD_V2_H("fod_lp_mode", fod_lp_mode, NULL, CHECK_ALL, EXIT_RESULT),},

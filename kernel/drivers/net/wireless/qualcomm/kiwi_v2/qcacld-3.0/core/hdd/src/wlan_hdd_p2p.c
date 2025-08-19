@@ -648,7 +648,7 @@ int hdd_set_p2p_ps(struct net_device *dev, void *msgData)
  * @name: User-visible name of the interface
  * @name_assign_type: the name of assign type of the netdev
  * @type: (virtual) interface types
- * @flags: monitor configuration flags (not used)
+ * @flags: monitor configuration flags
  * @params: virtual interface parameters (not used)
  *
  * Return: the pointer of wireless dev, otherwise ERR_PTR.
@@ -692,6 +692,7 @@ struct wireless_dev *__wlan_hdd_add_virtual_intf(struct wiphy *wiphy,
 		return ERR_PTR(qdf_status_to_os_return(status));
 
 	if (mode == QDF_MONITOR_MODE &&
+	    !(QDF_MONITOR_FLAG_OTHER_BSS & *flags) &&
 	    !os_if_lpc_mon_intf_creation_allowed(hdd_ctx->psoc))
 		return ERR_PTR(-EOPNOTSUPP);
 
@@ -741,8 +742,17 @@ struct wireless_dev *__wlan_hdd_add_virtual_intf(struct wiphy *wiphy,
 
 	adapter = NULL;
 	if (type == NL80211_IFTYPE_MONITOR) {
-		if (ucfg_dp_is_local_pkt_capture_enabled(hdd_ctx->psoc) ||
-		    ucfg_mlme_is_sta_mon_conc_supported(hdd_ctx->psoc) ||
+		/*
+		 * if QDF_MONITOR_FLAG_OTHER_BSS bit is set in monitor flags
+		 * driver will assume current mode as STA + Monitor Mode.
+		 * So if QDF_MONITOR_FLAG_OTHER_BSS bit is set in monitor
+		 * interface flag STA+MON concurrency is not supported
+		 * reject the request.
+		 **/
+		if ((ucfg_dp_is_local_pkt_capture_enabled(hdd_ctx->psoc) &&
+		     !(QDF_MONITOR_FLAG_OTHER_BSS & *flags)) ||
+		    (ucfg_mlme_is_sta_mon_conc_supported(hdd_ctx->psoc) &&
+		     (QDF_MONITOR_FLAG_OTHER_BSS & *flags)) ||
 		    ucfg_pkt_capture_get_mode(hdd_ctx->psoc) !=
 						PACKET_CAPTURE_MODE_DISABLE) {
 			ret = wlan_hdd_add_monitor_check(hdd_ctx,
@@ -750,6 +760,8 @@ struct wireless_dev *__wlan_hdd_add_virtual_intf(struct wiphy *wiphy,
 							 name_assign_type);
 			if (ret)
 				return ERR_PTR(-EINVAL);
+
+			ucfg_dp_set_mon_conf_flags(hdd_ctx->psoc, *flags);
 
 			if (adapter) {
 				hdd_exit();
@@ -978,6 +990,9 @@ int __wlan_hdd_del_virtual_intf(struct wiphy *wiphy, struct wireless_dev *wdev)
 	if (errno)
 		return errno;
 
+	if (wlan_hdd_is_session_type_monitor(adapter->device_mode))
+		ucfg_dp_set_mon_conf_flags(hdd_ctx->psoc, 0);
+
 	if (adapter->device_mode == QDF_SAP_MODE &&
 	    ucfg_pre_cac_is_active(hdd_ctx->psoc)) {
 		ucfg_pre_cac_clean_up(hdd_ctx->psoc);
@@ -1096,6 +1111,8 @@ __hdd_indicate_mgmt_frame_to_user(struct hdd_adapter *adapter,
 	struct hdd_adapter *assoc_adapter;
 	bool eht_capab;
 	struct hdd_ap_ctx *ap_ctx;
+	struct action_frm_hdr *action_hdr;
+	tpSirMacVendorSpecificPublicActionFrameHdr vendor_specific;
 
 	hdd_debug("Frame Type = %d Frame Length = %d freq = %d",
 		  frame_type, frm_len, rx_freq);
@@ -1131,6 +1148,24 @@ __hdd_indicate_mgmt_frame_to_user(struct hdd_adapter *adapter,
 			    adapter->device_mode == QDF_P2P_GO_MODE)) {
 			ap_ctx = WLAN_HDD_GET_AP_CTX_PTR(adapter->deflink);
 			ap_ctx->during_auth_offload = true;
+		}
+	}
+
+	if (type == WLAN_FC0_TYPE_MGMT && sub_type == WLAN_FC0_STYPE_ACTION &&
+	    frm_len >= (sizeof(struct wlan_frame_hdr) +
+			sizeof(*vendor_specific))) {
+		action_hdr = (struct action_frm_hdr *)(pb_frames +
+						sizeof(struct wlan_frame_hdr));
+		vendor_specific =
+			(tpSirMacVendorSpecificPublicActionFrameHdr)action_hdr;
+		if (is_nan_oui(vendor_specific->Oui)) {
+			adapter = hdd_get_adapter(hdd_ctx, QDF_NAN_DISC_MODE);
+			if (!adapter) {
+				hdd_err("NAN adapter is null");
+				return;
+			}
+
+			goto check_adapter;
 		}
 	}
 
@@ -1172,6 +1207,7 @@ __hdd_indicate_mgmt_frame_to_user(struct hdd_adapter *adapter,
 		}
 	}
 
+check_adapter:
 	if (!adapter->dev) {
 		hdd_err("adapter->dev is NULL");
 		return;
@@ -1395,7 +1431,7 @@ static uint32_t set_first_connection_operating_channel(
 	oper_chan_freq = hdd_get_operating_chan_freq(hdd_ctx, dev_mode);
 	if (!oper_chan_freq) {
 		hdd_err(" First adapter operating channel is invalid");
-		return -EINVAL;
+		return set_value;
 	}
 	operating_channel = wlan_reg_freq_to_chan(hdd_ctx->pdev,
 						  oper_chan_freq);
@@ -1435,9 +1471,9 @@ static uint32_t set_second_connection_operating_channel(
 						  policy_mgr_get_mcc_operating_channel(
 						  hdd_ctx->psoc, vdev_id));
 
-	if (operating_channel == 0) {
+	if (!operating_channel) {
 		hdd_err("Second adapter operating channel is invalid");
-		return -EINVAL;
+		return set_value;
 	}
 
 	hdd_info("Second connection channel No.:%d and quota:%dms",

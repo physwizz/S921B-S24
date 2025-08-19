@@ -1,4 +1,4 @@
-#include "modap/platform_mif.h"
+#include "platform_mif.h"
 #include "modap/platform_mif_intr_handler.h"
 #include "modap/platform_mif_memory_api.h"
 #include "modap/platform_mif_pm_api.h"
@@ -262,19 +262,22 @@ static int platform_mif_set_ka_patch(
 	uint32_t *ka_patch_addr,
 	uint32_t *ka_patch_addr_end)
 {
-	unsigned int val;
+
 	int i;
 	unsigned int ka_addr = PMU_BOOT_RAM_START;
 	struct regmap *regmap = platform_mif_get_regmap(platform, BOOT_CFG);
 
+#ifndef CONFIG_SOC_S5E5535
+	unsigned int val;
 	/* PMU boot patch */
 	regmap_write(regmap, PMU_BOOT, PMU_BOOT_AP_ACC);
 	regmap_read(regmap, PMU_BOOT, &val);
-#if 0	
+#if 0
 	if (PMU_BOOT_AP_ACC != val) {
 		SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "PMU_BOOT_AP_ACC w/r error. Write : 0x%x, Read : 0x%x\n", PMU_BOOT_AP_ACC, val);
 		return -1;
 	}
+#endif
 #endif
 	//platform_mif_set_ka_patch_addr(platform, ka_patch_addr, ka_patch_addr_end);
 
@@ -295,6 +298,8 @@ static int platform_mif_set_ka_patch(
 
 static int platform_mif_set_cfg_done(struct platform_mif *platform)
 {
+
+#ifndef CONFIG_SOC_S5E5535
 	unsigned int val;
 	struct regmap *regmap = platform_mif_get_regmap(platform, BOOT_CFG);
 
@@ -308,6 +313,7 @@ static int platform_mif_set_cfg_done(struct platform_mif *platform)
                 SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "PMU_BOOT_PMU_ACC w/r error. Write : 0x%x, Read : 0x%x\n", PMU_BOOT_PMU_ACC, val);
                 return -1;
         }
+#endif
 
 	/* WLBT FW could panic as soon as CFG_ACK is set, so change state.
 	 * This allows early FW panic to be dumped.
@@ -322,6 +328,12 @@ static int platform_mif_set_cfg_ack(struct platform_mif *platform)
 	unsigned int val;
 	struct regmap *regmap = platform_mif_get_regmap(platform, BOOT_CFG);
 
+#ifdef CONFIG_SOC_S5E5535
+	regmap_write(regmap, WLBT_PBUS_BOOT, PMU_BOOT_COMPLETE);
+	regmap_read(regmap, WLBT_PBUS_BOOT, &val);
+	SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
+			  "lulu: Updated BOOT_CFG_ACK: 0x%x\n", val);
+#else
 	/* BOOT_CFG_ACK */
 	regmap_write(regmap, PMU_BOOT_ACK, PMU_BOOT_COMPLETE);
 	regmap_read(regmap, PMU_BOOT_ACK, &val);
@@ -330,7 +342,7 @@ static int platform_mif_set_cfg_ack(struct platform_mif *platform)
                 SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "PMU_BOOT_COMPLETE w/r error. Write : 0x%x, Read : 0x%x\n", PMU_BOOT_COMPLETE, val);
                 return -1;
         }
-
+#endif
 	/* Mark as CFQ_REQ handled, so boot may continue */
 	platform->boot_state = WLBT_BOOT_CFG_DONE;
 
@@ -468,8 +480,10 @@ struct scsc_mif_abs *platform_mif_create(struct platform_device *pdev)
 	platform->ka_patch_len = 0;
 	/* Update state */
 	platform->pdev = pdev;
-	platform->np = pdev->dev.of_node;
 	platform->dev = &pdev->dev;
+#if IS_ENABLED(CONFIG_WLBT_PROPERTY_READ)
+	platform->np = pdev->dev.of_node;
+#endif
 	platform->regmap = (struct regmap **)devm_kzalloc(
 		platform->dev,
 		sizeof(struct regmap *) * REGMAP_LIST_SIZE,
@@ -532,7 +546,9 @@ SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "2\n");
 	if (err)
 		goto error_exit;
 SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "1\n");
+#ifdef CONFIG_SCSC_QOS
 	platform_mif_qos_init(platform);
+#endif
 
 	/* Initialize spinlock */
 	spin_lock_init(&platform->mif_spinlock);

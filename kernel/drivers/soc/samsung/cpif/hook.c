@@ -7,6 +7,7 @@
  */
 
 #include <linux/poll.h>
+#include <net/sock.h>
 #include <trace/hooks/sched.h>
 
 #define TASK_VENDOR		0x2000
@@ -22,9 +23,11 @@ static void cpif_hook_do_wake_up_sync(void *data,
 		struct wait_queue_head *wq_head, int *done, struct sock *sk)
 {
 #ifdef WF_ANDROID_VENDOR
-	*done = 1;
-	__wake_up_sync_key(wq_head, TASK_INTERRUPTIBLE | TASK_VENDOR,
+	if (sk->sk_family == AF_INET6 || sk->sk_family == AF_INET) {
+		*done = 1;
+		__wake_up_sync_key(wq_head, TASK_INTERRUPTIBLE | TASK_VENDOR,
 			poll_to_key(EPOLLIN | EPOLLPRI | EPOLLRDNORM | EPOLLRDBAND));
+	}
 #endif
 }
 

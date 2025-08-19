@@ -22,6 +22,8 @@
 #include "tsmux_reg.h"
 #include "tsmux_dbg.h"
 
+#define TSMUX_CUR_CONTEXTS_NUM       0
+
 #define MAX_JOB_DONE_WAIT_TIME		1000000
 #define AUDIO_TIME_PERIOD_US		21333
 
@@ -187,7 +189,7 @@ static inline struct tsmux_context* get_cur_context(void)
 	struct tsmux_context *ctx = NULL;
 
 	if (g_tsmux_dev)
-		ctx = g_tsmux_dev->ctx[g_tsmux_dev->ctx_cur];
+		ctx = g_tsmux_dev->ctx[TSMUX_CUR_CONTEXTS_NUM];
 
 	return ctx;
 }
@@ -201,9 +203,10 @@ int tsmux_iommu_fault_handler(struct iommu_fault* fault, void* param)
 	print_tsmux(TSMUX_ERR, "++\n");
 
 	spin_lock_irqsave(&tsmux_dev->device_spinlock, flags);
+	print_tsmux_wfdlogger(TSMUX_ERR, "++++\n");
 	ctx = get_cur_context();
 	if (ctx == NULL) {
-		print_tsmux(TSMUX_ERR, "this is not tsmux page fault\n");
+		print_tsmux_wfdlogger(TSMUX_ERR, "this is not tsmux page fault\n");
 		spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
 		return 0;
 	}
@@ -212,6 +215,7 @@ int tsmux_iommu_fault_handler(struct iommu_fault* fault, void* param)
 	tsmux_set_log_level(g_tsmux_log_level);
 	wake_up_interruptible(&ctx->otf_wait_queue);
 	del_timer(&tsmux_dev->watchdog_timer);
+	print_tsmux_wfdlogger(TSMUX_ERR, "----\n");
 	spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
 
 	tsmux_sfr_dump();
@@ -334,10 +338,11 @@ void tsmux_watchdog_work_handler(struct work_struct *work)
 	tsmux_dev = container_of(work, struct tsmux_device, watchdog_work);
 
 	spin_lock_irqsave(&tsmux_dev->device_spinlock, flags);
+	print_tsmux_wfdlogger(TSMUX_DBG, "++++\n");
 	tsmux_dev->error = -TSMUX_ERR_WATCHDOG;
 	ctx = get_cur_context();
 	if (ctx == NULL) {
-		print_tsmux(TSMUX_ERR, "ctx is NULL\n");
+		print_tsmux_wfdlogger(TSMUX_ERR, "ctx is NULL\n");
 		spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
 		return;
 	}
@@ -345,6 +350,7 @@ void tsmux_watchdog_work_handler(struct work_struct *work)
 	tsmux_set_log_level(g_tsmux_log_level);
 	wake_up_interruptible(&ctx->otf_wait_queue);
 	del_timer(&tsmux_dev->watchdog_timer);
+	print_tsmux_wfdlogger(TSMUX_DBG, "----\n");
 	spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
 
 	tsmux_sfr_dump();
@@ -389,13 +395,14 @@ irqreturn_t tsmux_irq(int irq, void *priv)
 	print_tsmux(TSMUX_DBG, "++\n");
 
 	tsmux_dev->irq = irq;
-	ctx = tsmux_dev->ctx[tsmux_dev->ctx_cur];
+	ctx = tsmux_dev->ctx[TSMUX_CUR_CONTEXTS_NUM];
 
 	spin_lock(&tsmux_dev->device_spinlock);
+	print_tsmux_wfdlogger(TSMUX_DBG, "++++\n");
 
 	if (tsmux_is_job_done_id_0(tsmux_dev)) {
 		job_id = 0;
-		print_tsmux(TSMUX_DBG, "Job ID %d is done\n", job_id);
+		print_tsmux_wfdlogger(TSMUX_DBG, "Job ID %d is done\n", job_id);
 		tsmux_clear_job_done(tsmux_dev, job_id);
 		for (i = 0; i < TSMUX_OUT_BUF_CNT; i++)
 			if (ctx->otf_outbuf_info[i].buf_state == BUF_Q ||
@@ -404,18 +411,18 @@ irqreturn_t tsmux_irq(int irq, void *priv)
 
 		if (i < TSMUX_OUT_BUF_CNT) {
 			dst_len = tsmux_get_dst_len(tsmux_dev, job_id);
-			print_tsmux(TSMUX_DBG, "otf outbuf num: %d, dst length: %d\n", i, dst_len);
+			print_tsmux_wfdlogger(TSMUX_DBG, "otf outbuf num: %d, dst length: %d\n", i, dst_len);
 			ctx->otf_outbuf_info[i].buf_state = BUF_JOB_DONE;
 			ctx->otf_job_done_count++;
 			if (!ctx->otf_cmd_queue.out_buf[i].partial_done)
 				ctx->otf_cmd_queue.out_buf[i].offset += ctx->otf_cmd_queue.out_buf[i].actual_size;
 			ctx->otf_cmd_queue.out_buf[i].actual_size = dst_len - ctx->otf_cmd_queue.out_buf[i].offset;
-			print_tsmux(TSMUX_DBG, "otf offset: %d, actual_size: %d\n",
+			print_tsmux_wfdlogger(TSMUX_DBG, "otf offset: %d, actual_size: %d\n",
 					ctx->otf_cmd_queue.out_buf[i].offset,
 					ctx->otf_cmd_queue.out_buf[i].actual_size);
 			ctx->tsmux_end_stamp = get_ktimestamp();
 		} else
-			print_tsmux(TSMUX_ERR, "wrong index: %d\n", i);
+			print_tsmux_wfdlogger(TSMUX_ERR, "wrong index: %d\n", i);
 
 		tsmux_watchdog_tick_stop(tsmux_dev, job_id);
 		wake_up_interruptible(&ctx->otf_wait_queue);
@@ -423,7 +430,7 @@ irqreturn_t tsmux_irq(int irq, void *priv)
 
 	if (tsmux_is_job_done_id_1(tsmux_dev)) {
 		job_id = 1;
-		print_tsmux(TSMUX_DBG, "Job ID %d is done\n", job_id);
+		print_tsmux_wfdlogger(TSMUX_DBG, "Job ID %d is done\n", job_id);
 		tsmux_clear_job_done(tsmux_dev, job_id);
 		ctx->m2m_job_done[get_m2m_buffer_idx(job_id)] = true;
 		tsmux_watchdog_tick_stop(tsmux_dev, job_id);
@@ -431,7 +438,7 @@ irqreturn_t tsmux_irq(int irq, void *priv)
 
 	if (tsmux_is_job_done_id_2(tsmux_dev)) {
 		job_id = 2;
-		print_tsmux(TSMUX_DBG, "Job ID %d is done\n", job_id);
+		print_tsmux_wfdlogger(TSMUX_DBG, "Job ID %d is done\n", job_id);
 		tsmux_clear_job_done(tsmux_dev, job_id);
 		ctx->m2m_job_done[get_m2m_buffer_idx(job_id)] = true;
 		tsmux_watchdog_tick_stop(tsmux_dev, job_id);
@@ -439,7 +446,7 @@ irqreturn_t tsmux_irq(int irq, void *priv)
 
 	if (tsmux_is_job_done_id_3(tsmux_dev)) {
 		job_id = 3;
-		print_tsmux(TSMUX_DBG, "Job ID %d is done\n", job_id);
+		print_tsmux_wfdlogger(TSMUX_DBG, "Job ID %d is done\n", job_id);
 		tsmux_clear_job_done(tsmux_dev, job_id);
 		ctx->m2m_job_done[get_m2m_buffer_idx(job_id)] = true;
 		tsmux_watchdog_tick_stop(tsmux_dev, job_id);
@@ -448,7 +455,7 @@ irqreturn_t tsmux_irq(int irq, void *priv)
 	if (tsmux_is_partial_done_id_0(tsmux_dev)) {
 		job_id = 0;
 		dst_len = 0;
-		print_tsmux(TSMUX_DBG, "Job ID %d is partial done\n", job_id);
+		print_tsmux_wfdlogger(TSMUX_DBG, "Job ID %d is partial done\n", job_id);
 		tsmux_clear_partial_done(tsmux_dev, job_id);
 		for (i = 0; i < TSMUX_OUT_BUF_CNT; i++)
 			if (ctx->otf_outbuf_info[i].buf_state == BUF_Q ||
@@ -464,9 +471,9 @@ irqreturn_t tsmux_irq(int irq, void *priv)
 			dst_len += ctx->otf_cmd_queue.out_buf[i].offset +
 				(RTP_HEADER_SIZE + TS_PACKET_SIZE * TS_PKT_COUNT_PER_RTP)
 				* g_rtp_pkt_count_per_partial_data;
-			print_tsmux(TSMUX_DBG, "otf outbuf num: %d, dst length: %d\n", i, dst_len);
+			print_tsmux_wfdlogger(TSMUX_DBG, "otf outbuf num: %d, dst length: %d\n", i, dst_len);
 			ctx->otf_cmd_queue.out_buf[i].actual_size = dst_len - ctx->otf_cmd_queue.out_buf[i].offset;
-			print_tsmux(TSMUX_DBG, "otf offset: %d, actual_size: %d\n",
+			print_tsmux_wfdlogger(TSMUX_DBG, "otf offset: %d, actual_size: %d\n",
 					ctx->otf_cmd_queue.out_buf[i].offset,
 					ctx->otf_cmd_queue.out_buf[i].actual_size);
 			ctx->otf_cmd_queue.out_buf[i].partial_done = 1;
@@ -477,22 +484,23 @@ irqreturn_t tsmux_irq(int irq, void *priv)
 
 	if (tsmux_is_partial_done_id_1(tsmux_dev)) {
 		job_id = 1;
-		print_tsmux(TSMUX_DBG, "Job ID %d is partial done\n", job_id);
+		print_tsmux_wfdlogger(TSMUX_DBG, "Job ID %d is partial done\n", job_id);
 		tsmux_clear_partial_done(tsmux_dev, job_id);
 	}
 
 	if (tsmux_is_partial_done_id_2(tsmux_dev)) {
 		job_id = 2;
-		print_tsmux(TSMUX_DBG, "Job ID %d is partial done\n", job_id);
+		print_tsmux_wfdlogger(TSMUX_DBG, "Job ID %d is partial done\n", job_id);
 		tsmux_clear_partial_done(tsmux_dev, job_id);
 	}
 
 	if (tsmux_is_partial_done_id_3(tsmux_dev)) {
 		job_id = 3;
-		print_tsmux(TSMUX_DBG, "Job ID %d is partial done\n", job_id);
+		print_tsmux_wfdlogger(TSMUX_DBG, "Job ID %d is partial done\n", job_id);
 		tsmux_clear_partial_done(tsmux_dev, job_id);
 	}
 
+	print_tsmux_wfdlogger(TSMUX_DBG, "----\n");
 	spin_unlock(&tsmux_dev->device_spinlock);
 
 	if (is_m2m_job_done(ctx) && !partial_done) {
@@ -512,16 +520,19 @@ static int tsmux_open(struct inode *inode, struct file *filp)
 	struct tsmux_context *ctx;
 	unsigned long flags;
 	int i;
+	int ctx_num;
 
 	print_tsmux(TSMUX_DBG, "++\n");
 
-	if (tsmux_dev->ctx_cnt >= TSMUX_MAX_CONTEXTS_NUM) {
+	ctx_num = atomic_fetch_add_unless(&tsmux_dev->ctx_num, 1, TSMUX_MAX_CONTEXTS_NUM);
+	if (ctx_num >= TSMUX_MAX_CONTEXTS_NUM) {
 		print_tsmux(TSMUX_ERR, "too many context\n");
 		return -ENOMEM;
 	}
 
 	ctx = kzalloc(sizeof(struct tsmux_context), GFP_KERNEL);
 	if (!ctx) {
+		atomic_dec(&tsmux_dev->ctx_num);
 		print_tsmux(TSMUX_ERR, "kzalloc is failed\n");
 		return -ENOMEM;
 	}
@@ -538,9 +549,7 @@ static int tsmux_open(struct inode *inode, struct file *filp)
 	spin_lock_irqsave(&tsmux_dev->device_spinlock, flags);
 
 	ctx->tsmux_dev = tsmux_dev;
-	ctx->ctx_num = tsmux_dev->ctx_cnt;
-	tsmux_dev->ctx[ctx->ctx_num] = ctx;
-	tsmux_dev->ctx_cnt++;
+	tsmux_dev->ctx[ctx_num] = ctx;
 	tsmux_dev->error = TSMUX_OK;
 	tsmux_set_partial_done_info(g_enable_partial_done, g_rtp_pkt_count_per_partial_data);
 
@@ -598,7 +607,7 @@ static int tsmux_open(struct inode *inode, struct file *filp)
 
 	ctx->tsmux_start_stamp = get_ktimestamp();
 
-	if (tsmux_dev->ctx_cnt == 1)
+	if (atomic_read(&tsmux_dev->ctx_num) == 1)
 		mod_timer(&tsmux_dev->watchdog_timer, jiffies + msecs_to_jiffies(1000));
 
 	print_tsmux(TSMUX_INFO, "tsmux node is opened\n");
@@ -614,7 +623,7 @@ err_init:
 
 	wfd_logger_deinit(g_tsmux_logger);
 	g_tsmux_logger = NULL;
-	tsmux_dev->ctx_cnt--;
+	atomic_dec(&tsmux_dev->ctx_num);
 	kfree(ctx);
 	filp->private_data = NULL;
 
@@ -643,10 +652,9 @@ static int tsmux_release(struct inode *inode, struct file *filp)
 	spin_lock_irqsave(&tsmux_dev->device_spinlock, flags);
 	g_tsmux_dev = NULL;
 
-	if (tsmux_dev->ctx_cnt == 1)
+	if (atomic_read(&tsmux_dev->ctx_num) == 1)
 		del_timer(&tsmux_dev->watchdog_timer);
 
-	ctx->tsmux_dev->ctx_cnt--;
 	kfree(ctx);
 	filp->private_data = NULL;
 
@@ -655,12 +663,12 @@ static int tsmux_release(struct inode *inode, struct file *filp)
 
 	spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
 
-	pm_runtime_put_sync(tsmux_dev->dev);
+	ret = pm_runtime_put_sync(tsmux_dev->dev);
 	if (ret < 0) {
 		print_tsmux(TSMUX_ERR, "pm_runtime_put_sync err(%d)\n", ret);
-		return ret;
 	}
 
+	atomic_dec(&tsmux_dev->ctx_num);
 	print_tsmux(TSMUX_INFO, "tsmux node is released\n");
 
 	print_tsmux(TSMUX_DBG, "--\n");
@@ -676,7 +684,7 @@ int tsmux_set_info(struct tsmux_context *ctx,
 	int ret = 0;
 	struct tsmux_device *tsmux_dev;
 
-	print_tsmux(TSMUX_DBG, "++\n");
+	print_tsmux_wfdlogger(TSMUX_DBG, "++\n");
 
 	if (ctx == NULL || ctx->tsmux_dev == NULL)
 		return -ENOMEM;
@@ -692,7 +700,7 @@ int tsmux_set_info(struct tsmux_context *ctx,
 	/* enable interrupt */
 	tsmux_enable_int_job_done(tsmux_dev, need_partial_done);
 
-	print_tsmux(TSMUX_DBG, "--\n");
+	print_tsmux_wfdlogger(TSMUX_DBG, "--\n");
 
 	return ret;
 }
@@ -708,7 +716,7 @@ int tsmux_job_queue(struct tsmux_context *ctx,
 	int ret = 0;
 	struct tsmux_device *tsmux_dev;
 
-	print_tsmux(TSMUX_DBG, "++\n");
+	print_tsmux_wfdlogger(TSMUX_DBG, "++\n");
 
 	if (ctx == NULL || ctx->tsmux_dev == NULL)
 		return -ENOMEM;
@@ -719,14 +727,14 @@ int tsmux_job_queue(struct tsmux_context *ctx,
 	if (pkt_ctrl->mode == 0) {
 		if (IS_ERR(inbuf->dmabuf) || IS_ERR(inbuf->dmabuf_att) ||
 			IS_ERR_VALUE(inbuf->dma_addr) || inbuf->dma_addr == 0) {
-			print_tsmux(TSMUX_ERR, "inbuf is invalid\n");
+			print_tsmux_wfdlogger(TSMUX_ERR, "inbuf is invalid\n");
 			return -ENOMEM;
 		}
 	}
 
 	if (IS_ERR(outbuf->dmabuf) || IS_ERR(outbuf->dmabuf_att) ||
 		IS_ERR_VALUE(outbuf->dma_addr) || outbuf->dma_addr == 0) {
-		print_tsmux(TSMUX_ERR, "outbuf is invalid\n");
+		print_tsmux_wfdlogger(TSMUX_ERR, "outbuf is invalid\n");
 		return -ENOMEM;
 	}
 
@@ -756,7 +764,7 @@ int tsmux_job_queue(struct tsmux_context *ctx,
 
 	tsmux_watchdog_tick_start(tsmux_dev, pkt_ctrl->id);
 
-	print_tsmux(TSMUX_DBG, "--\n");
+	print_tsmux_wfdlogger(TSMUX_DBG, "--\n");
 
 	return ret;
 }
@@ -968,8 +976,6 @@ int tsmux_ioctl_m2m_run(struct tsmux_context *ctx, struct tsmux_m2m_cmd_queue *a
 
 	print_tsmux(TSMUX_DBG, "line %d\n", __LINE__);
 
-	tsmux_dev->ctx_cur = ctx->ctx_num;
-
 	ctx->m2m_job_done[1] = false;
 
 	asb_job = &ctx->asb_job;
@@ -1052,16 +1058,16 @@ int tsmux_ioctl_m2m_run(struct tsmux_context *ctx, struct tsmux_m2m_cmd_queue *a
 
 	spin_lock_irqsave(&tsmux_dev->device_spinlock, flags);
 
+	print_tsmux_wfdlogger(TSMUX_DBG, "++++\n");
+
 	if (tsmux_dev->error != TSMUX_OK) {
-		print_tsmux(TSMUX_ERR, "tsmux error is invalid(%d)\n", tsmux_dev->error);
+		print_tsmux_wfdlogger(TSMUX_ERR, "tsmux error is invalid(%d)\n", tsmux_dev->error);
 		spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
 		return -EFAULT;
 	}
 
 	memcpy(&ctx->m2m_cmd_queue, &temp_m2m_cmd_queue,
 			sizeof(struct tsmux_m2m_cmd_queue));
-
-	tsmux_dev->ctx_cur = ctx->ctx_num;
 
 	/* init job_done[] */
 	for (i = 0; i < TSMUX_MAX_M2M_CMD_QUEUE_NUM; i++) {
@@ -1070,7 +1076,7 @@ int tsmux_ioctl_m2m_run(struct tsmux_context *ctx, struct tsmux_m2m_cmd_queue *a
 			ctx->m2m_job_done[i] = false;
 		else
 			ctx->m2m_job_done[i] = true;
-		print_tsmux(TSMUX_DBG, "ctx->m2m_job_done[%d] %d\n",
+		print_tsmux_wfdlogger(TSMUX_DBG, "ctx->m2m_job_done[%d] %d\n",
 			i, ctx->m2m_job_done[i]);
 	}
 
@@ -1082,7 +1088,7 @@ int tsmux_ioctl_m2m_run(struct tsmux_context *ctx, struct tsmux_m2m_cmd_queue *a
 			psi_validation = 1;
 			if (is_psi_invalid(ctx->psi_info.pat_len, ctx->psi_info.pmt_len, ctx->psi_info.pcr_len))
 				psi_validation = 0;
-			print_tsmux(TSMUX_DBG, "pkt_ctrl.psi_en %d, psi_validation %d\n",
+			print_tsmux_wfdlogger(TSMUX_DBG, "pkt_ctrl.psi_en %d, psi_validation %d\n",
 				m2m_job->pkt_ctrl.psi_en, psi_validation);
 
 			if (m2m_job->pkt_ctrl.psi_en && psi_validation) {
@@ -1090,7 +1096,7 @@ int tsmux_ioctl_m2m_run(struct tsmux_context *ctx, struct tsmux_m2m_cmd_queue *a
 				/* PAT CC should be set by tsmux device driver */
 				set_psi_continuity_counter(psi_data, &ctx->rtp_ts_info.ts_pat_cc);
 				increment_ts_continuity_counter(&ctx->rtp_ts_info.ts_pat_cc);
-				print_tsmux(TSMUX_DBG, "ts pat %.2x %.2x %.2x %.2x, ts_pat_cc %.2x, pat_len %d\n",
+				print_tsmux_wfdlogger(TSMUX_DBG, "ts pat %.2x %.2x %.2x %.2x, ts_pat_cc %.2x, pat_len %d\n",
 					psi_data[0], psi_data[1], psi_data[2], psi_data[3],
 					ctx->rtp_ts_info.ts_pat_cc, ctx->psi_info.pat_len);
 				psi_data += ctx->psi_info.pat_len;
@@ -1098,7 +1104,7 @@ int tsmux_ioctl_m2m_run(struct tsmux_context *ctx, struct tsmux_m2m_cmd_queue *a
 				/* PMT CC should be set by tsmux device driver */
 				set_psi_continuity_counter(psi_data, &ctx->rtp_ts_info.ts_pmt_cc);
 				increment_ts_continuity_counter(&ctx->rtp_ts_info.ts_pmt_cc);
-				print_tsmux(TSMUX_DBG, "ts pmt %.2x %.2x %.2x %.2x, ts_pmt_cc %.2x, pmt_len %d\n",
+				print_tsmux_wfdlogger(TSMUX_DBG, "ts pmt %.2x %.2x %.2x %.2x, ts_pmt_cc %.2x, pmt_len %d\n",
 					psi_data[0], psi_data[1], psi_data[2], psi_data[3],
 					ctx->rtp_ts_info.ts_pmt_cc, ctx->psi_info.pmt_len);
 
@@ -1110,7 +1116,7 @@ int tsmux_ioctl_m2m_run(struct tsmux_context *ctx, struct tsmux_m2m_cmd_queue *a
 				m2m_job->pkt_ctrl.rtp_seq_override = 1;
 				m2m_job->ts_hdr.continuity_counter = ctx->rtp_ts_info.ts_audio_cc;
 				ctx->rtp_ts_info.rtp_seq_override = 0;
-				print_tsmux(TSMUX_DBG, "m2m job_queue, rtp seq 0x%x\n",
+				print_tsmux_wfdlogger(TSMUX_DBG, "m2m job_queue, rtp seq 0x%x\n",
 					ctx->rtp_ts_info.rtp_seq_number);
 
 			} else {
@@ -1118,14 +1124,14 @@ int tsmux_ioctl_m2m_run(struct tsmux_context *ctx, struct tsmux_m2m_cmd_queue *a
 			}
 			m2m_job->ts_hdr.continuity_counter = ctx->rtp_ts_info.ts_audio_cc;
 			m2m_job->pkt_ctrl.rtp_size = TS_PKT_COUNT_PER_RTP;
-			print_tsmux(TSMUX_DBG, "m2m job_queue, a_cc %.2x\n", ctx->rtp_ts_info.ts_audio_cc);
+			print_tsmux_wfdlogger(TSMUX_DBG, "m2m job_queue, a_cc %.2x\n", ctx->rtp_ts_info.ts_audio_cc);
 
 			ret = tsmux_job_queue(ctx, &m2m_job->pkt_ctrl,
 				&m2m_job->pes_hdr, &m2m_job->ts_hdr,
 				&m2m_job->rtp_hdr, m2m_job->in_buf.actual_size,
 				&ctx->m2m_inbuf_info[i], &ctx->m2m_outbuf_info[i]);
 			if (ret) {
-				print_tsmux(TSMUX_ERR, "tsmux_job_queue() failed\n");
+				print_tsmux_wfdlogger(TSMUX_ERR, "tsmux_job_queue() failed\n");
 				break;
 			}
 		}
@@ -1159,14 +1165,16 @@ int tsmux_ioctl_m2m_run(struct tsmux_context *ctx, struct tsmux_m2m_cmd_queue *a
 				cur_rtp_seq_num, dst_len,
 				m2m_job->pkt_ctrl.rtp_size);
 
-			print_tsmux(TSMUX_DBG, "m2m job_done, cur seq 0x%x, next seq 0x%x\n",
+			print_tsmux_wfdlogger(TSMUX_DBG, "m2m job_done, cur seq 0x%x, next seq 0x%x\n",
 				cur_rtp_seq_num, ctx->rtp_ts_info.rtp_seq_number);
-			print_tsmux(TSMUX_DBG, "m2m job_done, cur a_cc 0x%x, next a_cc 0x%x\n",
+			print_tsmux_wfdlogger(TSMUX_DBG, "m2m job_done, cur a_cc 0x%x, next a_cc 0x%x\n",
 				cur_ts_audio_cc, ctx->rtp_ts_info.ts_audio_cc);
-			print_tsmux(TSMUX_DBG, "m2m %d, dst_len_reg %d\n",
+			print_tsmux_wfdlogger(TSMUX_DBG, "m2m %d, dst_len_reg %d\n",
 				i, dst_len);
 		}
 	}
+
+	print_tsmux_wfdlogger(TSMUX_DBG, "----\n");
 
 	spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
 
@@ -1262,7 +1270,7 @@ int tsmux_packetize(struct packetizing_param *param)
 		return ret;
 	}
 
-	ctx = g_tsmux_dev->ctx[g_tsmux_dev->ctx_cur];
+	ctx = g_tsmux_dev->ctx[TSMUX_CUR_CONTEXTS_NUM];
 
 	spin_lock_irqsave(&g_tsmux_dev->device_spinlock, flags);
 
@@ -1347,14 +1355,16 @@ int tsmux_packetize(struct packetizing_param *param)
 		return ret;
 	}
 
-	ctx = g_tsmux_dev->ctx[g_tsmux_dev->ctx_cur];
+	ctx = g_tsmux_dev->ctx[TSMUX_CUR_CONTEXTS_NUM];
 
 	spin_lock_irqsave(&g_tsmux_dev->device_spinlock, flags);
+
+	print_tsmux_wfdlogger(TSMUX_DBG, "++++\n");
 
 	for (i = 0; i < TSMUX_OUT_BUF_CNT; i++) {
 		out_buf_info = &ctx->otf_outbuf_info[i];
 		if (out_buf_info->buf_state == BUF_Q) {
-			print_tsmux(TSMUX_ERR, "otf command queue is busy\n");
+			print_tsmux_wfdlogger(TSMUX_ERR, "otf command queue is busy\n");
 			ret = -1;
 			spin_unlock_irqrestore(&g_tsmux_dev->device_spinlock, flags);
 			return ret;
@@ -1362,14 +1372,14 @@ int tsmux_packetize(struct packetizing_param *param)
 	}
 
 	if (ctx->otf_buf_mapped == false) {
-		print_tsmux(TSMUX_ERR, "otf_buf_mapped is false\n");
+		print_tsmux_wfdlogger(TSMUX_ERR, "otf_buf_mapped is false\n");
 		ret = -1;
 		spin_unlock_irqrestore(&g_tsmux_dev->device_spinlock, flags);
 		return ret;
 	}
 
 	if (ctx->otf_outbuf_info[0].dma_addr == 0) {
-		print_tsmux(TSMUX_ERR, "otf_out_buf is NULL\n");
+		print_tsmux_wfdlogger(TSMUX_ERR, "otf_out_buf is NULL\n");
 		ret = -1;
 		spin_unlock_irqrestore(&g_tsmux_dev->device_spinlock, flags);
 		return ret;
@@ -1379,15 +1389,15 @@ int tsmux_packetize(struct packetizing_param *param)
 		out_buf_info = &ctx->otf_outbuf_info[i];
 		if (out_buf_info->buf_state == BUF_FREE) {
 			index = i;
-			print_tsmux(TSMUX_DBG, "otf buf index is %d\n", index);
+			print_tsmux_wfdlogger(TSMUX_DBG, "otf buf index is %d\n", index);
 			break;
 		}
 	}
 	if (index == -1) {
-		print_tsmux(TSMUX_ERR, "no otf free buffer, buf status %d %d %d %d\n",
+		print_tsmux_wfdlogger(TSMUX_ERR, "no otf free buffer, buf status %d %d %d %d\n",
 			ctx->otf_outbuf_info[0].buf_state, ctx->otf_outbuf_info[1].buf_state,
 			ctx->otf_outbuf_info[2].buf_state, ctx->otf_outbuf_info[3].buf_state);
-		print_tsmux(TSMUX_ERR, "no otf free buffer, job_queued %lld, job_done %lld\n",
+		print_tsmux_wfdlogger(TSMUX_ERR, "no otf free buffer, job_queued %lld, job_done %lld\n",
 			ctx->otf_job_queued_count, ctx->otf_job_done_count);
 		ret = -1;
 		spin_unlock_irqrestore(&g_tsmux_dev->device_spinlock, flags);
@@ -1412,7 +1422,7 @@ int tsmux_packetize(struct packetizing_param *param)
 	psi_validation = 1;
 	if (is_psi_invalid(ctx->psi_info.pat_len, ctx->psi_info.pmt_len, ctx->psi_info.pcr_len))
 		psi_validation = 0;
-	print_tsmux(TSMUX_DBG, "pkt_ctrl.psi_en %d, psi_validation %d\n",
+	print_tsmux_wfdlogger(TSMUX_DBG, "pkt_ctrl.psi_en %d, psi_validation %d\n",
 		ctx->otf_cmd_queue.config.pkt_ctrl.psi_en, psi_validation);
 
 	if (ctx->otf_cmd_queue.config.pkt_ctrl.psi_en == 1 && psi_validation) {
@@ -1420,7 +1430,7 @@ int tsmux_packetize(struct packetizing_param *param)
 		/* PAT CC should be set by tsmux device driver */
 		set_psi_continuity_counter(psi_data, &ctx->rtp_ts_info.ts_pat_cc);
 		increment_ts_continuity_counter(&ctx->rtp_ts_info.ts_pat_cc);
-		print_tsmux(TSMUX_DBG, "ts pat %.2x %.2x %.2x %.2x, ts_pat_cc %.2x, pat_len %d\n",
+		print_tsmux_wfdlogger(TSMUX_DBG, "ts pat %.2x %.2x %.2x %.2x, ts_pat_cc %.2x, pat_len %d\n",
 			psi_data[0], psi_data[1], psi_data[2], psi_data[3],
 			ctx->rtp_ts_info.ts_pat_cc, ctx->psi_info.pat_len);
 		psi_data += ctx->psi_info.pat_len;
@@ -1428,7 +1438,7 @@ int tsmux_packetize(struct packetizing_param *param)
 		/* PMT CC should be set by tsmux device driver */
 		set_psi_continuity_counter(psi_data, &ctx->rtp_ts_info.ts_pmt_cc);
 		increment_ts_continuity_counter(&ctx->rtp_ts_info.ts_pmt_cc);
-		print_tsmux(TSMUX_DBG, "ts pmt %.2x %.2x %.2x %.2x, ts_pmt_cc %.2x, pmt_len %d\n",
+		print_tsmux_wfdlogger(TSMUX_DBG, "ts pmt %.2x %.2x %.2x %.2x, ts_pmt_cc %.2x, pmt_len %d\n",
 			psi_data[0], psi_data[1], psi_data[2], psi_data[3],
 			ctx->rtp_ts_info.ts_pmt_cc, ctx->psi_info.pmt_len);
 		psi_data += ctx->psi_info.pmt_len;
@@ -1438,7 +1448,7 @@ int tsmux_packetize(struct packetizing_param *param)
 		pcr_base = pcr / 300;
 		pcr_ext = pcr % 300;
 
-		print_tsmux(TSMUX_DBG, "pcr header %.2x %.2x %.2x %.2x %.2x %.2x\n",
+		print_tsmux_wfdlogger(TSMUX_DBG, "pcr header %.2x %.2x %.2x %.2x %.2x %.2x\n",
 			psi_data[0], psi_data[1], psi_data[2],
 			psi_data[3], psi_data[4], psi_data[5]);
 
@@ -1467,16 +1477,16 @@ int tsmux_packetize(struct packetizing_param *param)
 		config->pkt_ctrl.rtp_seq_override = 1;
 		config->ts_hdr.continuity_counter = ctx->rtp_ts_info.ts_video_cc;
 		ctx->rtp_ts_info.rtp_seq_override = 0;
-		print_tsmux(TSMUX_DBG, "otf job_queue, seq 0x%x\n",
+		print_tsmux_wfdlogger(TSMUX_DBG, "otf job_queue, seq 0x%x\n",
 			ctx->rtp_ts_info.rtp_seq_number);
 	} else {
 		config->pkt_ctrl.rtp_seq_override = 0;
 	}
 	config->ts_hdr.continuity_counter = ctx->rtp_ts_info.ts_video_cc;
-	print_tsmux(TSMUX_DBG, "otf job_queue, v_cc 0x%x\n",
+	print_tsmux_wfdlogger(TSMUX_DBG, "otf job_queue, v_cc 0x%x\n",
 		ctx->rtp_ts_info.ts_video_cc);
 
-	print_tsmux(TSMUX_DBG, "otf_dummy_ts_packet %d\n", ctx->otf_dummy_ts_packet);
+	print_tsmux_wfdlogger(TSMUX_DBG, "otf_dummy_ts_packet %d\n", ctx->otf_dummy_ts_packet);
 	if (ctx->otf_dummy_ts_packet)
 		ctx->otf_cmd_queue.config.pkt_ctrl.rtp_size = TS_PKT_COUNT_PER_RTP - 1;
 	else
@@ -1496,9 +1506,11 @@ int tsmux_packetize(struct packetizing_param *param)
 		ctx->otf_cmd_queue.out_buf[index].partial_done = 0;
 		ctx->otf_outbuf_info[index].buf_state = BUF_Q;
 		ctx->otf_job_queued_count++;
-		print_tsmux(TSMUX_DBG, "otf buf status: BUF_FREE -> BUF_Q, index: %d\n", index);
+		print_tsmux_wfdlogger(TSMUX_DBG, "otf buf status: BUF_FREE -> BUF_Q, index: %d\n", index);
 	}
 	ctx->otf_cmd_queue.out_buf[index].es_size = 0;
+
+	print_tsmux_wfdlogger(TSMUX_DBG, "----\n");
 
 	spin_unlock_irqrestore(&g_tsmux_dev->device_spinlock, flags);
 
@@ -1515,54 +1527,54 @@ void tsmux_print_context_info(struct tsmux_context *ctx)
 	struct tsmux_buffer_info *buf_info = NULL;
 	struct tsmux_buffer *buf = NULL;
 
-	print_tsmux(TSMUX_ERR, "++\n");
+	print_tsmux_wfdlogger(TSMUX_ERR, "++\n");
 
 	if (ctx == NULL) {
-		print_tsmux(TSMUX_ERR, "tsmux ctx is null\n");
+		print_tsmux_wfdlogger(TSMUX_ERR, "tsmux ctx is null\n");
 		return;
 	}
 
 	for (i = 0; i < TSMUX_OUT_BUF_CNT; i++) {
 		buf_info = &ctx->otf_outbuf_info[i];
 		buf = &ctx->otf_cmd_queue.out_buf[i];
-		print_tsmux(TSMUX_ERR,
+		print_tsmux_wfdlogger(TSMUX_ERR,
 				"otf_outbuf_info[%d] buf_state: %d\n",
 				i, buf_info->buf_state);
-		print_tsmux(TSMUX_ERR,
+		print_tsmux_wfdlogger(TSMUX_ERR,
 				"otf_outbuf_info[%d] fd: %d, buffer_size: %d, actual_size: %d, offset: %d\n",
 				i, buf->ion_buf_fd, buf->buffer_size,
 				buf->actual_size, buf->offset);
-		print_tsmux(TSMUX_ERR,
+		print_tsmux_wfdlogger(TSMUX_ERR,
 				"otf_outbuf_info[%d] job_done: %d, part_done: %d, timestamp: %lld\n",
 				i, buf->job_done, buf->partial_done, buf->time_stamp);
-		print_tsmux(TSMUX_ERR,
+		print_tsmux_wfdlogger(TSMUX_ERR,
 				"otf_psi_enabled[%d]: %d\n", i, ctx->otf_psi_enabled[i]);
 	}
 
-	print_tsmux(TSMUX_ERR, "set_hex_info: %d\n", ctx->set_hex_info);
+	print_tsmux_wfdlogger(TSMUX_ERR, "set_hex_info: %d\n", ctx->set_hex_info);
 
 	for (i = 0; i < TSMUX_MAX_M2M_CMD_QUEUE_NUM; i++) {
 		buf = &ctx->m2m_cmd_queue.m2m_job[i].in_buf;
-		print_tsmux(TSMUX_ERR,
+		print_tsmux_wfdlogger(TSMUX_ERR,
 				"m2m_inbuf_info[%d] fd: %d, buffer_size: %d, actual_size: %d\n",
 				i, buf->ion_buf_fd, buf->buffer_size, buf->actual_size);
 		buf = &ctx->m2m_cmd_queue.m2m_job[i].out_buf;
-		print_tsmux(TSMUX_ERR,
+		print_tsmux_wfdlogger(TSMUX_ERR,
 				"m2m_outbuf_info[%d] fd: %d, buffer_size: %d, actual_size: %d, time_stamp: %lld\n",
 				i, buf->ion_buf_fd, buf->buffer_size, buf->actual_size, buf->time_stamp);
-		print_tsmux(TSMUX_ERR,
+		print_tsmux_wfdlogger(TSMUX_ERR,
 				"m2m_job_done[%d]: %d\n", i, ctx->m2m_job_done[i]);
 	}
 
-	print_tsmux(TSMUX_ERR,
+	print_tsmux_wfdlogger(TSMUX_ERR,
 			"rtp_ts_info: rtp 0x%x, overr %d, pat_cc 0x%x, pmt_cc 0x%x, v_cc 0x%x, a_cc 0x%x\n",
 			ctx->rtp_ts_info.rtp_seq_number, ctx->rtp_ts_info.rtp_seq_override,
 			ctx->rtp_ts_info.ts_pat_cc, ctx->rtp_ts_info.ts_pmt_cc,
 			ctx->rtp_ts_info.ts_video_cc, ctx->rtp_ts_info.ts_audio_cc);
-	print_tsmux(TSMUX_ERR, "audio_frame_cnt: %lld, video_frame_cnt: %lld\n",
+	print_tsmux_wfdlogger(TSMUX_ERR, "audio_frame_cnt: %lld, video_frame_cnt: %lld\n",
 			ctx->audio_frame_count, ctx->video_frame_count);
 
-	print_tsmux(TSMUX_ERR, "--\n");
+	print_tsmux_wfdlogger(TSMUX_ERR, "--\n");
 }
 
 void tsmux_sfr_dump(void)
@@ -1583,6 +1595,7 @@ void tsmux_sfr_dump(void)
 	tsmux_dev = ctx->tsmux_dev;
 
 	spin_lock_irqsave(&tsmux_dev->device_spinlock, flags);
+	print_tsmux_wfdlogger(TSMUX_ERR, "++++\n");
 
 	prev_tsmux_debug_level = g_tsmux_debug_level;
 	g_tsmux_debug_level = TSMUX_DBG_SFR;
@@ -1594,6 +1607,7 @@ void tsmux_sfr_dump(void)
 	g_tsmux_debug_level = prev_tsmux_debug_level;
 	tsmux_set_debug_level(g_tsmux_debug_level);
 
+	print_tsmux_wfdlogger(TSMUX_ERR, "----\n");
 	spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
 
 	print_tsmux(TSMUX_ERR, "--\n");
@@ -1610,9 +1624,9 @@ static int get_job_done_buf(struct tsmux_context *ctx)
 	int64_t oldest_timestamp = 0;
 	int oldest_index = -1;
 
-	print_tsmux(TSMUX_DBG, "++\n");
-
 	spin_lock_irqsave(&tsmux_dev->device_spinlock, flags);
+
+	print_tsmux_wfdlogger(TSMUX_DBG, "++\n");
 
 	for (i = 0; i < TSMUX_OUT_BUF_CNT; i++) {
 		out_buf_info = &ctx->otf_outbuf_info[i];
@@ -1620,7 +1634,7 @@ static int get_job_done_buf(struct tsmux_context *ctx)
 
 		if ((out_buf_info->buf_state == BUF_PART_DONE && user_info->partial_done) ||
 				out_buf_info->buf_state == BUF_JOB_DONE) {
-			print_tsmux(TSMUX_DBG, "buf %d is job_done/part_done, timestamp %lld\n",
+			print_tsmux_wfdlogger(TSMUX_DBG, "buf %d is job_done/part_done, timestamp %lld\n",
 				i, ctx->otf_cmd_queue.out_buf[i].time_stamp);
 			if (oldest_timestamp == 0 || oldest_timestamp > ctx->otf_cmd_queue.out_buf[i].time_stamp) {
 				oldest_timestamp = ctx->otf_cmd_queue.out_buf[i].time_stamp;
@@ -1630,15 +1644,15 @@ static int get_job_done_buf(struct tsmux_context *ctx)
 	}
 
 	if (oldest_index >= 0) {
-		print_tsmux(TSMUX_DBG, "oldest job_done/part_done buf is %d, timestamp %lld\n",
+		print_tsmux_wfdlogger(TSMUX_DBG, "oldest job_done/part_done buf is %d, timestamp %lld\n",
 			oldest_index, ctx->otf_cmd_queue.out_buf[oldest_index].time_stamp);
 	} else {
-		print_tsmux(TSMUX_DBG, "no job_done/part_done buf\n");
+		print_tsmux_wfdlogger(TSMUX_DBG, "no job_done/part_done buf\n");
 	}
 
-	spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
+	print_tsmux_wfdlogger(TSMUX_DBG, "--\n");
 
-	print_tsmux(TSMUX_DBG, "--\n");
+	spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
 
 	return oldest_index;
 }
@@ -1661,7 +1675,7 @@ void tsmux_set_es_size(unsigned int size)
 		return;
 	}
 
-	ctx = g_tsmux_dev->ctx[g_tsmux_dev->ctx_cur];
+	ctx = g_tsmux_dev->ctx[TSMUX_CUR_CONTEXTS_NUM];
 
 	spin_lock_irqsave(&g_tsmux_dev->device_spinlock, flags);
 
@@ -1674,9 +1688,9 @@ void tsmux_set_es_size(unsigned int size)
 
 	if (count == 1) {
 		ctx->otf_cmd_queue.out_buf[index].es_size = size;
-		print_tsmux(TSMUX_DBG, "index %d, es_size %d\n", index, size);
+		print_tsmux_wfdlogger(TSMUX_DBG, "index %d, es_size %d\n", index, size);
 	} else {
-		print_tsmux(TSMUX_ERR, "BUF_JOB_DONE count %d\n", count);
+		print_tsmux_wfdlogger(TSMUX_ERR, "BUF_JOB_DONE count %d\n", count);
 	}
 	spin_unlock_irqrestore(&g_tsmux_dev->device_spinlock, flags);
 }
@@ -1938,10 +1952,11 @@ int tsmux_ioctl_set_psi_info(struct tsmux_context *ctx, struct tsmux_psi_info *a
 	tsmux_dev = ctx->tsmux_dev;
 
 	spin_lock_irqsave(&tsmux_dev->device_spinlock, flags);
+	print_tsmux_wfdlogger(TSMUX_DBG, "++++\n");
 	memcpy(&ctx->psi_info, &temp_psi_info, sizeof(struct tsmux_psi_info));
 	tsmux_set_psi_info(tsmux_dev, &ctx->psi_info);
+	print_tsmux_wfdlogger(TSMUX_DBG, "----\n");
 	spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
-
 
 	print_tsmux(TSMUX_DBG, "--\n");
 
@@ -1968,9 +1983,9 @@ static int tsmux_ioctl_otf_dq_buf(struct tsmux_context *ctx, struct tsmux_otf_cm
 	/* Next ts packet's CC is increased by 1 */
 	int offset_ts_video_cc = 1;
 
-	print_tsmux(TSMUX_DBG, "++\n");
-
 	spin_lock_irqsave(&tsmux_dev->device_spinlock, flags);
+	print_tsmux_wfdlogger(TSMUX_DBG, "++\n");
+
 	if (g_tsmux_test_error == TSMUX_ERR_TEST) {
 		tsmux_dev->error = -TSMUX_ERR_TEST;
 		g_tsmux_log_level = TSMUX_DBG_SFR;
@@ -1978,7 +1993,7 @@ static int tsmux_ioctl_otf_dq_buf(struct tsmux_context *ctx, struct tsmux_otf_cm
 	}
 
 	if (tsmux_dev->error != TSMUX_OK) {
-		print_tsmux(TSMUX_ERR, "error was occurred (%d), will be swiching to GGWFD\n", tsmux_dev->error);
+		print_tsmux_wfdlogger(TSMUX_ERR, "error was occurred (%d), will be swiching to GGWFD\n", tsmux_dev->error);
 		spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
 		return -EFAULT;
 	}
@@ -1986,7 +2001,7 @@ static int tsmux_ioctl_otf_dq_buf(struct tsmux_context *ctx, struct tsmux_otf_cm
 	// dq_buf wait time should be 100ms ~ 3sec
 	if (ctx->otf_cmd_queue.max_otf_job_done_wait_time_us < 100000 ||
 			ctx->otf_cmd_queue.max_otf_job_done_wait_time_us > 3000000) {
-		print_tsmux(TSMUX_ERR, "max_otf_job_done_wait_time_us: %lld\n",
+		print_tsmux_wfdlogger(TSMUX_ERR, "max_otf_job_done_wait_time_us: %lld\n",
 				ctx->otf_cmd_queue.max_otf_job_done_wait_time_us);
 		if (ctx->otf_cmd_queue.max_otf_job_done_wait_time_us < 100000)
 			ctx->otf_cmd_queue.max_otf_job_done_wait_time_us = 100000;
@@ -2005,7 +2020,7 @@ static int tsmux_ioctl_otf_dq_buf(struct tsmux_context *ctx, struct tsmux_otf_cm
 		spin_lock_irqsave(&tsmux_dev->device_spinlock, flags);
 
 		if (tsmux_dev->error != TSMUX_OK) {
-			print_tsmux(TSMUX_ERR, "error was occurred (%d), will be swiching to GGWFD\n", tsmux_dev->error);
+			print_tsmux_wfdlogger(TSMUX_ERR, "error was occurred (%d), will be swiching to GGWFD\n", tsmux_dev->error);
 			spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
 			return -EFAULT;
 		}
@@ -2015,19 +2030,19 @@ static int tsmux_ioctl_otf_dq_buf(struct tsmux_context *ctx, struct tsmux_otf_cm
 			if (timestamp >= ctx->otf_cmd_queue.max_otf_job_done_wait_time_us)
 				time_out = true;
 		}
-		print_tsmux(TSMUX_DBG, "dq buf wait_time: %ld\n", wait_time);
+		print_tsmux_wfdlogger(TSMUX_DBG, "dq buf wait_time: %ld\n", wait_time);
 		if (time_out) {
 			if (ctx->otf_job_queued_count > 0) {
 				ctx->remain_logging_frame = MAX_LOGGING_FRAME_COUNT;
 				g_tsmux_log_level = TSMUX_DBG;
 				tsmux_set_log_level(g_tsmux_log_level);
-				print_tsmux(TSMUX_ERR, "dq_buf time out, buf status %d %d %d %d\n",
+				print_tsmux_wfdlogger(TSMUX_ERR, "dq_buf time out, buf status %d %d %d %d\n",
 						ctx->otf_outbuf_info[0].buf_state, ctx->otf_outbuf_info[1].buf_state,
 						ctx->otf_outbuf_info[2].buf_state, ctx->otf_outbuf_info[3].buf_state);
-				print_tsmux(TSMUX_ERR, "dq_buf time out, job_queued %lld, job_done %lld\n",
+				print_tsmux_wfdlogger(TSMUX_ERR, "dq_buf time out, job_queued %lld, job_done %lld\n",
 						ctx->otf_job_queued_count, ctx->otf_job_done_count);
 			} else {
-				print_tsmux(TSMUX_INFO, "packetize is not requested, yet\n");
+				print_tsmux_wfdlogger(TSMUX_INFO, "packetize is not requested, yet\n");
 			}
 			spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
 			break;
@@ -2049,8 +2064,8 @@ static int tsmux_ioctl_otf_dq_buf(struct tsmux_context *ctx, struct tsmux_otf_cm
 	}
 
 	if (wait_time > 0 || index != -1) {
-		print_tsmux(TSMUX_DBG, "dq buf index: %d\n", index);
 		spin_lock_irqsave(&tsmux_dev->device_spinlock, flags);
+		print_tsmux_wfdlogger(TSMUX_DBG, "dq buf index: %d\n", index);
 		ctx->otf_cmd_queue.cur_buf_num = index;
 		ctx->otf_cmd_queue.out_buf[index].partial_done = 0;
 
@@ -2081,16 +2096,16 @@ static int tsmux_ioctl_otf_dq_buf(struct tsmux_context *ctx, struct tsmux_otf_cm
 			temp_p += out_size - 188;
 			last_ts_video_cc = (*(temp_p + 3) & 0xf);
 			if (((last_ts_video_cc + offset_ts_video_cc) & 0xF) != ctx->rtp_ts_info.ts_video_cc) {
-				print_tsmux(TSMUX_ERR, "1st cc %.2x last cc %.2x, cc %.2x, out_size %d, rtp_size %d, psi %d\n",
+				print_tsmux_wfdlogger(TSMUX_ERR, "1st cc %.2x last cc %.2x, cc %.2x, out_size %d, rtp_size %d, psi %d\n",
 						first_ts_video_cc, last_ts_video_cc, ctx->rtp_ts_info.ts_video_cc,
 						out_size, rtp_size, ctx->otf_psi_enabled[index]);
 			}
 
-			print_tsmux(TSMUX_DBG, "otf job_done, last ts %.2x %.2x %.2x %.2x\n",
+			print_tsmux_wfdlogger(TSMUX_DBG, "otf job_done, last ts %.2x %.2x %.2x %.2x\n",
 					*(temp_p), *(temp_p + 1), *(temp_p + 2), *(temp_p + 3));
-			print_tsmux(TSMUX_DBG, "otf job_done, cur rtp seq 0x%x, next rtp seq 0x%x\n",
+			print_tsmux_wfdlogger(TSMUX_DBG, "otf job_done, cur rtp seq 0x%x, next rtp seq 0x%x\n",
 					cur_rtp_seq_num, ctx->rtp_ts_info.rtp_seq_number);
-			print_tsmux(TSMUX_DBG, "otf job_done, cur v_cc 0x%x, next v_cc 0x%x\n",
+			print_tsmux_wfdlogger(TSMUX_DBG, "otf job_done, cur v_cc 0x%x, next v_cc 0x%x\n",
 					cur_ts_video_cc, ctx->rtp_ts_info.ts_video_cc);
 
 			ctx->otf_outbuf_info[index].buf_state = BUF_DQ;
@@ -2112,7 +2127,7 @@ static int tsmux_ioctl_otf_dq_buf(struct tsmux_context *ctx, struct tsmux_otf_cm
 			timestamp = ktime_to_us(ktime);
 			ctx->otf_cmd_queue.out_buf[index].kernel_end_stamp = timestamp;
 
-			print_tsmux(TSMUX_DBG, "mfc_encoding_index %d, es_size %d, blending %lld %lld\n",
+			print_tsmux_wfdlogger(TSMUX_DBG, "mfc_encoding_index %d, es_size %d, blending %lld %lld\n",
 					ctx->mfc_encoding_index,
 					ctx->otf_cmd_queue.out_buf[index].es_size,
 					ctx->otf_cmd_queue.out_buf[index].blending_start_stamp,
@@ -2126,6 +2141,7 @@ static int tsmux_ioctl_otf_dq_buf(struct tsmux_context *ctx, struct tsmux_otf_cm
 			}
 		}
 
+		print_tsmux(TSMUX_DBG, "----\n");
 		spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
 
 		if (copy_to_user(arg, &ctx->otf_cmd_queue, sizeof(struct tsmux_otf_cmd_queue))) {
@@ -2162,6 +2178,7 @@ static int tsmux_ioctl_otf_q_buf(struct tsmux_context *ctx, int32_t *arg)
 	}
 
 	spin_lock_irqsave(&tsmux_dev->device_spinlock, flags);
+	print_tsmux_wfdlogger(TSMUX_DBG, "++++\n");
 
 	ctx->otf_cmd_queue.cur_buf_num = temp_cur_buf_num;
 
@@ -2170,15 +2187,16 @@ static int tsmux_ioctl_otf_q_buf(struct tsmux_context *ctx, int32_t *arg)
 		if (ctx->otf_outbuf_info[index].buf_state == BUF_DQ) {
 			ctx->otf_outbuf_info[index].buf_state = BUF_FREE;
 			ctx->otf_cmd_queue.out_buf[index].es_size = 0;
-			print_tsmux(TSMUX_DBG, "otf buf status: BUF_FREE, index: %d\n", index);
+			print_tsmux_wfdlogger(TSMUX_DBG, "otf buf status: BUF_FREE, index: %d\n", index);
 		} else {
-			print_tsmux(TSMUX_ERR, "otf buf unexpected state: %d\n",
+			print_tsmux_wfdlogger(TSMUX_ERR, "otf buf unexpected state: %d\n",
 				ctx->otf_outbuf_info[index].buf_state);
 		}
 	} else {
-		print_tsmux(TSMUX_ERR, "otf buf index is invalid %d\n", index);
+		print_tsmux_wfdlogger(TSMUX_ERR, "otf buf index is invalid %d\n", index);
 	}
 
+	print_tsmux_wfdlogger(TSMUX_DBG, "----\n");
 	spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
 
 	print_tsmux(TSMUX_DBG, "--\n");
@@ -2200,7 +2218,9 @@ static int tsmux_ioctl_otf_set_config(struct tsmux_context *ctx, struct tsmux_ot
 	}
 
 	spin_lock_irqsave(&tsmux_dev->device_spinlock, flags);
+	print_tsmux_wfdlogger(TSMUX_DBG, "++++\n");
 	memcpy(&ctx->otf_cmd_queue.config, &temp_otf_config, sizeof(struct tsmux_otf_config));
+	print_tsmux_wfdlogger(TSMUX_DBG, "----\n");
 	spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
 
 	print_tsmux(TSMUX_DBG, "--\n");
@@ -2221,7 +2241,9 @@ static int tsmux_ioctl_set_rtp_ts_info(struct tsmux_context *ctx, struct tsmux_r
 		return -EFAULT;
 	}
 	spin_lock_irqsave(&tsmux_dev->device_spinlock, flags);
+	print_tsmux_wfdlogger(TSMUX_DBG, "++++\n");
 	memcpy(&ctx->rtp_ts_info, &temp_rtp_ts_info, sizeof(struct tsmux_rtp_ts_info));
+	print_tsmux_wfdlogger(TSMUX_DBG, "----\n");
 	spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
 
 	print_tsmux(TSMUX_DBG, "set, rtp 0x%x, overr %d, pat_cc 0x%x, pmt_cc 0x%x, v_cc 0x%x, a_cc 0x%x\n",
@@ -2341,8 +2363,10 @@ static int tsmux_ioctl_otf_map_buf(struct tsmux_context *ctx, struct tsmux_otf_c
 	}
 
 	spin_lock_irqsave(&tsmux_dev->device_spinlock, flags);
+	print_tsmux_wfdlogger(TSMUX_DBG, "++++\n");
 	memcpy(&ctx->otf_cmd_queue, &temp_otf_cmd_queue,
 			sizeof(struct tsmux_otf_cmd_queue));
+	print_tsmux_wfdlogger(TSMUX_DBG, "----\n");
 	spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
 
 	print_tsmux(TSMUX_DBG, "map otf out_buf\n");
@@ -2809,12 +2833,14 @@ static int tsmux_itmon_notifier(struct notifier_block *nb, unsigned long action,
 		print_tsmux(TSMUX_ERR, "ITMON error is occurred\n");
 
 		spin_lock_irqsave(&tsmux_dev->device_spinlock, flags);
+		print_tsmux_wfdlogger(TSMUX_ERR, "++++\n");
 		tsmux_dev->error = -TSMUX_ERR_ITMON;
 		g_tsmux_log_level = TSMUX_DBG_SFR;
 		tsmux_set_log_level(g_tsmux_log_level);
 		del_timer(&tsmux_dev->watchdog_timer);
-		ctx = tsmux_dev->ctx[tsmux_dev->ctx_cur];
+		ctx = tsmux_dev->ctx[TSMUX_CUR_CONTEXTS_NUM];
 		wake_up_interruptible(&ctx->otf_wait_queue);
+		print_tsmux_wfdlogger(TSMUX_ERR, "----\n");
 		spin_unlock_irqrestore(&tsmux_dev->device_spinlock, flags);
 		tsmux_sfr_dump();
 		return ITMON_SKIP_MASK;
@@ -2906,7 +2932,7 @@ static int tsmux_probe(struct platform_device *pdev)
 
 	dma_set_mask(&pdev->dev, DMA_BIT_MASK(32));
 
-	tsmux_dev->ctx_cnt = 0;
+	atomic_set(&tsmux_dev->ctx_num, 0);
 
 	tsmux_dev->dev = &pdev->dev;
 	tsmux_dev->misc_dev.minor = MISC_DYNAMIC_MINOR;

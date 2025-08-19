@@ -32,6 +32,7 @@ snd-soc-samsung-abox-$(CONFIG_SND_SOC_SAMSUNG_ABOX_ATUNE) += abox_atune.o
 snd-soc-samsung-abox-gic-$(CONFIG_SND_SOC_SAMSUNG_ABOX) += abox_gic.o abox_util.o
 
 snd-soc-samsung-abox-sync-$(CONFIG_SEC_SND_SYNCHRONIZED_IPC) += abox_synchronized_ipc.o
+snd-soc-samsung-abox-sync-ti-$(CONFIG_SEC_SND_SYNCHRONIZED_IPC_TI) += abox_synchronized_ipc_ti.o
 
 snd-soc-samsung-abox-$(CONFIG_SND_SOC_SAMSUNG_ABOX) += abox_util.o \
 	abox_dbg.o abox_dump.o abox_log.o abox.o abox_core.o abox_rdma.o\
@@ -43,5 +44,6 @@ snd-soc-samsung-abox-$(CONFIG_SND_SOC_SAMSUNG_ABOX) += abox_util.o \
 obj-$(CONFIG_SND_SOC_SAMSUNG_ABOX) += snd-soc-samsung-abox-gic.o snd-soc-samsung-abox.o
 
 obj-$(CONFIG_SEC_SND_SYNCHRONIZED_IPC) += snd-soc-samsung-abox-sync.o
+obj-$(CONFIG_SEC_SND_SYNCHRONIZED_IPC_TI) += snd-soc-samsung-abox-sync-ti.o
 
 obj-$(CONFIG_SEC_SND_ADAPTATION) += abox_adaptation.o

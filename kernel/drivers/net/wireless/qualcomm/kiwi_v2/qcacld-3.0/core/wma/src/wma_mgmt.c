@@ -90,6 +90,7 @@
 #include "wlan_cm_api.h"
 #include "wlan_mlo_link_force.h"
 #include <target_if_spatial_reuse.h>
+#include "wlan_nan_api_i.h"
 
 /* Max debug string size for WMM in bytes */
 #define WMA_WMM_DEBUG_STRING_SIZE    512
@@ -872,10 +873,14 @@ void wma_set_sta_keep_alive(tp_wma_handle wma, uint8_t vdev_id,
 	params.timeperiod = timeperiod;
 	if (intr) {
 		if (intr->bss_max_idle_period) {
-			params.timeperiod = intr->bss_max_idle_period;
+			if (intr->bss_max_idle_period < timeperiod)
+				params.timeperiod = intr->bss_max_idle_period;
+			
 			if (method == WMI_KEEP_ALIVE_NULL_PKT)
 				params.method = WMI_KEEP_ALIVE_MGMT_FRAME;
 		}
+
+		wlan_mlme_set_keepalive_period(intr->vdev, params.timeperiod);
 	}
 
 	if (hostv4addr)
@@ -3321,7 +3326,8 @@ int wma_process_rmf_frame(tp_wma_handle wma_handle,
 			return -EINVAL;
 		}
 
-		if (iface->type == WMI_VDEV_TYPE_NDI) {
+		if (iface->type == WMI_VDEV_TYPE_NDI ||
+		    iface->type == WMI_VDEV_TYPE_NAN) {
 			hdr_len = IEEE80211_CCMP_HEADERLEN;
 			mic_len = IEEE80211_CCMP_MICLEN;
 		} else {
@@ -3472,14 +3478,16 @@ wma_check_and_process_rmf_frame(tp_wma_handle wma_handle,
 	struct ieee80211_frame *hdr = *wh;
 
 	iface = &(wma_handle->interfaces[vdev_id]);
-	if (iface->type != WMI_VDEV_TYPE_NDI && !iface->rmfEnabled)
+	if ((iface->type != WMI_VDEV_TYPE_NDI &&
+	     iface->type != WMI_VDEV_TYPE_NAN) && !iface->rmfEnabled)
 		return 0;
 
 	if (qdf_is_macaddr_group((struct qdf_mac_addr *)(hdr->i_addr1)) ||
 	    qdf_is_macaddr_broadcast((struct qdf_mac_addr *)(hdr->i_addr1)) ||
 	    wma_get_peer_pmf_status(wma_handle, hdr->i_addr2) ||
-	    (iface->type == WMI_VDEV_TYPE_NDI &&
-	    (hdr->i_fc[1] & IEEE80211_FC1_WEP))) {
+	    ((iface->type == WMI_VDEV_TYPE_NDI ||
+	      iface->type == WMI_VDEV_TYPE_NAN) &&
+	     (hdr->i_fc[1] & IEEE80211_FC1_WEP))) {
 		status = wma_process_rmf_frame(wma_handle, iface, hdr,
 					       rx_pkt, buf);
 		if (status)
@@ -3683,6 +3691,21 @@ int wma_form_rx_packet(qdf_nbuf_t buf,
 								 buf);
 			if (status)
 				return status;
+		} else if (mgt_subtype == MGMT_SUBTYPE_ACTION) {
+			/* NAN Action frame */
+			vdev_id = wlan_nan_get_vdev_id_from_bssid(
+							wma_handle->pdev,
+							wh->i_addr3,
+							WLAN_ACTION_OUI_ID);
+
+			if (vdev_id != WMA_INVALID_VDEV_ID) {
+				status = wma_check_and_process_rmf_frame(
+								wma_handle,
+								vdev_id, &wh,
+								rx_pkt, buf);
+				if (status)
+					return status;
+			}
 		}
 	}
 

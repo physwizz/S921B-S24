@@ -549,9 +549,11 @@ static int devfreq_sgpu_func(struct devfreq *df, unsigned long *freq)
 			      (unsigned long)HZ_PER_KHZ * qos_min_freq);
 	data->min_freq = min(data->max_freq, data->min_freq);
 
-	if (data->in_suspend) {
-		*freq = max(data->min_freq, min(data->max_freq,	df->resume_freq));
-		df->resume_freq = *freq;
+	/* in suspend or power_off*/
+	if (atomic_read(&df->suspend_count) > 0) {
+		df->resume_freq = max(data->min_freq,
+				min(data->max_freq, df->resume_freq));
+		*freq = 0;
 		df->suspend_freq = 0;
 		return 0;
 	}
@@ -669,6 +671,7 @@ static int devfreq_sgpu_handler(struct devfreq *df, unsigned int event, void *da
 		governor_data->cl_boost_status = false;
 #ifdef CONFIG_DRM_SGPU_EXYNOS
 		gpu_dvfs_update_time_in_state(df->previous_freq);
+		df->previous_freq = 0;
 #endif /* CONFIG_DRM_SGPU_EXYNOS */
 		break;
 	case DEVFREQ_GOV_RESUME:
@@ -751,8 +754,6 @@ int sgpu_governor_change(struct devfreq *df, char *str_governor)
 
 #define DVFS_TABLE_ROW_MAX			1
 #define DEFAULT_GOVERNOR			SGPU_DVFS_GOVERNOR_CONSERVATIVE
-#define DEFAULT_POLLING_MS			32
-#define DEFAULT_VALID_TIME			32
 #define DEFAULT_INITIAL_FREQ			26000
 #define DEFAULT_HIGHSPEED_FREQ			500000
 #define DEFAULT_HIGHSPEED_LOAD			99
@@ -860,7 +861,7 @@ int sgpu_governor_init(struct device *dev, struct devfreq_dev_profile *dp,
 #endif /* CONFIG_DRM_SGPU_EXYNOS*/
 
 	dp->initial_freq = DEFAULT_INITIAL_FREQ;
-	dp->polling_ms = DEFAULT_POLLING_MS;
+	dp->polling_ms = sgpu_devfreq_polling_ms;
 	dp->max_state = DVFS_TABLE_ROW_MAX;
 	data = kzalloc(sizeof(struct sgpu_governor_data), GFP_KERNEL);
 	if (!data) {
@@ -872,7 +873,7 @@ int sgpu_governor_init(struct device *dev, struct devfreq_dev_profile *dp,
 	sgpu_governor_dt_preparse(dev, dp, data);
 	data->governor = &governor_info[DEFAULT_GOVERNOR];
 	data->wakeup_lock = true;
-	data->valid_time = DEFAULT_VALID_TIME;
+	data->valid_time = sgpu_devfreq_polling_ms;
 	data->in_suspend = false;
 	data->adev = adev;
 	data->power_ratio = DEFAULT_POWER_RATIO;

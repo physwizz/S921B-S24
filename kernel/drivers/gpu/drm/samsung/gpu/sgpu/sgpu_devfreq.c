@@ -19,6 +19,7 @@
 #include "sgpu_user_interface.h"
 #include "sgpu_utilization.h"
 #include "amdgpu_trace.h"
+#include "sgpu_power_trace.h"
 
 #ifdef CONFIG_DRM_SGPU_EXYNOS
 #if IS_ENABLED(CONFIG_CAL_IF)
@@ -131,6 +132,7 @@ int sgpu_dm_freq_scaler(int dm_type, void *devdata, u32 target_freq, unsigned in
 {
 	struct sgpu_governor_data *data = devdata;
 	struct devfreq *df = data->devfreq;
+	struct amdgpu_device *adev = data->adev;
 	int i;
 
 	if (!df || !df->profile)
@@ -142,7 +144,8 @@ int sgpu_dm_freq_scaler(int dm_type, void *devdata, u32 target_freq, unsigned in
 	}
 
 	data->old_freq = target_freq;
-
+	trace_gpu_frequency(0, target_freq);
+	SGPU_LOG(adev, DMSG_INFO, DMSG_DVFS, "noti_freq:%u", target_freq);
 	return 0;
 }
 #endif /* CONFIG_EXYNOS_ESCA_DVFS_MANAGER */

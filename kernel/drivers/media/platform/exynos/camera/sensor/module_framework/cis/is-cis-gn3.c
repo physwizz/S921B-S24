@@ -37,7 +37,11 @@
 #include "is-resourcemgr.h"
 #include "is-dt.h"
 #include "is-cis-gn3.h"
+#ifndef USE_GN3_RMSC_ARTIFACT
 #include "is-cis-gn3-setA-19p2.h"
+#else
+#include "is-cis-gn3-setB-19p2.h"
+#endif
 #include "is-helper-ixc.h"
 #ifdef CONFIG_CAMERA_VENDOR_MCD
 #include "is-sec-define.h"
@@ -1962,8 +1966,8 @@ int sensor_gn3_cis_set_group_param_hold(struct v4l2_subdev *subdev, bool hold)
 	struct is_cis *cis = sensor_cis_get_cis(subdev);
 	cis_shared_data *cis_data = cis->cis_data;
 
-	if (cis_data->sens_config_index_cur != SENSOR_GN3_2040X1532_120FPS
-		&& cis_data->cur_hdr_mode != SENSOR_HDR_MODE_2AEB_2VC) {
+	if (cis_data->cur_hdr_mode != SENSOR_HDR_MODE_2AEB_2VC
+		&& cis_data->pre_hdr_mode != SENSOR_HDR_MODE_2AEB_2VC) {
 		ret = sensor_cis_set_group_param_hold(subdev, hold);
 
 		/* GN3 need skip N+1 control after update seamless at N frame */
@@ -2073,8 +2077,16 @@ static int cis_gn3_probe_i2c(struct i2c_client *client,
 	if (mclk_freq_khz == 19200) {
 		if (strcmp(setfile, "default") == 0 || strcmp(setfile, "setA") == 0) {
 			probe_info("%s setfile_A mclk: 19.2MHz\n", __func__);
+#ifndef USE_GN3_RMSC_ARTIFACT
 			cis->sensor_info = &sensor_gn3_info_A_19p2;
+#endif
 		}
+#ifdef USE_GN3_RMSC_ARTIFACT
+		else if (strcmp(setfile, "setB") == 0) {
+			probe_info("%s setfile_B mclk: 19.2MHz\n", __func__);
+			cis->sensor_info = &sensor_gn3_info_B_19p2;
+		}
+#endif
 	}
 
 	is_vendor_set_mipi_mode(cis);

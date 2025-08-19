@@ -172,16 +172,16 @@ static inline void mfc_core_start_bus(struct mfc_core *core)
 
 static inline void mfc_core_mfc_off(struct mfc_core *core)
 {
-	mfc_core_debug(3, "MFC_OFF 1\n");
-	MFC_TRACE_CORE(">> MFC OFF 1\n");
+	mfc_core_debug(3, "MFC_OFF 1(off)\n");
+	MFC_TRACE_CORE(">> MFC OFF 1(off)\n");
 	MFC_CORE_WRITEL(0x1, MFC_REG_MFC_OFF);
 }
 
 static inline void mfc_core_mfc_on(struct mfc_core *core)
 {
 	MFC_CORE_WRITEL(0x0, MFC_REG_MFC_OFF);
-	mfc_core_debug(3, "MFC_OFF 0\n");
-	MFC_TRACE_CORE(">> MFC OFF 0\n");
+	mfc_core_debug(3, "MFC_OFF 0(on)\n");
+	MFC_TRACE_CORE(">> MFC OFF 0(on)\n");
 }
 
 static inline void mfc_core_risc_on(struct mfc_core *core)

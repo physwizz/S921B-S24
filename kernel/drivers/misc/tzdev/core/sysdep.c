@@ -146,3 +146,14 @@ struct file *sysdep_get_exe_file(struct task_struct *task)
 	return get_mm_exe_file(task->mm);
 #endif
 }
+
+void sysdep_vm_flags_mod(struct vm_area_struct *vma,
+		vm_flags_t set, vm_flags_t clear)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+	vma->vm_flags |= set;
+	vma->vm_flags &= ~clear;
+#else
+	vm_flags_mod(vma, set, clear);
+#endif
+}

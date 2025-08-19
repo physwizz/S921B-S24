@@ -24,25 +24,7 @@
 
 struct npu_afm npu_afm;
 
-#if IS_ENABLED(CONFIG_SOC_S5E9945)
-static const u32 NPU_AFM_FREQ_LEVEL[] = {
-	1300000,
-	1200000,
-	1066000,
-	935000,
-	800000,
-};
-#else // IS_ENABLED(CONFIG_SOC_S5E8845)
-static const u32 NPU_AFM_FREQ_LEVEL[] = {
-	1066000,
-	800000,
-	666000,
-};
-#endif
-
 static struct npu_afm_tdc tdc_state[NPU_AFM_FREQ_LEVEL_CNT];
-
-static void __npu_afm_work(const char *ip, int freq);
 
 #if IS_ENABLED(CONFIG_SOC_S5E9935)
 extern int sub_pmic_update_reg(struct i2c_client *i2c, u8 reg, u8 val, u8 mask);
@@ -86,7 +68,7 @@ static int npu_afm_sub_pmic_get_i2c(struct i2c_client **i2c)
 }
 #endif
 
-static void npu_afm_control_grobal(struct npu_system *system,
+void npu_afm_control_global(struct npu_system *system,
 					int location, int enable)
 {
 	if (location == HTU_DNC) {
@@ -110,12 +92,12 @@ static u32 npu_afm_check_dnc_itr(void)
 	return npu_cmd_map(npu_afm.npu_afm_system, "chkdncitr");
 }
 
-static void npu_afm_clear_dnc_interrupt(void)
+void npu_afm_clear_dnc_interrupt(void)
 {
 	npu_cmd_map(npu_afm.npu_afm_system, "clrdncitr");
 }
 
-static void npu_afm_onoff_dnc_interrupt(int enable)
+void npu_afm_onoff_dnc_interrupt(int enable)
 {
 	if (enable)
 		npu_cmd_map(npu_afm.npu_afm_system, "endncitr");
@@ -149,12 +131,12 @@ static u32 npu_afm_check_gnpu1_itr(void)
 	return npu_cmd_map(npu_afm.npu_afm_system, "chkgnpu1itr");
 }
 
-static void npu_afm_clear_gnpu1_interrupt(void)
+void npu_afm_clear_gnpu1_interrupt(void)
 {
 	npu_cmd_map(npu_afm.npu_afm_system, "clrgnpu1itr");
 }
 
-static void npu_afm_onoff_gnpu1_interrupt(int enable)
+void npu_afm_onoff_gnpu1_interrupt(int enable)
 {
 	if (enable)
 		npu_cmd_map(npu_afm.npu_afm_system, "engnpu1itr");
@@ -330,7 +312,7 @@ static u32 npu_afm_get_next_freq(const char *ip, int next)
 	return freq;
 }
 
-static void __npu_afm_work(const char *ip, int freq)
+void __npu_afm_work(const char *ip, int freq)
 {
 	struct npu_scheduler_dvfs_info *d;
 	struct npu_scheduler_info *info;
@@ -474,7 +456,7 @@ void npu_afm_open(struct npu_system *system, int hid)
 		return;
 	}
 
-	npu_afm_control_grobal(system, HTU_DNC, NPU_AFM_ENABLE);
+	npu_afm_control_global(system, HTU_DNC, NPU_AFM_ENABLE);
 	npu_afm_onoff_dnc_interrupt(NPU_AFM_ENABLE);
 
 	if (npu_afm.afm_local_onoff) {
@@ -500,7 +482,7 @@ void npu_afm_open(struct npu_system *system, int hid)
 					(S2MPS_AFM_WARN_EN | system->afm_buck_level[npu_idx]));
 		}
 
-		npu_afm_control_grobal(system, HTU_GNPU1, NPU_AFM_ENABLE);
+		npu_afm_control_global(system, HTU_GNPU1, NPU_AFM_ENABLE);
 		npu_afm_onoff_gnpu1_interrupt(NPU_AFM_ENABLE);
 	} else if (hid & NPU_HWDEV_ID_DSP) {
 		/* TODO */
@@ -534,7 +516,7 @@ void npu_afm_close(struct npu_system *system, int hid)
 {
 	int npu_idx = 0;
 
-	npu_afm_control_grobal(system, HTU_DNC, NPU_AFM_DISABLE);
+	npu_afm_control_global(system, HTU_DNC, NPU_AFM_DISABLE);
 
 	if (npu_afm.afm_local_onoff) {
 		npu_afm_sub_pmic_update_reg(system->i2c,
@@ -558,7 +540,7 @@ void npu_afm_close(struct npu_system *system, int hid)
 					system->afm_buck_offset[npu_idx],
 					S2MPS_AFM_WARN_DEFAULT_LVL);
 		}
-		npu_afm_control_grobal(system, HTU_GNPU1, NPU_AFM_DISABLE);
+		npu_afm_control_global(system, HTU_GNPU1, NPU_AFM_DISABLE);
 	}
 #endif
 

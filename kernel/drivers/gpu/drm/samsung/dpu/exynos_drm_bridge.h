@@ -61,6 +61,7 @@ struct exynos_drm_bridge_funcs {
 	void (*reset)(struct exynos_drm_bridge *bridge);
 	void (*psr_stop)(struct exynos_drm_bridge *bridge);
 	void (*psr_start)(struct exynos_drm_bridge *bridge);
+	void (*lastclose)(struct exynos_drm_bridge *bridge);
 };
 
 /*

@@ -397,6 +397,53 @@ out:
 	return ret;
 }
 
+/* mem_boost throttles only kswapd's behavior */
+enum refill_mode_state {
+	ALLOW_REFILL,
+	BLOCK_REFILL = 1
+};
+
+static int refill_mode = ALLOW_REFILL;
+static unsigned long last_mode_change;
+
+#define BLOCK_REFILL_MAX_TIME (5 * HZ) /* 5 sec */
+
+inline bool is_refill_blocked(void)
+{
+	if (time_after(jiffies, last_mode_change + BLOCK_REFILL_MAX_TIME))
+		refill_mode = ALLOW_REFILL;
+
+	if (refill_mode >= BLOCK_REFILL)
+		return true;
+	else
+		return false;
+}
+
+static ssize_t refill_mode_show(struct kobject *kobj,
+				    struct kobj_attribute *attr, char *buf)
+{
+	if (time_after(jiffies, last_mode_change + BLOCK_REFILL_MAX_TIME))
+		refill_mode = ALLOW_REFILL;
+	return sprintf(buf, "%d\n", refill_mode);
+}
+
+static ssize_t refill_mode_store(struct kobject *kobj,
+				     struct kobj_attribute *attr,
+				     const char *buf, size_t count)
+{
+	int mode;
+	int err;
+
+	err = kstrtoint(buf, 10, &mode);
+
+	if (err || mode > BLOCK_REFILL || mode < ALLOW_REFILL)
+		return -EINVAL;
+
+	refill_mode = mode;
+	last_mode_change = jiffies;
+	return count;
+}
+
 /*
  * function for cleancache_ops->put_page
  * Though it might fail, it does not matter since Cleancache does not
@@ -410,6 +457,9 @@ static void rc_store_page(int pool_id, struct cleancache_filekey key,
 	bool zero;
 
 	if (!current_is_kswapd())
+		return;
+
+	if (is_refill_blocked())
 		return;
 
 	atomic_inc(&rc_num_puts);
@@ -762,10 +812,13 @@ static ssize_t mem_boost_mode_store(struct kobject *kobj,
 
 static struct kobj_attribute stats_attr = __ATTR_RO(stats);
 static struct kobj_attribute mem_boost_mode_attr = __ATTR_RW(mem_boost_mode);
+static struct kobj_attribute refill_mode_attr = __ATTR_RW(refill_mode);
+
 
 static struct attribute *rbincache_attrs[] = {
 	&stats_attr.attr,
 	&mem_boost_mode_attr.attr,
+	&refill_mode_attr.attr,
 	NULL,
 };
 

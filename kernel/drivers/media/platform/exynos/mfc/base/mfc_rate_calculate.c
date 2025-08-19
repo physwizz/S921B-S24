@@ -561,7 +561,7 @@ void mfc_rate_update_framerate(struct mfc_ctx *ctx)
 		if (ctx->rt == MFC_NON_RT) {
 			if (framerate < ctx->src_q_framerate) {
 				framerate = ctx->src_q_framerate;
- 				if (framerate != ctx->framerate)
+				if (framerate != ctx->framerate)
 					mfc_ctx_debug(2, "[QoS][PRIO] NRT src_q fps %ld\n",
 							framerate);
 			}
@@ -617,18 +617,18 @@ void mfc_rate_update_bufq_framerate(struct mfc_ctx *ctx, int type)
 	time.tv_nsec = timestamp - (time.tv_sec * NSEC_PER_SEC);
 
 	if (type == MFC_TS_DST_Q) {
- 		ctx->dst_q_framerate = __mfc_rate_get_fps_by_timestamp(ctx, &ctx->dst_q_ts, &time,
- 				MFC_TS_DST_Q);
+		ctx->dst_q_framerate = __mfc_rate_get_fps_by_timestamp(ctx, &ctx->dst_q_ts, &time,
+				MFC_TS_DST_Q);
 		mfc_ctx_debug(5, "[QoS] dst_q_framerate = %lu\n", ctx->dst_q_framerate);
 	}
 	if (type == MFC_TS_DST_DQ) {
- 		ctx->dst_dq_framerate = __mfc_rate_get_fps_by_timestamp(ctx, &ctx->dst_dq_ts, &time,
- 				MFC_TS_DST_DQ);
+		ctx->dst_dq_framerate = __mfc_rate_get_fps_by_timestamp(ctx, &ctx->dst_dq_ts, &time,
+				MFC_TS_DST_DQ);
 		mfc_ctx_debug(5, "[QoS] dst_dq_framerate = %lu\n", ctx->dst_dq_framerate);
 	}
 	if (type == MFC_TS_SRC_Q) {
- 		ctx->src_q_framerate = __mfc_rate_get_fps_by_timestamp(ctx, &ctx->src_q_ts, &time,
- 				MFC_TS_SRC_Q);
+		ctx->src_q_framerate = __mfc_rate_get_fps_by_timestamp(ctx, &ctx->src_q_ts, &time,
+				MFC_TS_SRC_Q);
 		mfc_ctx_debug(5, "[QoS] src_q_framerate = %lu\n", ctx->src_q_framerate);
 	}
 }

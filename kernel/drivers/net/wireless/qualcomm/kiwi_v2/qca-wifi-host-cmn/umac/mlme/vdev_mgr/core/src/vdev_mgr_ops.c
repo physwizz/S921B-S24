@@ -646,6 +646,8 @@ static QDF_STATUS vdev_mgr_stop_param_update(
 	}
 
 	param->vdev_id = wlan_vdev_get_id(vdev);
+	param->is_mlo_link_switch =
+		wlan_vdev_mlme_is_mlo_link_switch_in_progress(vdev);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -698,6 +700,7 @@ static QDF_STATUS vdev_mgr_up_param_update(
 	struct vdev_mlme_mbss_11ax *mbss;
 	struct wlan_objmgr_vdev *vdev;
 	uint8_t bssid[QDF_MAC_ADDR_SIZE];
+	struct qdf_mac_addr bcast_mac = QDF_MAC_ADDR_BCAST_INIT;
 
 	vdev = mlme_obj->vdev;
 	param->vdev_id = wlan_vdev_get_id(vdev);
@@ -705,11 +708,25 @@ static QDF_STATUS vdev_mgr_up_param_update(
 
 	mbss = &mlme_obj->mgmt.mbss_11ax;
 	wlan_vdev_mgr_get_param_bssid(vdev, bssid);
-	if (qdf_mem_cmp(bssid, mbss->non_trans_bssid, QDF_MAC_ADDR_SIZE))
-		return QDF_STATUS_SUCCESS;
 
+	if (wlan_vdev_mlme_get_opmode(vdev) != QDF_SAP_MODE) {
+		mlme_debug("trans BSSID " QDF_MAC_ADDR_FMT " non-trans BSSID " QDF_MAC_ADDR_FMT " profile_num %d, profile_idx %d",
+			   QDF_MAC_ADDR_REF(mbss->trans_bssid),
+			   QDF_MAC_ADDR_REF(mbss->non_trans_bssid),
+			  mbss->profile_idx, mbss->profile_num);
+		if (!qdf_mem_cmp(bcast_mac.bytes, mbss->trans_bssid,
+				 QDF_MAC_ADDR_SIZE))
+			goto update_tx_prof;
+
+		if ((qdf_mem_cmp(bssid, mbss->trans_bssid, QDF_MAC_ADDR_SIZE)) &&
+		    (qdf_mem_cmp(bssid, mbss->non_trans_bssid, QDF_MAC_ADDR_SIZE)))
+			return QDF_STATUS_SUCCESS;
+	}
+
+update_tx_prof:
 	param->profile_idx = mbss->profile_idx;
 	param->profile_num = mbss->profile_num;
+
 	qdf_mem_copy(param->trans_bssid, mbss->trans_bssid, QDF_MAC_ADDR_SIZE);
 
 	return QDF_STATUS_SUCCESS;

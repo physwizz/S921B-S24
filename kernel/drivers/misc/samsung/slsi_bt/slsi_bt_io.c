@@ -140,8 +140,15 @@ static void slsi_bt_error_packet_ready(void)
 		else
 			kfree_skb(skb);
 	}
-	skb_queue_tail(&bt_trans.recv_q, syserr_info_packet());
-	skb_queue_tail(&bt_trans.recv_q, hw_error_packet());
+
+	skb = syserr_info_packet();
+	if (skb)
+		skb_queue_tail(&bt_trans.recv_q, skb);
+
+	skb = hw_error_packet();
+	if (skb)
+		skb_queue_tail(&bt_trans.recv_q, skb);
+
 	mutex_unlock(&bt_trans.recv_q_lock);
 }
 

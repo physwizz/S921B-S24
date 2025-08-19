@@ -272,11 +272,11 @@ void platform_mif_get_msi_range(struct scsc_mif_abs *interface, u8 *start, u8 *e
 	pcie_get_msi_range(platform->pcie, start, end, target);
 }
 
-__iomem void *platform_get_scoreboard(struct scsc_mif_abs *interface)
+__iomem void *platform_get_ramrp_ptr(struct scsc_mif_abs *interface)
 {
 	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
 
-	return pcie_get_scoreboard(platform->pcie);
+	return pcie_get_ramrp_ptr(platform->pcie);
 }
 
 int platform_get_ramrp_buff(struct scsc_mif_abs *interface, void** buff, int count, u64 offset)
@@ -284,13 +284,6 @@ int platform_get_ramrp_buff(struct scsc_mif_abs *interface, void** buff, int cou
 	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
 
 	return pcie_get_ramrp_buff(platform->pcie, buff, count, offset);
-}
-
-int platform_get_scoreboard_ref(struct scsc_mif_abs *interface, __iomem void *addr, uintptr_t *addr_ref)
-{
-	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
-
-	return pcie_get_scoreboard_ref(platform->pcie, addr, addr_ref);
 }
 
 int scsc_pcie_complete(void)

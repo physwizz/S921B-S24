@@ -68,6 +68,7 @@ static struct dbg_snapshot_item dss_items[] = {
 	[DSS_ITEM_ARRDUMP_PANIC_ID] = {DSS_ITEM_ARRDUMP_PANIC, {0, 0, 0, false}, false, NULL, NULL},
 	[DSS_ITEM_FIRST_ID]	= {DSS_ITEM_FIRST,	{0, 0, 0, false}, false, NULL, NULL},
 	[DSS_ITEM_BACKTRACE_ID]	= {DSS_ITEM_BACKTRACE,	{0, 0, 0, false}, false, NULL, NULL},
+	[DSS_ITEM_WDTMSG_ID]	= {DSS_ITEM_WDTMSG,	{0, 0, 0, false}, false, NULL, NULL},
 };
 
 /*  External interface variable for trace debugging */
@@ -998,35 +999,11 @@ static ssize_t dss_dpm_none_dump_mode_store(struct device *dev,
 	return count;
 }
 
-static ssize_t dss_logging_item_show(struct device *dev,
-				struct device_attribute *attr, char *buf)
-{
-	int i;
-	ssize_t n = 0;
-
-	if (!dbg_snapshot_get_enable())
-		goto out;
-
-	n += scnprintf(buf + n, PAGE_SIZE, "item_count: %d\n",
-			dss_bl->item_count);
-	for (i = 0; i < dss_bl->item_count; i++) {
-		n += scnprintf(buf + n, PAGE_SIZE - n,
-				"%s paddr: 0x%lX / size: 0x%zX\n",
-				dss_bl->item[i].name,
-				dss_bl->item[i].paddr,
-				dss_bl->item[i].size);
-	}
-out:
-	return n;
-}
-
 DEVICE_ATTR_RW(dss_panic_to_wdt);
 DEVICE_ATTR_RW(dss_dpm_none_dump_mode);
-DEVICE_ATTR_RO(dss_logging_item);
 
 static struct attribute *dss_sysfs_attrs[] = {
 	&dev_attr_dss_dpm_none_dump_mode.attr,
-	&dev_attr_dss_logging_item.attr,
 	&dev_attr_dss_panic_to_wdt.attr,
 	NULL,
 };
@@ -1115,7 +1092,7 @@ static void register_kmsg(struct device *dev)
 	}
 }
 
-static void exynos_arm64_serror_panic_rvh(void *data, struct pt_regs *regs, unsigned long esr)
+static void __maybe_unused exynos_arm64_serror_panic_rvh(void *data, struct pt_regs *regs, unsigned long esr)
 {
 	console_unlock();
 }
@@ -1154,8 +1131,10 @@ static int dbg_snapshot_probe(struct platform_device *pdev)
 
 	dbg_snapshot_set_version();
 
+#if IS_ENABLED(CONFIG_TRACEPOINTS) && IS_ENABLED(CONFIG_ANDROID_VENDOR_HOOKS)
 	if (register_trace_android_rvh_arm64_serror_panic(exynos_arm64_serror_panic_rvh, NULL))
 		dev_err(dss_desc.dev, "Failed to register_trace_android_rvh_gic_v3_set_affinity\n");
+#endif
 
 	if (register_dss_builtin_wdt(&pdev->dev))
 		dev_err(dss_desc.dev, "Failed to register dss builtin wdt\n");

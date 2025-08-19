@@ -114,6 +114,19 @@ static inline void get_fuse_backing_path(const struct dentry *d,
 }
 #endif
 
+/* Submount lookup tracking */
+struct fuse_submount_lookup {
+	/** Refcount */
+	refcount_t count;
+
+	/** Unique ID, which identifies the inode between userspace
+	 * and kernel */
+	u64 nodeid;
+
+	/** The request used for sending the FORGET message */
+	struct fuse_forget_link *forget;
+};
+
 /** FUSE inode */
 struct fuse_inode {
 	/** Inode data */
@@ -220,6 +233,8 @@ struct fuse_inode {
 	 */
 	struct fuse_inode_dax *dax;
 #endif
+	/** Submount specific lookup tracking */
+	struct fuse_submount_lookup *submount_lookup;
 };
 
 /** FUSE inode state bits */
@@ -804,6 +819,9 @@ struct fuse_conn {
 	/** Is bmap not implemented by fs? */
 	unsigned no_bmap:1;
 
+	/** Is dentry_canonical_path not implemented by fs? */
+	unsigned no_dentry_canonical_path:1;
+
 	/** Is poll not implemented by fs? */
 	unsigned no_poll:1;
 
@@ -940,6 +958,10 @@ struct fuse_conn {
 
 	/** Protects passthrough_req */
 	spinlock_t passthrough_req_lock;
+
+#ifdef CONFIG_FUSE_WATCHDOG
+	struct task_struct *watchdog_thread;
+#endif
 };
 
 /*
@@ -1012,7 +1034,6 @@ static inline bool fuse_stale_inode(const struct inode *inode, int generation,
 
 static inline void fuse_make_bad(struct inode *inode)
 {
-	remove_inode_hash(inode);
 	set_bit(FUSE_I_BAD, &get_fuse_inode(inode)->state);
 }
 
@@ -2096,5 +2117,10 @@ static inline int fuse_bpf_run(struct bpf_prog *prog, struct fuse_bpf_args *fba)
 })
 
 #endif /* CONFIG_FUSE_BPF */
+
+#ifdef CONFIG_FUSE_WATCHDOG
+/* watchdog.c */
+void fuse_daemon_watchdog_start(struct fuse_conn *fc);
+#endif
 
 #endif /* _FS_FUSE_I_H */

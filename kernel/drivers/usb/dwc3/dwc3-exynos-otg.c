@@ -51,6 +51,10 @@
 #if IS_ENABLED(CONFIG_USB_CONFIGFS_F_SS_MON_GADGET)
 #include <linux/usb/f_ss_mon_gadget.h>
 #endif
+#if IS_ENABLED(CONFIG_USB_NOTIFY_LAYER)
+#include <linux/usb_notify.h>
+#endif
+
 #define LINK_DEBUG_L		(0x0C)
 #define LINK_DEBUG_H		(0x10)
 #define BUS_ACTIVITY_CHECK	(0x3F << 16)
@@ -60,6 +64,8 @@ extern int otg_connection;
 extern int is_otg_only;
 
 struct dwc3_exynos *g_dwc3_exynos;
+
+extern bool g_vbus_active;
 
 /* -------------------------------------------------------------------------- */
 #if defined(CONFIG_OTG_DEFAULT)
@@ -467,14 +473,12 @@ static int dwc3_otg_start_host(struct otg_fsm *fsm, int on)
 #endif
 		pr_info("exynos RPM Usage Count: %d\n", atomic_read(&exynos->dev->power.usage_count));
 		wait_counter = 0;
-		if (dotg->dwc3_suspended != USB_NORMAL) {
-			while (!pm_runtime_suspended(exynos->dev)) {
-				msleep(5);
-				pr_info("%s: wait AP resume, %d!\n", __func__, wait_counter++);
-				if (wait_counter >= 10) {
-					pr_info("%s: Can't wait AP resume break!\n", __func__);
-					break;
-				}
+		while (!pm_runtime_suspended(exynos->dev)) {
+			msleep(20);
+			pr_info("%s: sleep 20ms to wait for suspend, %d!\n", __func__, wait_counter++);
+			if (wait_counter >= MAX_WAIT_SUSPEND_CNT) {
+				pr_info("%s: Can't wait for suspend\n", __func__);
+				break;
 			}
 		}
 		dotg->dwc3_suspended = USB_NORMAL;
@@ -499,11 +503,13 @@ static int dwc3_otg_start_host(struct otg_fsm *fsm, int on)
 			goto err2;
 		}
 
-		pr_info("%s: usb_role_switch_set_role = DWC3_GCTL_PRTCAP_HOST\n", __func__);
-		usb_role_switch_set_role(dwc->role_sw, DWC3_GCTL_PRTCAP_HOST);
-
 		dwc3_exynos_core_init(dwc, exynos);
 		dwc3_bus_control(exynos, 1);
+
+		dwc3_core_susphy_set(dwc, 1);
+
+		pr_info("%s: usb_role_switch_set_role = DWC3_GCTL_PRTCAP_HOST\n", __func__);
+		usb_role_switch_set_role(dwc->role_sw, DWC3_GCTL_PRTCAP_HOST);
 
 		schedule_delayed_work(&g_dwc3_exynos->usb_qos_lock_delayed_work,
 				msecs_to_jiffies(3000));
@@ -725,12 +731,10 @@ static int dwc3_otg_start_gadget(struct otg_fsm *fsm, int on)
 #endif
 	if (on) {
 		__pm_stay_awake(dotg->wakelock);
-		pr_info("%s: usb_role_switch_set_role = DWC3_GCTL_PRTCAP_DEVICE\n", __func__);
 
 		/* update phy tune value before phy_enable */
 		dwc3_otg_phy_tune(fsm);
 
-		usb_role_switch_set_role(dwc->role_sw, DWC3_GCTL_PRTCAP_DEVICE);
 		if (dotg->pm_qos_hsi0_val) {
 			dev_info(dev, "pm_qos set hsi0 value = %d\n", dotg->pm_qos_hsi0_val);
 #if IS_ENABLED(CONFIG_EXYNOS_PM_QOS)
@@ -754,14 +758,12 @@ static int dwc3_otg_start_gadget(struct otg_fsm *fsm, int on)
 
 		pr_info("exynos RPM Usage Count: %d\n", atomic_read(&exynos->dev->power.usage_count));
 		wait_counter = 0;
-		if (dotg->dwc3_suspended != USB_NORMAL) {
-			while (!pm_runtime_suspended(exynos->dev)) {
-				msleep(5);
-				pr_info("%s: wait AP resume, %d!\n", __func__, wait_counter++);
-				if (wait_counter >= 10) {
-					pr_info("%s: Can't wait AP resume break!\n", __func__);
-					break;
-				}
+		while (!pm_runtime_suspended(exynos->dev)) {
+			msleep(20);
+			pr_info("%s: sleep 20ms to wait for suspend, %d!\n", __func__, wait_counter++);
+			if (wait_counter >= MAX_WAIT_SUSPEND_CNT) {
+				pr_info("%s: Can't wait for suspend\n", __func__);
+				break;
 			}
 		}
 		dotg->dwc3_suspended = USB_NORMAL;
@@ -831,6 +833,13 @@ static int dwc3_otg_start_gadget(struct otg_fsm *fsm, int on)
 		 * the following function.
 		 */
 		dwc3_exynos_gadget_disconnect_proc(dwc);
+
+		if (dwc->ep0state != EP0_SETUP_PHASE ||
+				atomic_read(&dev->power.usage_count) > 1) {
+			pr_info("usb: %s: dwc->ep0state=%d, dep->flags=%d\n",
+				__func__, dwc->ep0state, dwc->eps[0]->flags);
+			usb_ep_set_halt(&(dwc->eps[0]->endpoint));
+		}
 
 		extra_delay = dwc3_check_extra_work(dwc);
 		if (extra_delay)
@@ -964,6 +973,11 @@ dwc3_otg_store_b_sess(struct device *dev,
 		return -EINVAL;
 	}
 
+	if (is_blocked(get_otg_notify(), NOTIFY_BLOCK_TYPE_CLIENT)) {
+		mutex_unlock(&fsm->lock);
+		return NOTIFY_OK;
+	}
+
 	fsm->b_sess_vld = !!b_sess_vld;
 	mutex_unlock(&fsm->lock);
 
@@ -997,6 +1011,9 @@ dwc3_otg_store_id(struct device *dev,
 		return -EINVAL;
 
 	if (!exynos->usb_data_enabled)
+		return NOTIFY_OK;
+
+	if (is_blocked(get_otg_notify(), NOTIFY_BLOCK_TYPE_HOST))
 		return NOTIFY_OK;
 
 	fsm->id = !!id;
@@ -1091,14 +1108,49 @@ static ssize_t usb_data_enabled_store(struct device *dev, struct device_attribut
 				      const char *buf, size_t n)
 {
 	struct dwc3_exynos *exynos = dev_get_drvdata(dev);
+	struct otg_fsm	*fsm = &exynos->dotg->fsm;
 	bool enabled = true;
+#if IS_ENABLED(CONFIG_USB_NOTIFY_LAYER)
+	unsigned long usb_notify;
+	int usb_notify_state;
+	static int prev_enabled = -1;
+#endif
 
 	if (kstrtobool(buf, &enabled))
 		return -EINVAL;
 
+#if IS_ENABLED(CONFIG_USB_NOTIFY_LAYER)
+	if (is_blocked(get_otg_notify(), NOTIFY_BLOCK_TYPE_CLIENT))
+		return NOTIFY_OK;
+#endif
+
 	exynos->usb_data_enabled = enabled;
 
-	pr_info(" Turn %s\n", enabled ? "on" : "off");
+	if ((enabled == 1) && (g_vbus_active == 1))
+	{
+		if (fsm->b_sess_vld != g_vbus_active) {
+			mutex_lock(&fsm->lock);
+			fsm->b_sess_vld = g_vbus_active;
+			mutex_unlock(&fsm->lock);
+			dwc3_otg_run_sm(fsm);
+		}
+	}
+
+#if IS_ENABLED(CONFIG_USB_NOTIFY_LAYER)
+	usb_notify = NOTIFY_EVENT_ALL_DISABLE;
+	if (prev_enabled != enabled) {
+		if (enabled)
+			usb_notify_state = NOTIFY_EVENT_DISABLING;
+		else
+			usb_notify_state = NOTIFY_EVENT_ENABLING;
+
+		store_usblog_notify(NOTIFY_EVENT,
+			(void *)&usb_notify, (void *)&usb_notify_state);
+		prev_enabled = enabled;
+	}
+#endif
+
+	pr_info("%s Turn %s\n", __func__, enabled ? "on" : "off");
 	return n;
 }
 static DEVICE_ATTR_RW(usb_data_enabled);
@@ -1336,7 +1388,7 @@ int dwc3_exynos_otg_init(struct dwc3 *dwc, struct dwc3_exynos *exynos)
 	exynos->dotg = dotg;
 	dotg->dwc = dwc;
 	dotg->exynos = exynos;
-	dev_info(dwc->dev, "%s, dotg = %8llx\n", __func__, (u64)exynos->dotg);
+	dev_info(dwc->dev, "%s, dotg = %pK\n", __func__, exynos->dotg);
 
 	ret = of_property_read_u32(dwc->dev->of_node,
 				"usb-pm-qos-hsi0", &dotg->pm_qos_hsi0_val);

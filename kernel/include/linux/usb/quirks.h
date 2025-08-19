@@ -72,6 +72,9 @@
 /* device has endpoints that should be ignored */
 #define USB_QUIRK_ENDPOINT_IGNORE		BIT(15)
 
+/* short SET_ADDRESS request timeout */
+#define USB_QUIRK_SHORT_SET_ADDRESS_REQ_TIMEOUT	BIT(16)
+
 #if defined(CONFIG_USB_HOST_SAMSUNG_FEATURE)
 /* Hub can't support usb suspend */
 #define USB_QUIRK_HUB_NO_SUSPEND		BIT(20)

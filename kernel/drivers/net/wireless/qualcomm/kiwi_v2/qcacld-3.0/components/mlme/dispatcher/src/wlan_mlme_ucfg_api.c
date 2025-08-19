@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -249,17 +249,7 @@ QDF_STATUS
 ucfg_mlme_get_sta_keep_alive_period(struct wlan_objmgr_psoc *psoc,
 				    uint32_t *val)
 {
-	struct wlan_mlme_psoc_ext_obj *mlme_obj;
-
-	mlme_obj = mlme_get_psoc_ext_obj(psoc);
-	if (!mlme_obj) {
-		*val = cfg_default(CFG_INFRA_STA_KEEP_ALIVE_PERIOD);
-		return QDF_STATUS_E_INVAL;
-	}
-
-	*val = mlme_obj->cfg.sta.sta_keep_alive_period;
-
-	return QDF_STATUS_SUCCESS;
+	return wlan_mlme_get_sta_keep_alive_period(psoc, val);
 }
 
 QDF_STATUS
@@ -414,64 +404,15 @@ QDF_STATUS ucfg_mlme_update_bss_rate_flags(struct wlan_objmgr_psoc *psoc,
 
 QDF_STATUS
 ucfg_mlme_send_ch_width_update_with_notify(struct wlan_objmgr_psoc *psoc,
-					   uint8_t vdev_id,
+					   struct wlan_objmgr_vdev *link_vdev,
 					   enum phy_ch_width ch_width,
-					   uint8_t link_id)
+					   uint8_t link_vdev_id)
 {
-	struct wlan_objmgr_vdev *vdev;
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
-	enum QDF_OPMODE op_mode;
-	struct wlan_objmgr_vdev *link_vdev;
-	bool is_mlo_link = false;
-	uint8_t link_vdev_id;
-	enum phy_ch_width new_ch_width;
-
-	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(psoc, vdev_id,
-						    WLAN_MLME_OBJMGR_ID);
-	if (!vdev) {
-		mlme_legacy_err("vdev %d: vdev not found", vdev_id);
-		return QDF_STATUS_E_FAILURE;
-	}
-
-	op_mode = wlan_vdev_mlme_get_opmode(vdev);
-	if (op_mode != QDF_STA_MODE) {
-		mlme_legacy_debug("vdev %d: op mode %d, CW update not supported",
-				  vdev_id, op_mode);
-		status = QDF_STATUS_E_NOSUPPORT;
-		goto release;
-	}
-
-	if (wlan_vdev_mlme_is_mlo_vdev(vdev) && link_id != 0xFF) {
-		link_vdev = mlo_get_vdev_by_link_id(vdev, link_id,
-						    WLAN_MLME_OBJMGR_ID);
-		if (!link_vdev) {
-			mlme_legacy_debug("vdev is null for the link id:%u",
-					  link_id);
-			goto release;
-		}
-		is_mlo_link = true;
-		link_vdev_id = wlan_vdev_get_id(link_vdev);
-
-		status = wlan_mlme_get_bw_no_punct(psoc,
-						   link_vdev,
-						   wlan_vdev_mlme_get_des_chan(link_vdev),
-						   &new_ch_width);
-		if (QDF_IS_STATUS_SUCCESS(status) && ch_width > new_ch_width)
-			ch_width = new_ch_width;
-	} else {
-		link_vdev = vdev;
-		link_vdev_id = vdev_id;
-		mlme_legacy_debug("vdev mlme is not mlo vdev");
-	}
 
 	status = wlan_mlme_send_ch_width_update_with_notify(psoc, link_vdev,
 							    link_vdev_id,
 							    ch_width);
-	if (is_mlo_link)
-		wlan_objmgr_vdev_release_ref(link_vdev, WLAN_MLME_OBJMGR_ID);
-
-release:
-	wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_OBJMGR_ID);
 
 	return status;
 }
@@ -1981,7 +1922,13 @@ bool ucfg_mlme_validate_scan_period(struct wlan_objmgr_psoc *psoc,
 bool ucfg_mlme_get_coex_unsafe_chan_nb_user_prefer(
 		struct wlan_objmgr_psoc *psoc)
 {
-	return wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(psoc);
+	return wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(psoc);
+}
+
+bool ucfg_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(
+		struct wlan_objmgr_psoc *psoc)
+{
+	return wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(psoc);
 }
 
 bool ucfg_mlme_get_coex_unsafe_chan_reg_disable(
@@ -2147,3 +2094,38 @@ ucfg_mlme_get_valid_channels(struct wlan_objmgr_psoc *psoc,
 
 	return QDF_STATUS_SUCCESS;
 }
+
+QDF_STATUS
+ucfg_mlme_get_dfs_discard_mode(struct wlan_objmgr_psoc *psoc,
+			       uint8_t *val)
+{
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj) {
+		*val = cfg_default(CFG_DISCARD_DFS_CHANNEL_FOR_MODE);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	*val = mlme_obj->cfg.dfs_cfg.dfs_discard_mode;
+
+	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS
+ucfg_mlme_get_passive_discard_mode(struct wlan_objmgr_psoc *psoc,
+				   uint8_t *val)
+{
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj) {
+		*val = cfg_default(CFG_DISCARD_PASSIVE_CHANNEL_FOR_MODE);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	*val = mlme_obj->cfg.passive_chan_discard_mode;
+
+	return QDF_STATUS_SUCCESS;
+}
+

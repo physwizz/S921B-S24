@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2015-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -309,14 +309,6 @@ static void hdd_psoc_shutdown_notify(struct hdd_context *hdd_ctx)
 {
 	hdd_enter();
 	wlan_cfg80211_cleanup_scan_queue(hdd_ctx->pdev, NULL);
-
-	if (ucfg_ipa_is_enabled()) {
-		ucfg_ipa_uc_force_pipe_shutdown(hdd_ctx->pdev);
-
-		if (pld_is_fw_rejuvenate(hdd_ctx->parent_dev) ||
-		    pld_is_pdr(hdd_ctx->parent_dev))
-			ucfg_ipa_fw_rejuvenate_send_msg(hdd_ctx->pdev);
-	}
 
 	cds_shutdown_notifier_call();
 	cds_shutdown_notifier_purge();
@@ -2194,6 +2186,31 @@ static void wlan_hdd_pld_notify_handler(struct device *dev,
 	wlan_hdd_notify_handler(state);
 }
 
+#if defined(SEC_CONFIG_FORCE_CHANGE_BT_EN)
+/**
+ * hdd_send_bt_en_down_state_to_user() - API that conveys to userspace the status
+ * that the bt_en signal has been forced down by Wi-Fi
+ */
+static void hdd_send_bt_en_down_state_to_user(void)
+{
+       struct hdd_context *hdd_ctx;
+       enum qdf_hang_reason reason = QDF_PCI_LINK_DOWN_BT_EN_DOWN;
+
+       hdd_enter();
+
+       hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
+       if (!hdd_ctx) {
+               hdd_err("HDD Context is NULL");
+               return;
+       }
+
+       wlan_hdd_send_hang_reason_event(hdd_ctx, reason, "0", 1);
+
+       hdd_exit();
+       return;
+}
+#endif /* SEC_CONFIG_FORCE_CHANGE_BT_EN */
+
 /**
  * wlan_hdd_pld_uevent() - platform uevent handler
  * @dev: device on which the uevent occurred
@@ -2281,8 +2298,14 @@ wlan_hdd_pld_uevent(struct device *dev, struct pld_uevent_data *event_data)
 		 * Need to extend event buffer to define more bus info,
 		 * if need later.
 		 */
-		if (event_data->bus_data.etype == PLD_BUS_EVENT_PCIE_LINK_DOWN)
+		if (event_data->bus_data.etype == PLD_BUS_EVENT_PCIE_LINK_DOWN) {
 			host_log_device_status(WLAN_STATUS_BUS_EXCEPTION);
+		}
+#if defined(SEC_CONFIG_FORCE_CHANGE_BT_EN)
+		else if (event_data->bus_data.etype == PLD_BUS_EVENT_PCIE_LINK_DOWN_BT_EN_DOWN) {
+			hdd_send_bt_en_down_state_to_user();
+		}
+#endif /* SEC_CONFIG_FORCE_CHANGE_BT_EN */
 		break;
 	case PLD_SYS_REBOOT:
 		hdd_info("Received system reboot");

@@ -23,4 +23,9 @@ MODEL_VARIANT_MODULE_LIST = [
     "drivers/media/platform/exynos/camera/sensor/module_framework/flash/is-flash-s2mpb02-i2c.ko",
     "drivers/leds/leds-s2mpb02.ko",
     "drivers/gpu/drm/samsung/dpu/dp_ext_func/dp_ext_func.ko",
+    "sound/soc/samsung/exynos/exynos9945_audio.ko",
+    "drivers/firmware/cirrus/cs_dsp.ko",
+    "sound/soc/codecs/snd-soc-wm-adsp.ko",
+    "sound/soc/codecs/snd-soc-cirrus-amp.ko",
+    "sound/soc/codecs/snd-soc-cs35l43-i2c.ko",
 ]

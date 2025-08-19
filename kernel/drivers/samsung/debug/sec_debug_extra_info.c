@@ -23,7 +23,9 @@
 #include <linux/sec_debug.h>
 #include <asm/stacktrace.h>
 #include <asm/esr.h>
+#if IS_ENABLED(CONFIG_DEBUG_SNAPSHOT)
 #include <soc/samsung/exynos/debug-snapshot-log.h>
+#endif
 
 #include <trace/hooks/softlockup.h>
 #include <trace/hooks/traps.h>
@@ -1085,6 +1087,7 @@ void secdbg_exin_set_hardlockup_data(const char *str)
 }
 EXPORT_SYMBOL(secdbg_exin_set_hardlockup_data);
 
+#if IS_ENABLED(CONFIG_DEBUG_SNAPSHOT)
 void secdbg_exin_set_hardlockup_freq(const char *domain, struct freq_log *freq)
 {
 	void *p;
@@ -1118,6 +1121,7 @@ void secdbg_exin_set_hardlockup_freq(const char *domain, struct freq_log *freq)
 	set_item_val("HLFREQ", "%s", tmp);
 }
 EXPORT_SYMBOL(secdbg_exin_set_hardlockup_freq);
+#endif
 
 void secdbg_exin_set_hardlockup_ehld(unsigned int hl_info, unsigned int cpu)
 {
@@ -1604,6 +1608,7 @@ static struct notifier_block nb_die_block = {
 
 static void register_vendor_hooks(void)
 {
+#if defined(CONFIG_TRACEPOINTS) && defined(CONFIG_ANDROID_VENDOR_HOOKS)
 	register_trace_android_vh_watchdog_timer_softlockup(android_vh_watchdog_timer_softlockup, NULL);
 	register_trace_android_rvh_do_undefinstr(android_rvh_do_undefinstr, NULL);
 	register_trace_android_rvh_do_el1_bti(android_rvh_do_el1_bti, NULL);
@@ -1617,6 +1622,7 @@ static void register_vendor_hooks(void)
 	register_trace_android_vh_try_to_freeze_todo_unfrozen(android_vh_try_to_freeze_todo_unfrozen, NULL);
 	register_trace_android_vh_try_to_freeze_todo(android_vh_try_to_freeze_todo, NULL);
 	register_die_notifier(&nb_die_block);
+#endif
 }
 
 static int __init secdbg_extra_info_init(void)
@@ -1653,7 +1659,6 @@ static int __init secdbg_extra_info_init(void)
 	sec_debug_set_reset_reason_using_module_param();
 
 	atomic_notifier_chain_register(&panic_notifier_list, &nb_panic_block);
-
 	register_vendor_hooks();
 
 	pr_info("%s: done\n", __func__);

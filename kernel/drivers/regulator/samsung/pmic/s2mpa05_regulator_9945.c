@@ -346,7 +346,7 @@ static struct regulator_desc regulators[S2MPA05_REG_MAX] = {
 	LDO_DESC("LDO1", _LDO(1), &_ldo_ops(), 1, _REG(_LDO1_CTRL), 2, _REG(_LDO1_CTRL), _TIME(_LDO)),
 	LDO_DESC("LDO2", _LDO(2), &_ldo_ops(), 1, _REG(_LDO2_CTRL), 2, _REG(_LDO2_CTRL), _TIME(_LDO)),
 	LDO_DESC("LDO3", _LDO(3), &_ldo_ops(), 1, _REG(_LDO3_CTRL), 2, _REG(_LDO3_CTRL), _TIME(_LDO)),
-	//LDO_DESC("LDO4", _LDO(4), &_ldo_ops(), 2, _REG(_LDO4_OUT1), 1, _REG(_LDO4_CTRL), _TIME(_LDO)),
+	LDO_DESC("LDO4", _LDO(4), &_ldo_ops(), 2, _REG(_LDO4_OUT1), 1, _REG(_LDO4_CTRL), _TIME(_LDO)),
 };
 
 

@@ -4,7 +4,7 @@
 #if IS_ENABLED(CONFIG_WLBT_EXYNOS_HVC)
 #include <soc/samsung/exynos/exynos-hvc.h>
 #endif
-#ifdef CONFIG_SOC_S5E8845
+#if IS_ENABLED(CONFIG_WLBT_EXYNOS_S2MPU)
 #include <soc/samsung/exynos/exynos-s2mpu.h>
 #endif
 
@@ -35,7 +35,7 @@ const char regmap_lookup_table[REGMAP_LIST_SIZE][REGMAP_LIST_LENGTH] = {
 #endif
 };
 
-#ifdef CONFIG_SOC_S5E8845
+#if IS_ENABLED(CONFIG_WLBT_EXYNOS_S2MPU)
 #define WLBT_SUBSYS_NAME "WLBT"
 #endif
 
@@ -132,6 +132,7 @@ static void platform_wlbt_print_boot_cfg_register(struct platform_mif *platform)
 }
 
 #ifndef CONFIG_SOC_S5E8845
+#ifndef CONFIG_SOC_S5E5535
 static void platform_wlbt_print_karam(struct platform_mif *platform)
 {
 	u32 val;
@@ -161,10 +162,11 @@ static void platform_wlbt_print_karam(struct platform_mif *platform)
 	SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "BOOT_CFG_ACK 0x%x\n", val);
 }
 #endif
+#endif
 
 int platform_mif_set_dbus_baaw(struct platform_mif *platform)
 {
-#ifdef CONFIG_SOC_S5E8845
+#if IS_ENABLED(CONFIG_WLBT_EXYNOS_S2MPU)
 	int ret;
 #endif
 #if IS_ENABLED(CONFIG_WLBT_EXYNOS_HVC)
@@ -213,11 +215,23 @@ int platform_mif_set_dbus_baaw(struct platform_mif *platform)
 	}
 #endif
 #ifdef CONFIG_SOC_S5E8845
+#if IS_ENABLED(CONFIG_SCSC_MEMLOG) && IS_ENABLED(CONFIG_WLBT_EXYNOS_S2MPU)
         if (!platform->dbus_baaw0_allowed_list_set) {
 		ret = exynos_s2mpu_subsystem_set_allowlist(WLBT_SUBSYS_NAME, platform->mem_start,
 							   WLBT_DBUS_BAAW_1_END - WLBT_DBUS_BAAW_1_START + 1);
 		SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "update harx BAAW0: 0x%lx, %ld %s(%d)\n",
 				  platform->mem_start, dbus_baaw_value[0][1] - dbus_baaw_value[0][0] + 1,
+				  ret == 0 ? "SUCCESS" : "FAIL", ret);
+                platform->dbus_baaw0_allowed_list_set = 1;
+        }
+#endif
+#endif
+#if IS_ENABLED(CONFIG_SOC_S5E5535) && IS_ENABLED(CONFIG_WLBT_EXYNOS_S2MPU)
+        if (!platform->dbus_baaw0_allowed_list_set) {
+		ret = exynos_s2mpu_subsystem_set_allowlist(WLBT_SUBSYS_NAME, platform->mem_start,
+							   WLBT_DBUS_BAAW_0_END - WLBT_DBUS_BAAW_0_START + 1);
+		SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "update harx BAAW0: 0x%lx, %ld %s(%d)\n",
+				  platform->mem_start, WLBT_DBUS_BAAW_0_END - WLBT_DBUS_BAAW_0_START + 1,
 				  ret == 0 ? "SUCCESS" : "FAIL", ret);
                 platform->dbus_baaw0_allowed_list_set = 1;
         }
@@ -310,7 +324,7 @@ void platform_mif_set_memlog_baaw(struct platform_mif *platform)
 	SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
 			  "Updated DBUS_BAAW_1(start, end, remap, enable):(0x%08x, 0x%08x, 0x%08x, 0x%08x)\n",
 			  val1, val2, val3, val4);
-#ifdef CONFIG_SOC_S5E8845
+#if IS_ENABLED(CONFIG_WLBT_EXYNOS_S2MPU)
 	if (!platform->dbus_baaw1_allowed_list_set) {
 		ret = exynos_s2mpu_subsystem_set_allowlist(WLBT_SUBSYS_NAME, paddr,
 							   WLBT_DBUS_BAAW_1_END - WLBT_DBUS_BAAW_1_START + 1);
@@ -345,8 +359,10 @@ void platform_wlbt_regdump(struct scsc_mif_abs *interface)
 	}
 
 #ifndef CONFIG_SOC_S5E8845
+#ifndef CONFIG_SOC_S5E5535
 	/* From Here, KARAM Info*/
 	platform_wlbt_print_karam(platform);
+#endif
 #endif
 
 	spin_unlock_irqrestore(&platform->mif_spinlock, flags);

@@ -1222,6 +1222,16 @@ static const struct cam_mipi_sensor_mode sensor_3k1_setfile_A_19p2_mipi_sensor_m
 		sensor_3k1_setfile_A_19p2_mipi_setting_all,	ARRAY_SIZE(sensor_3k1_setfile_A_19p2_mipi_setting_all),
 		CAM_3K1_SET_A_all_NAME,
 	},
+	{ SENSOR_3K1_3840x2160_60FPS,
+		sensor_3k1_setfile_A_19p2_mipi_cell_ratings_10b,	ARRAY_SIZE(sensor_3k1_setfile_A_19p2_mipi_cell_ratings_10b),
+		sensor_3k1_setfile_A_19p2_mipi_setting_all,	ARRAY_SIZE(sensor_3k1_setfile_A_19p2_mipi_setting_all),
+		CAM_3K1_SET_A_all_NAME,
+	},
+	{ SENSOR_3K1_1920x1080_240FPS,
+		sensor_3k1_setfile_A_19p2_mipi_cell_ratings_10b,	ARRAY_SIZE(sensor_3k1_setfile_A_19p2_mipi_cell_ratings_10b),
+		sensor_3k1_setfile_A_19p2_mipi_setting_all,	ARRAY_SIZE(sensor_3k1_setfile_A_19p2_mipi_setting_all),
+		CAM_3K1_SET_A_all_NAME,
+	},
 };
 
 #endif

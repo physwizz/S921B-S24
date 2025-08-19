@@ -128,5 +128,6 @@ int is_hw_dvfs_get_scenario_param(struct is_device_ischain *device, int flag_cap
 u32 is_hw_dvfs_get_lv(struct is_dvfs_ctrl *dvfs_ctrl, u32 type);
 bool is_hw_dvfs_restore_static(struct is_device_ischain *device);
 void is_hw_dvfs_get_qos_throughput(u32 *qos_thput);
+bool is_hw_dvfs_get_fast_launch(struct is_dvfs_ctrl *dvfs_ctrl);
 
 #endif /* IS_HW_DVFS_H */

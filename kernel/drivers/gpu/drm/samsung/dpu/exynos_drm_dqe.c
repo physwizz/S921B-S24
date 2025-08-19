@@ -82,6 +82,7 @@ struct dqe_ctx_int {
 	u32 cgc_dither[DQE_CGC_DITHER_LUT_MAX];
 
 	int gamma_matrix[DQE_GAMMA_MATRIX_LUT_MAX];
+	int linear_matrix[DQE_LINEAR_MATRIX_LUT_MAX];
 	int degamma_lut_ext;
 	u32 degamma_lut[DQE_REG_BPC_MAX][DQE_DEGAMMA_LUT_MAX];
 	int regamma_lut_ext;
@@ -117,6 +118,7 @@ enum dqe_colormode_id {
 	DQE_COLORMODE_ID_HSC,
 	DQE_COLORMODE_ID_SCL,
 	DQE_COLORMODE_ID_DE,
+	DQE_COLORMODE_ID_LINEAR_MATRIX,
 	DQE_COLORMODE_ID_MAX,
 };
 
@@ -167,6 +169,7 @@ __weak void dqe_reg_set_cgc_con(u32 *ctx, u32 *lut) {}
 __weak void dqe_reg_set_disp_dither(u32 *ctx, u32 *lut) {}
 __weak void dqe_reg_set_cgc_dither(u32 *ctx, u32 *lut, int bit_ext) {}
 __weak void dqe_reg_set_gamma_matrix(u32 *ctx, int *lut, u32 shift) {}
+__weak void dqe_reg_set_linear_matrix(u32 *ctx, int *lut, u32 shift) {}
 __weak void dqe_reg_set_gamma_lut(u32 *ctx, u32 *lut, u32 shift) {}
 __weak void dqe_reg_set_degamma_lut(u32 *ctx, u32 *lut, u32 shift) {}
 __weak void dqe_reg_set_hsc_lut(u32 *con, u32 *poly, u32 *gain, u32 *lut,
@@ -300,6 +303,11 @@ static inline bool IS_DISP_DITHER_REQUIRED(struct exynos_dqe *dqe)
 	return (dqe->cfg.cur_bpc >= 10 && dqe->cfg.out_bpc == 8);
 }
 
+static inline bool IS_RCD_REQUIRED(struct exynos_dqe *dqe)
+{
+	return (dqe->cfg.rcd_en > 0);
+}
+
 static char *dqe_print_onoff(u32 *value)
 {
 	if (IS_DQE_AUTO(value, true))
@@ -384,6 +392,9 @@ static void dqe_load_context(struct exynos_dqe *dqe)
 
 	for (i = 0; i < DQE_GAMMA_MATRIX_REG_MAX; i++)
 		dqe->ctx.gamma_matrix[i] = dqe_reg_get_lut(id, DQE_REG_GAMMA_MATRIX, i, 0);
+
+	for (i = 0; i < DQE_LINEAR_MATRIX_REG_MAX; i++)
+		dqe->ctx.linear_matrix[i] = dqe_reg_get_lut(id, DQE_REG_LINEAR_MATRIX, i, 0);
 
 	for (i = 0; i < DQE_DEGAMMA_REG_MAX; i++)
 		dqe->ctx.degamma_lut[i] = dqe_reg_get_lut(id, DQE_REG_DEGAMMA, i, 0);
@@ -532,6 +543,7 @@ static void dqe_init_context(struct exynos_dqe *dqe, struct device *dev)
 	memset(&dqe->ctx, 0, sizeof(dqe->ctx));
 	// changed array to pointer as exynos_drm_dqe.h header is commonly used
 	dqe->ctx.gamma_matrix = kzalloc(DQE_GAMMA_MATRIX_REG_MAX*sizeof(u32), GFP_KERNEL);
+	dqe->ctx.linear_matrix = kzalloc(DQE_LINEAR_MATRIX_REG_MAX*sizeof(u32), GFP_KERNEL);
 	dqe->ctx.degamma_lut = kzalloc(DQE_DEGAMMA_REG_MAX*sizeof(u32), GFP_KERNEL);
 	dqe->ctx.regamma_lut = kzalloc(DQE_REGAMMA_REG_MAX*sizeof(u32), GFP_KERNEL);
 	dqe->ctx.cgc_con = kzalloc(DQE_CGC_CON_REG_MAX*sizeof(u32), GFP_KERNEL);
@@ -618,6 +630,8 @@ static int dqe_restore_context(struct exynos_dqe *dqe)
 	decon_reg_set_blender_ext(dqe->decon->id, IS_BLENDER_EXT_REQUIRED(dqe));
 	/* convert to 8bit if required */
 	decon_reg_set_dither_enable(dqe->decon->id, IS_DISP_DITHER_REQUIRED(dqe));
+	/* enable rcd if required */
+	decon_reg_set_rcd_enable(dqe->decon->id, IS_RCD_REQUIRED(dqe));
 
 	/* DQE_DISP_DITHER */
 	if (IS_DQE_AUTO(&dqe->ctx.disp_dither_on, IS_DISP_DITHER_REQUIRED(dqe)) ||
@@ -636,6 +650,15 @@ static int dqe_restore_context(struct exynos_dqe *dqe)
 		/* Dither bit must be configured when it's off */
 		dqe_reg_set_lut(id, DQE_REG_CGC_DITHER, 0, dqe->ctx.cgc_dither, 0);
 		dqe_reg_set_lut_on(id, DQE_REG_CGC_DITHER, 0);
+	}
+
+	/* DQE_LINEAR_MATRIX */
+	if (IS_DQE_ON(&dqe->ctx.linear_matrix_on)) {
+		for (i = 1; i < DQE_LINEAR_MATRIX_REG_MAX; i++)
+			dqe_reg_set_lut(id, DQE_REG_LINEAR_MATRIX, i, dqe->ctx.linear_matrix[i], 0);
+		dqe_reg_set_lut_on(id, DQE_REG_LINEAR_MATRIX, 1);
+	} else {
+		dqe_reg_set_lut_on(id, DQE_REG_LINEAR_MATRIX, 0);
 	}
 
 	/* DQE_GAMMA_MATRIX */
@@ -747,12 +770,13 @@ static int dqe_restore_context(struct exynos_dqe *dqe)
 	}
 
 	time_c = (ktime_to_us(ktime_get())-time_s);
-	dqe_debug(dqe, "update-%d,%d/%d %lld.%03lldms di %s/%s gm %s dg %s cgc%s %s rg %s hsc %s atc %s scl %s de %s\n",
+	dqe_debug(dqe, "update-%d,%d/%d %lld.%03lldms di %s/%s lm %s gm %s dg %s cgc%s %s rg %s hsc %s atc %s scl %s de %s\n",
 		atomic_read(&dqe->update_cnt),
 		dqe->cfg.in_bpc, dqe->cfg.cur_bpc,
 		time_c/USEC_PER_MSEC, time_c%USEC_PER_MSEC,
 		dqe_print_onoff(&dqe->ctx.disp_dither_on),
 		dqe_print_onoff(&dqe->ctx.cgc_dither_on),
+		dqe_print_onoff(&dqe->ctx.linear_matrix_on),
 		dqe_print_onoff(&dqe->ctx.gamma_matrix_on),
 		dqe_print_onoff(&dqe->ctx.degamma_on),
 		isCgcLutUpdated?"+":"", dqe_print_onoff(&dqe->ctx.cgc_on),
@@ -996,6 +1020,10 @@ static u32 dqe_update_colormode(struct exynos_dqe *dqe,
 			lut = ctx_i->cgc_dither;
 			len = ARRAY_SIZE(ctx_i->cgc_dither);
 			break;
+		case DQE_COLORMODE_ID_LINEAR_MATRIX:
+			lut = ctx_i->linear_matrix;
+			len = ARRAY_SIZE(ctx_i->linear_matrix);
+			break;
 		case DQE_COLORMODE_ID_GAMMA_MATRIX:
 			lut = ctx_i->gamma_matrix;
 			len = ARRAY_SIZE(ctx_i->gamma_matrix);
@@ -1132,6 +1160,10 @@ static u32 dqe_update_preset(struct exynos_dqe *dqe,
 	if (IS_ARRAY(ctx_from->cgc_dither) && ctx_from->cgc_dither[0]) {
 		memcpy(ctx_to->cgc_dither, ctx_from->cgc_dither, sizeof(ctx_from->cgc_dither));
 		updated |= BIT(DQE_REG_CGC_DITHER);
+	}
+	if (IS_ARRAY(ctx_from->linear_matrix) && ctx_from->linear_matrix[0]) {
+		memcpy(ctx_to->linear_matrix, ctx_from->linear_matrix, sizeof(ctx_from->linear_matrix));
+		updated |= BIT(DQE_REG_LINEAR_MATRIX);
 	}
 	if (IS_ARRAY(ctx_from->gamma_matrix) && ctx_from->gamma_matrix[0]) {
 		memcpy(ctx_to->gamma_matrix, ctx_from->gamma_matrix, sizeof(ctx_from->gamma_matrix));
@@ -1625,6 +1657,17 @@ static void dqe_set_cgc_dither(struct exynos_dqe *dqe,
 	dqe_ctrl_onoff(&dqe->ctx.cgc_dither_on, cgc_dither[0], clrForced);
 }
 
+static void dqe_set_linear_matrix(struct exynos_dqe *dqe,
+				struct dqe_ctx_int *lut, bool clrForced)
+{
+	u32 shift;
+	int *linear_matrix = lut->linear_matrix;
+
+	dqe_get_bpc_info(dqe, &shift, NULL, 0);
+	dqe_reg_set_linear_matrix(dqe->ctx.linear_matrix, linear_matrix, shift);
+	dqe_ctrl_onoff(&dqe->ctx.linear_matrix_on, linear_matrix[0], clrForced);
+}
+
 static void dqe_set_gamma_matrix(struct exynos_dqe *dqe,
 				struct dqe_ctx_int *lut, bool clrForced)
 {
@@ -1727,6 +1770,7 @@ static void dqe_set_all_luts(struct exynos_dqe *dqe)
 	mutex_lock(&dqe->lock);
 	lut = &dqe_lut[DQE_MODE_MAIN];
 	dqe_set_cgc_dither(dqe, lut, false);
+	dqe_set_linear_matrix(dqe, lut, false);
 	dqe_set_gamma_matrix(dqe, lut, false);
 	dqe_set_gamma_lut(dqe, lut, false);
 	dqe_set_degamma_lut(dqe, lut, false);
@@ -2177,6 +2221,36 @@ static ssize_t dqe_cgc17_con_store(struct exynos_dqe *dqe,
 }
 
 DQE_CREATE_SYSFS_FUNC(cgc17_con);
+
+static ssize_t dqe_linear_matrix_show(struct exynos_dqe *dqe,
+					struct dqe_ctx_int *lut, char *buf)
+{
+	if (!IS_ARRAY(lut->linear_matrix))
+		return snprintf(buf, PAGE_SIZE, "unsupported\n");
+
+	return dqe_conv_lut2str(lut->linear_matrix, ARRAY_SIZE(lut->linear_matrix), buf);
+}
+
+static ssize_t dqe_linear_matrix_store(struct exynos_dqe *dqe,
+				struct dqe_ctx_int *lut, const char *buffer, size_t count)
+{
+	int ret;
+
+	if (!IS_ARRAY(lut->linear_matrix))
+		return -EINVAL;
+
+	ret = dqe_conv_str2lut(buffer, lut->linear_matrix, ARRAY_SIZE(lut->linear_matrix), false);
+	if (ret < 0)
+		return ret;
+	if (mode_idx == DQE_MODE_MAIN) { // do not update dqe_ctx_reg for preset LUTs
+		dqe_set_linear_matrix(dqe, lut, true);
+		dqe_reset_crc(dqe, DQE_COLORMODE_ID_LINEAR_MATRIX);
+	}
+	dqe_reset_update_cnt(dqe, DQE_RESET_GLOBAL, DQE_RESET_OPT);
+	return count;
+}
+
+DQE_CREATE_SYSFS_FUNC(linear_matrix);
 
 static ssize_t dqe_gamma_matrix_show(struct exynos_dqe *dqe,
 					struct dqe_ctx_int *lut, char *buf)
@@ -2645,6 +2719,7 @@ enum dqe_off_ctrl {
 	DQE_OFF_CTRL_DISP_DITHER,
 	DQE_OFF_CTRL_DE,
 	DQE_OFF_CTRL_RCD,
+	DQE_OFF_CTRL_LINEAR_MATRIX,
 	DQE_OFF_CTRL_MAX
 };
 
@@ -2660,6 +2735,7 @@ static const char *dqe_off_ctrl_name[DQE_OFF_CTRL_MAX] = {
 	"DISP DITH",
 	"DE",
 	"RCD",
+	"LINEAR_MATRIX",
 };
 
 static ssize_t dqe_off_ctrl_show(struct exynos_dqe *dqe,
@@ -2680,6 +2756,9 @@ static ssize_t dqe_off_ctrl_show(struct exynos_dqe *dqe,
 			break;
 		case DQE_OFF_CTRL_REGAMMA:
 			value = dqe->ctx.regamma_on;
+			break;
+		case DQE_OFF_CTRL_LINEAR_MATRIX:
+			value = dqe->ctx.linear_matrix_on;
 			break;
 		case DQE_OFF_CTRL_GAMMA_MATRIX:
 			value = dqe->ctx.gamma_matrix_on;
@@ -2735,6 +2814,7 @@ static ssize_t dqe_off_ctrl_store(struct exynos_dqe *dqe,
 
 	switch (type) {
 	case DQE_OFF_CTRL_ALL:
+		dqe_ctrl_forcedoff(&dqe->ctx.linear_matrix_on, forced);
 		dqe_ctrl_forcedoff(&dqe->ctx.gamma_matrix_on, forced);
 		dqe_ctrl_forcedoff(&dqe->ctx.degamma_on, forced);
 		dqe_ctrl_forcedoff(&dqe->ctx.cgc_on, forced);
@@ -2751,6 +2831,9 @@ static ssize_t dqe_off_ctrl_store(struct exynos_dqe *dqe,
 		break;
 	case DQE_OFF_CTRL_REGAMMA:
 		dqe_ctrl_forcedoff(&dqe->ctx.regamma_on, forced);
+		break;
+	case DQE_OFF_CTRL_LINEAR_MATRIX:
+		dqe_ctrl_forcedoff(&dqe->ctx.linear_matrix_on, forced);
 		break;
 	case DQE_OFF_CTRL_GAMMA_MATRIX:
 		dqe_ctrl_forcedoff(&dqe->ctx.gamma_matrix_on, forced);
@@ -2836,6 +2919,7 @@ static struct device_attribute *dqe_attrs[] = {
 	&dev_attr_cgc17_enc,
 	&dev_attr_cgc17_dec,
 	&dev_attr_cgc17_con,
+	&dev_attr_linear_matrix,
 	&dev_attr_gamma_matrix,
 	&dev_attr_gamma_ext,
 	&dev_attr_gamma,
@@ -2934,6 +3018,9 @@ static void __exynos_dqe_state(struct exynos_dqe *dqe,
 	dqe_debug(dqe, "+\n");
 	mutex_lock(&dqe->lock);
 	switch (type) {
+	case DQE_REG_LINEAR_MATRIX:
+		*enabled = IS_DQE_ON(&dqe->ctx.linear_matrix_on);
+		break;
 	case DQE_REG_GAMMA_MATRIX:
 		*enabled = IS_DQE_ON(&dqe->ctx.gamma_matrix_on);
 		break;

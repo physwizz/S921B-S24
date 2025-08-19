@@ -12,14 +12,14 @@ static char key32[][MAX_ITEM_KEY_LEN] = {
 	"SPCNT", "LEV", "ASB", "PSITE",
 	"DDRID", "RST", "INFO2", "INFO3",
 	"RSTCNT", "HLCPU", "UP", "DOWN",
-	"WDGT", "CPS",
+	"WDGT",
 };
 
 static char key64[][MAX_ITEM_KEY_LEN] = {
 	"BAT", "FAULT", "EPD", "HLEHLD",
 	"PWR", "PWROFF", "PINT", "PSTAT",
 	"PWROFFS", "PINTS", "PSTATS", "FPMU",
-	"UFS",
+	"UFS", "CPS",
 };
 
 static char key256[][MAX_ITEM_KEY_LEN] = {
@@ -60,7 +60,7 @@ static char bkeys[][MAX_ITEM_KEY_LEN] = {
 static char ckeys[][MAX_ITEM_KEY_LEN] = {
 	"ID", "RR", "CPU0", "CPU1",
 	"CPU2", "CPU3", "CPU4", "CPU5",
-	"CPU6", "CPU7", "CPU8", "HLCNT",
+	"CPU6", "CPU7", "CPU8", "CPU9", "HLCNT",
 };
 
 static char fkeys[][MAX_ITEM_KEY_LEN] = {

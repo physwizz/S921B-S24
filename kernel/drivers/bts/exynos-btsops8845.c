@@ -451,4 +451,12 @@ int register_btsops(struct bts_info *info)
 }
 EXPORT_SYMBOL(register_btsops);
 
+int register_btsdevops(struct bts_device *data)
+{
+	data->btsbw_ops = NULL;
+
+	return 0;
+}
+EXPORT_SYMBOL(register_btsdevops);
+
 MODULE_LICENSE("GPL");

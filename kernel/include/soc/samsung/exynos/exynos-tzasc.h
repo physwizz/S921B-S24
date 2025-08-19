@@ -42,6 +42,14 @@
 
 #define TZASC_SMC_FAIL_ID_VNET_MASK			(0xF << 24)
 #define TZASC_SMC_FAIL_ID_FAIL_ID_MASK			(0x3FFFF << 0)
+#if defined(CONFIG_SOC_S5E9945)
+#define TZASC_SMC_FAIL_ID_MASTER_MASK			(0x1F << 16)
+#define TZASC_SMC_FAIL_ID_MASTER_SHIFT			(16)
+#elif defined(CONFIG_SOC_S5E8845)
+#define TZASC_SMC_FAIL_ID_MASTER_MASK			(0x1FFFF << 0)
+#define CPU_MASTER_MASK					(0x1 << 16)
+#define PERI_MASTER_MASK				(0x1F << 0)
+#endif
 
 /* Return values from SMC */
 #define TZASC_ERROR_INVALID_CH_NUM			(0xA)
@@ -69,6 +77,9 @@ struct tzasc_fail_info {
 	unsigned int tzasc_fail_addr_high;
 	unsigned int tzasc_fail_ctrl;
 	unsigned int tzasc_fail_id;
+	unsigned int tzasc_fail_region_num;
+	unsigned long tzasc_fail_region_start;
+	unsigned long tzasc_fail_region_end;
 };
 
 /* Data structure for TZASC Fail Information */
@@ -83,10 +94,15 @@ struct tzasc_info_data {
 
 	unsigned int irq[MAX_NUM_OF_TZASC_CHANNEL];
 	unsigned int irqcnt;
+	unsigned int affinity;
 
 	unsigned int info_flag;
 	int need_log;
 	int need_handle;
+
+#if IS_ENABLED(CONFIG_DEBUG_SNAPSHOT)
+	struct notifier_block panic_nb;
+#endif
 };
 
 /*

@@ -89,6 +89,8 @@ endif
 
 obj-$(CONFIG_NPU_STM)			+= npu/npu-stm.o
 
+obj-$(CONFIG_NPU_PM_SLEEP_WAKEUP)	+= npu/npu-pm.o
+
 obj-y					+= npu/dsp-dhcp.o
 ifeq ($(CONFIG_DSP_USE_VS4L),y)
 obj-y					+= npu/dsp-binary.o
@@ -198,6 +200,10 @@ endif
 ifeq ($(CONFIG_NPU_AFM),y)
 npu-objs				+= npu/npu-afm.o
 npu-objs				+= npu/npu-afm-debug.o
+endif
+
+ifeq ($(CONFIG_NPU_PM_SLEEP_WAKEUP),y)
+npu-objs				+= npu/npu-pm.o
 endif
 
 npu-objs				+= npu/dsp-dhcp.o

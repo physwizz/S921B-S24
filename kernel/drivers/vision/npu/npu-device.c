@@ -41,6 +41,9 @@
 #if IS_ENABLED(CONFIG_EXYNOS_UNPU_DRIVER)
 #include "unpu.h"
 #endif
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+#include "npu-pm.h"
+#endif
 
 extern struct class vision_class;
 extern int npu_system_save_result(struct npu_session *session, struct nw_result nw_result);
@@ -352,6 +355,13 @@ static int npu_device_probe(struct platform_device *pdev)
 	if(ret)
 		goto err_exit;
 #endif
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+	npu_pm_probe(device);
+	if (ret) {
+		probe_err("npu_pm_probe is fail(%d)\n", ret);
+		goto err_exit;
+	}
+#endif
 
 	ret = 0;
 	probe_info("[EVT1] complete in %s\n", __func__);
@@ -405,6 +415,18 @@ int npu_device_open(struct npu_device *device)
 	clear_bit(NPU_DEVICE_ERR_STATE_EMERGENCY, &device->err_state);
 
 	set_bit(NPU_DEVICE_STATE_OPEN, &device->state);
+
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+	device->is_first = 0xC0DE;
+
+	if (device->is_first == 0xC0DE) {
+		ret = npu_session_open(&device->first_session, &device->sessionmgr, &device->system.memory);
+		if (ret) {
+			npu_err("fail(%d) in npu first session create", ret);
+			goto ErrorExit;
+		}
+	}
+#endif
 
 	npu_info("%d\n", ret);
 	return ret;
@@ -550,6 +572,16 @@ int npu_device_close(struct npu_device *device)
 	npu_imb_dealloc(&device->system);
 #endif
 
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+	device->is_first = 0x0;
+
+	if (!device->is_first) {
+		ret = npu_session_close(device->first_session);
+		if (ret)
+			npu_err("fail(%d) in npu first session close", ret);
+	}
+#endif
+
 	npu_profile_deinit(&device->system.memory);
 
 	ret = npu_system_close(&device->system);
@@ -614,12 +646,28 @@ int npu_device_stop(struct npu_device *device)
 static int npu_device_suspend(struct device *dev)
 {
 	npu_dbg("called\n");
+
+#if IS_ENABLED(CONFIG_SOC_S5E9945)
+	if ((exynos_soc_info.main_rev == 1) && (exynos_soc_info.sub_rev < 2))
+		return 0;
+#endif
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+	npu_pm_suspend(dev);
+#endif
 	return 0;
 }
 
 static int npu_device_resume(struct device *dev)
 {
 	npu_dbg("called\n");
+
+#if IS_ENABLED(CONFIG_SOC_S5E9945)
+	if ((exynos_soc_info.main_rev == 1) && (exynos_soc_info.sub_rev < 2))
+		return 0;
+#endif
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+	npu_pm_resume(dev);
+#endif
 	return 0;
 }
 #endif

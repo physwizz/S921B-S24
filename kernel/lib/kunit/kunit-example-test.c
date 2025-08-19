@@ -63,7 +63,7 @@ DECLARE_STRUCT_CLASS_MOCK_PREREQS(example);
  * This macro creates a mock implementation of the specified method of the
  * specified class.
  */
-DEFINE_STRUCT_CLASS_MOCK(METHOD(foo), CLASS(example),
+DEFINE_STRUCT_CLASS_MOCK(METHOD(foo), CLASS_NAME(example),
 			 RETURNS(int),
 			 PARAMS(struct example *, int));
 

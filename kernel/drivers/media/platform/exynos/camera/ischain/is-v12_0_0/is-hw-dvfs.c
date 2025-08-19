@@ -114,8 +114,8 @@ static int is_hw_dvfs_get_sensor(
 	if (vendor == IS_DVFS_SCENARIO_VENDOR_SSM)
 		return IS_DVFS_SENSOR_SSM;
 
-	if (vendor == IS_DVFS_SCENARIO_VENDOR_LOW_POWER ||
-	    vendor == IS_DVFS_SCENARIO_VENDOR_VT)
+	if (vendor == IS_DVFS_SCENARIO_VENDOR_LOW_POWER || vendor == IS_DVFS_SCENARIO_VENDOR_VT ||
+		vendor == IS_DVFS_SCENARIO_VENDOR_SENSING_CAMERA)
 		return IS_DVFS_SENSOR_VT;
 
 	if (param->secure == IS_SCENARIO_SECURE)
@@ -382,6 +382,8 @@ static int is_hw_dvfs_get_rear_single_scenario(
 			case IS_DVFS_FPS_60:
 				if (vendor == IS_DVFS_SCENARIO_VENDOR_SUPER_STEADY)
 					return IS_DVFS_SN_REAR_SINGLE_VIDEO_UHD60_SUPERSTEADY;
+				if (vendor == IS_DVFS_SCENARIO_VENDOR_PSM)
+					return IS_DVFS_SN_REAR_SINGLE_VIDEO_UHD60_PSM;
 				return IS_DVFS_SN_REAR_SINGLE_VIDEO_UHD60;
 			case IS_DVFS_FPS_120:
 				return IS_DVFS_SN_REAR_SINGLE_VIDEO_UHD120;
@@ -1046,12 +1048,14 @@ bool is_hw_dvfs_restore_static(struct is_device_ischain *device)
 	struct is_dvfs_ctrl *dvfs_ctrl;
 	struct is_dvfs_scenario_ctrl *dynamic_ctrl;
 	struct is_dvfs_rnr_mode *rnr_mode;
+	struct is_dvfs_psm_mode *psm_mode;
 	int scenario_id;
 
 	resourcemgr = device->resourcemgr;
 	dvfs_ctrl = &resourcemgr->dvfs_ctrl;
 	dynamic_ctrl = dvfs_ctrl->dynamic_ctrl;
 	rnr_mode = &dvfs_ctrl->rnr_mode;
+	psm_mode = &dvfs_ctrl->psm_mode;
 
 	if (dynamic_ctrl->cur_frame_tick == 0)
 		return true;
@@ -1064,6 +1068,16 @@ bool is_hw_dvfs_restore_static(struct is_device_ischain *device)
 		is_dvfs_sel_static(dvfs_ctrl, scenario_id);
 		mdbg_dvfs(1, "[DVFS] recursiveNr off after %d tick\n", device,
 			dynamic_ctrl->cur_frame_tick);
+	}
+
+	if (psm_mode->changed && !psm_mode->psm) {
+		psm_mode->changed = 0;
+		dynamic_ctrl->cur_frame_tick = -1;
+		dynamic_ctrl->cur_scenario_id = -1;
+		scenario_id = is_hw_dvfs_get_scenario(device, IS_DVFS_STATIC);
+		is_dvfs_sel_static(dvfs_ctrl, scenario_id);
+		mdbg_dvfs(1, "[DVFS] psm off\n", device);
+		return true;
 	}
 
 	return false;
@@ -1083,6 +1097,18 @@ void is_hw_dvfs_get_qos_throughput(u32 *qos_thput)
 	qos_thput[IS_DVFS_ICPU] = PM_QOS_ICPU_THROUGHPUT;
 }
 KUNIT_EXPORT_SYMBOL(is_hw_dvfs_get_qos_throughput);
+
+bool is_hw_dvfs_get_fast_launch(struct is_dvfs_ctrl *dvfs_ctrl)
+{
+	int vendor = (dvfs_ctrl->dvfs_scenario >> IS_DVFS_SCENARIO_VENDOR_SHIFT) &
+		     IS_DVFS_SCENARIO_VENDOR_MASK;
+
+	if (vendor == IS_DVFS_SCENARIO_VENDOR_SENSING_CAMERA)
+		return false;
+
+	return true;
+}
+KUNIT_EXPORT_SYMBOL(is_hw_dvfs_get_fast_launch);
 
 #if IS_ENABLED(CONFIG_PABLO_KUNIT_TEST)
 static struct pablo_kunit_hw_dvfs_function hw_dvfs_func = {

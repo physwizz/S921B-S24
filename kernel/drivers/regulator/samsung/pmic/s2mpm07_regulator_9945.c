@@ -376,7 +376,7 @@ static struct regulator_desc regulators[S2MPM07_REG_MAX] = {
 	//LDO_DESC("LDO8", _LDO(8), &_ldo_ops(), 1, _REG(_LDO8R_OUT), 1, _REG(_LDO8R_CTRL), _TIME(_LDO)),
 	//LDO_DESC("LDO9", _LDO(9), &_ldo_ops(), 1, _REG(_LDO9R_OUT), 1, _REG(_LDO9R_CTRL), _TIME(_LDO)),
 	//LDO_DESC("LDO10", _LDO(10), &_ldo_ops(), 2, _REG(_LDO10R_CTRL), 2, _REG(_LDO10R_CTRL), _TIME(_LDO)),
-	//LDO_DESC("LDO11", _LDO(11), &_ldo_ops(), 3, _REG(_LDO11R_CTRL), 2, _REG(_LDO11R_CTRL), _TIME(_LDO)),
+	LDO_DESC("LDO11", _LDO(11), &_ldo_ops(), 3, _REG(_LDO11R_CTRL), 2, _REG(_LDO11R_CTRL), _TIME(_LDO)),
 	//LDO_DESC("LDO12", _LDO(12), &_ldo_ops(), 1, _REG(_LDO12R_OUT), 1, _REG(_LDO12R_CTRL), _TIME(_LDO)),
 	//LDO_DESC("LDO13", _LDO(13), &_ldo_ops(), 1, _REG(_LDO13R_OUT), 1, _REG(_LDO13R_CTRL), _TIME(_LDO)),
 	//LDO_DESC("LDO14", _LDO(14), &_ldo_ops(), 1, _REG(_LDO14R_OUT), 1, _REG(_LDO14R_CTRL), _TIME(_LDO)),

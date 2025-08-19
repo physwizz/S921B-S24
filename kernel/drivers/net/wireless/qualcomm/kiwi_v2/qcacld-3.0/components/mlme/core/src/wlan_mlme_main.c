@@ -1933,6 +1933,13 @@ static void mlme_init_rates_in_cfg(struct wlan_objmgr_psoc *psoc,
 			      &rates->current_mcs_set.len);
 }
 
+static void mlme_init_passive_enable_in_cfg(struct wlan_objmgr_psoc *psoc,
+					    struct wlan_mlme_cfg *mlme_cfg)
+{
+	mlme_cfg->passive_chan_discard_mode =
+		cfg_get(psoc, CFG_DISCARD_PASSIVE_CHANNEL_FOR_MODE);
+}
+
 static void mlme_init_dfs_cfg(struct wlan_objmgr_psoc *psoc,
 			      struct wlan_mlme_dfs_cfg *dfs_cfg)
 {
@@ -1953,6 +1960,8 @@ static void mlme_init_dfs_cfg(struct wlan_objmgr_psoc *psoc,
 		cfg_get(psoc, CFG_SAP_TX_LEAKAGE_THRESHOLD);
 	dfs_cfg->dfs_pri_multiplier =
 		cfg_get(psoc, CFG_DFS_RADAR_PRI_MULTIPLIER);
+	dfs_cfg->dfs_discard_mode =
+		cfg_get(psoc, CFG_DISCARD_DFS_CHANNEL_FOR_MODE);
 }
 
 static void mlme_init_feature_flag_in_cfg(
@@ -2573,6 +2582,12 @@ static void mlme_init_sta_mlo_cfg(struct wlan_objmgr_psoc *psoc,
 		cfg_get(psoc, CFG_MLO_PREFER_PERCENTAGE);
 	sta->mlo_same_link_mld_address =
 		cfg_default(CFG_MLO_SAME_LINK_MLD_ADDR);
+	sta->mlo_5gl_5gh_mlsr =
+		cfg_get(psoc, CFG_MLO_MLO_5GL_5GH_MLSR);
+	sta->epcs_capability =
+		cfg_get(psoc, CFG_MLO_EPCS_SUPPORT_ENABLE);
+	mlme_debug("mlo_support_link_num: %d, mlo_support_link_band: 0x%x",
+		   sta->mlo_support_link_num, sta->mlo_support_link_band);
 }
 
 static bool
@@ -2787,7 +2802,8 @@ static void mlme_init_sta_cfg(struct wlan_objmgr_psoc *psoc,
 		cfg_get(psoc, CFG_MAX_LI_MODULATED_DTIM_MS);
 
 	mlme_init_sta_mlo_cfg(psoc, sta);
-	wlan_mlme_set_epcs_capability(psoc, false);
+	wlan_mlme_set_epcs_capability(psoc,
+				      wlan_mlme_get_epcs_capability(psoc));
 	wlan_mlme_set_usr_disable_sta_eht(psoc, false);
 	wlan_mlme_set_eht_disable_punct_in_us_lpi(psoc,
 						  cfg_default(CFG_EHT_DISABLE_PUNCT_IN_US_LPI));
@@ -3021,6 +3037,7 @@ mlme_init_bss_load_trigger_params(struct wlan_objmgr_psoc *psoc,
 	bss_load_trig->enabled =
 		cfg_get(psoc, CFG_ENABLE_BSS_LOAD_TRIGGERED_ROAM);
 	bss_load_trig->threshold = cfg_get(psoc, CFG_BSS_LOAD_THRESHOLD);
+	bss_load_trig->bss_load_alpha = cfg_get(psoc, CFG_BSS_LOAD_ALPHA);
 
 	ucfg_mlme_get_connection_roaming_ini_present(psoc, &val);
 	if (val)
@@ -3295,6 +3312,8 @@ static void mlme_init_lfr_cfg(struct wlan_objmgr_psoc *psoc,
 	}
 #endif /* SEC_CONFIG_PSM_SYSFS */
 	mlme_init_bmiss_timeout(psoc, lfr);
+	lfr->hs20_btm_offload_disable = cfg_get(psoc,
+						CFG_HS_20_BTM_OFFLOAD_DISABLE);
 }
 
 static void mlme_init_power_cfg(struct wlan_objmgr_psoc *psoc,
@@ -4124,6 +4143,7 @@ QDF_STATUS mlme_cfg_on_psoc_enable(struct wlan_objmgr_psoc *psoc)
 	mlme_init_qos_cfg(psoc, &mlme_cfg->qos_mlme_params);
 	mlme_init_rates_in_cfg(psoc, &mlme_cfg->rates);
 	mlme_init_dfs_cfg(psoc, &mlme_cfg->dfs_cfg);
+	mlme_init_passive_enable_in_cfg(psoc, mlme_cfg);
 	mlme_init_sap_protection_cfg(psoc, &mlme_cfg->sap_protection_cfg);
 	mlme_init_vht_cap_cfg(psoc, &mlme_cfg->vht_caps.vht_cap_info);
 	mlme_init_chainmask_cfg(psoc, &mlme_cfg->chainmask_cfg);

@@ -10,6 +10,8 @@
 #include "sgpu_utilization.h"
 #include "amdgpu.h"
 #include "sgpu_swap.h"
+#include "sgpu_pm_monitor.h"
+#include <trace/events/gpu_mem.h>
 
 #ifdef CONFIG_DRM_SGPU_EXYNOS
 #include <linux/notifier.h>
@@ -47,12 +49,12 @@ static struct exynos_pm_qos_request exynos_tmu_gpu_max_qos;
 static struct exynos_pm_qos_request exynos_ski_gpu_min_qos;
 static struct exynos_pm_qos_request exynos_ski_gpu_max_qos;
 static struct exynos_pm_qos_request exynos_gpu_siop_max_qos;
-static struct exynos_pm_qos_request exynos_umd_gpu_min_qos;
 static struct exynos_pm_qos_request exynos_afm_gpu_max_qos;
 #endif /* CONFIG_EXYNOS_PM_QOS */
 
 static unsigned int *mif_freq;
 static unsigned int *mif_cl_boost_freq;
+static unsigned int prev_mif_minfreq;
 #if IS_ENABLED(CONFIG_EXYNOS_BTS)
 static unsigned int *mo_scen;
 static int prev_scen;
@@ -69,7 +71,6 @@ static unsigned long gpu_afm_max_clock = PM_QOS_MAX_FREQUENCY_DEFAULT_VALUE;
 static struct mutex afm_lock;
 
 static struct delayed_work work_mm_min_clock;
-static struct delayed_work work_umd_min_clock;
 
 static int exynos_freq_trans_notifier(struct notifier_block *nb,
 				       unsigned long event, void *ptr)
@@ -78,7 +79,7 @@ static int exynos_freq_trans_notifier(struct notifier_block *nb,
 	struct devfreq_freqs *freqs = (struct devfreq_freqs *)ptr;
 	struct sgpu_governor_data *data = df->data;
 	int new_level, i;
-	unsigned long mif_minfreq;
+	unsigned long cur_mif_minfreq;
 #if IS_ENABLED(CONFIG_EXYNOS_BTS)
 	int current_scen;
 #endif /* CONFIG_EXYNOS_BTS */
@@ -99,8 +100,6 @@ static int exynos_freq_trans_notifier(struct notifier_block *nb,
 	if (atomic_read(&df->suspend_count) > 0)
 		return NOTIFY_DONE;
 
-	if (freqs->new == freqs->old)
-		return NOTIFY_DONE;
 	switch (event) {
 	case DEVFREQ_PRECHANGE:
 		if (freqs->new < freqs->old)
@@ -130,12 +129,15 @@ static int exynos_freq_trans_notifier(struct notifier_block *nb,
 	prev_scen = current_scen;
 #endif /* CONFIG_EXYNOS_BTS */
 	if (!data->cl_boost_disable && data->cl_boost_status)
-		mif_minfreq = mif_cl_boost_freq[new_level];
+		cur_mif_minfreq = mif_cl_boost_freq[new_level];
 	else
-		mif_minfreq = mif_freq[new_level];
+		cur_mif_minfreq = mif_freq[new_level];
 #if IS_ENABLED(CONFIG_EXYNOS_PM_QOS)
-	exynos_pm_qos_update_request(&exynos_g3d_mif_min_qos,
-				     mif_minfreq);
+	if (prev_mif_minfreq != cur_mif_minfreq) {
+		exynos_pm_qos_update_request(&exynos_g3d_mif_min_qos,
+						cur_mif_minfreq);
+		prev_mif_minfreq = cur_mif_minfreq;
+	}
 #endif /* CONFIG_EXYNOS_PM_QOS */
 
 #if IS_ENABLED(CONFIG_EXYNOS_SCI)
@@ -178,8 +180,9 @@ int exynos_dvfs_preset(struct devfreq *df)
 			resume_level = i;
 	}
 #if IS_ENABLED(CONFIG_EXYNOS_PM_QOS)
+	prev_mif_minfreq = mif_freq[resume_level];
 	exynos_pm_qos_update_request(&exynos_g3d_mif_min_qos,
-				     mif_freq[resume_level]);
+				     prev_mif_minfreq);
 #endif /* CONFIG_EXYNOS_PM_QOS */
 #if IS_ENABLED(CONFIG_EXYNOS_BTS)
 	resume_scen = mo_scen[resume_level];
@@ -216,7 +219,8 @@ int exynos_dvfs_postclear(struct devfreq *df)
 #endif /* CONFIG_EXYNOS_BTS */
 
 #if IS_ENABLED(CONFIG_EXYNOS_PM_QOS)
-	exynos_pm_qos_update_request(&exynos_g3d_mif_min_qos, 0);
+	prev_mif_minfreq = 0;
+	exynos_pm_qos_update_request(&exynos_g3d_mif_min_qos, prev_mif_minfreq);
 #endif /* CONFIG_EXYNOS_PM_QOS */
 #if IS_ENABLED(CONFIG_EXYNOS_BTS)
 	if (suspend_scen < prev_scen)
@@ -478,29 +482,6 @@ static ssize_t gpu_disable_llc_way_store(struct kobject *kobj,
 	return count;
 }
 static struct kobj_attribute attr_gpu_disable_llc_way = __ATTR_RW(gpu_disable_llc_way);
-
-/* gpu min freq interface through chunk from UMD */
-static void gpu_umd_min_reset(struct work_struct *work)
-{
-	SGPU_LOG(p_adev, DMSG_INFO, DMSG_DVFS,
-		 "MIN_REQUEST gpu_umdmin=0 (timer reset)");
-	DRM_INFO("[sgpu] MIN_REQUEST gpu_umd_min=0 (timer reset)");
-#if IS_ENABLED(CONFIG_EXYNOS_PM_QOS)
-	exynos_pm_qos_update_request(&exynos_umd_gpu_min_qos, 0);
-#endif /* CONFIG_EXYNOS_PM_QOS */
-}
-
-void gpu_umd_min_clock_set(unsigned int value, unsigned int delay)
-{
-	SGPU_LOG(p_adev, DMSG_INFO, DMSG_DVFS,
-		 "MIN_REQUEST gpu_umd_min=%u", value);
-	DRM_INFO("[sgpu] MIN_REQUEST gpu_umd_min=%u", value);
-#if IS_ENABLED(CONFIG_EXYNOS_PM_QOS)
-	exynos_pm_qos_update_request(&exynos_umd_gpu_min_qos, value);
-#endif /* CONFIG_EXYNOS_PM_QOS */
-	mod_delayed_work(system_wq, &work_umd_min_clock,
-				msecs_to_jiffies(delay));
-}
 
 static ssize_t gpu_min_clock_show(struct kobject *kobj,
 				  struct kobj_attribute *attr, char *buf)
@@ -824,17 +805,31 @@ static ssize_t mem_info_show(struct kobject *kobj,
 static struct kobj_attribute attr_mem_info = __ATTR_RO(mem_info);
 
 #if IS_ENABLED(CONFIG_DRM_SGPU_VENDOR_HOOKS)
-static unsigned long sgpu_total_pages;
+static atomic_long_t sgpu_total_pages = ATOMIC_INIT(0);
 
 void sgpu_add_total_pages(unsigned long nr)
 {
-	sgpu_total_pages += nr;
+	atomic_long_add(nr, &sgpu_total_pages);
 }
 
 void sgpu_sub_total_pages(unsigned long nr)
 {
-	sgpu_total_pages -= nr;
+	atomic_long_sub(nr, &sgpu_total_pages);
 }
+
+#if IS_ENABLED(CONFIG_DRM_SGPU_GRAPHIC_MEMORY_RECLAIM)
+static atomic_long_t sgpu_swap_pages = ATOMIC_INIT(0);
+
+void sgpu_add_swap_pages(unsigned long nr)
+{
+	atomic_long_add(nr, &sgpu_swap_pages);
+}
+
+void sgpu_sub_swap_pages(unsigned long nr)
+{
+	atomic_long_sub(nr, &sgpu_swap_pages);
+}
+#endif
 
 #define PAGE_TO_KB (PAGE_SIZE / SZ_1K)
 
@@ -842,8 +837,13 @@ static void gpu_meminfo_show(void *data, struct seq_file *m)
 {
 	struct amdgpu_device *adev = data;
 
-	seq_printf(m, "GPU:            %8lu kB\n",
-		   (adev->num_kernel_pages + sgpu_total_pages) * PAGE_TO_KB);
+#if IS_ENABLED(CONFIG_DRM_SGPU_GRAPHIC_MEMORY_RECLAIM)
+	seq_printf(m, "GpuSwap:        %8ld kB\n",
+		   atomic_long_read(&sgpu_swap_pages) * PAGE_TO_KB);
+#endif
+	seq_printf(m, "GpuTotal:       %8ld kB\n",
+		   (adev->num_kernel_pages + atomic_long_read(&sgpu_total_pages)) * PAGE_TO_KB);
+	trace_gpu_mem_total(0, 0, (adev->num_kernel_pages + atomic_long_read(&sgpu_total_pages)) * PAGE_SIZE);
 }
 
 static void gpu_mem_show(void *data, unsigned int filter, nodemask_t *nodemask)
@@ -870,12 +870,14 @@ static void gpu_mem_show(void *data, unsigned int filter, nodemask_t *nodemask)
 
 		mutex_unlock(&ddev->filelist_mutex);
 	} else {
-		total_num_pages = sgpu_total_pages;
+		total_num_pages = atomic_long_read(&sgpu_total_pages);
 		pr_info("pid:  user  %12zu kB\n", total_num_pages * PAGE_TO_KB);
 	}
 
 	pr_info("pid: kernel %12zu kB\n", adev->num_kernel_pages * PAGE_TO_KB);
-	pr_info("total:   %15zu kB\n", (total_num_pages + adev->num_kernel_pages) * PAGE_TO_KB);
+	pr_info("total:   %15zu kB (gpuswap %zu kB)\n",
+		(total_num_pages + adev->num_kernel_pages) * PAGE_TO_KB,
+		atomic_long_read(&sgpu_swap_pages) * PAGE_TO_KB);
 }
 #endif /* CONFIG_DRM_SGPU_VENDOR_HOOKS */
 
@@ -1027,6 +1029,155 @@ static ssize_t gpu_ifpo_runtime_control_store(struct kobject *kobj,
 
 static struct kobj_attribute attr_gpu_ifpo_runtime_control = __ATTR_RW(gpu_ifpo_runtime_control);
 
+#if IS_ENABLED(CONFIG_SEC_GPUINFO)
+/* HQM GPUINFO Interface */
+static ssize_t gpu_info_store(struct kobject *kobj,
+				  struct kobj_attribute *attr,
+				  const char *buf, size_t count)
+{
+	if (buf == NULL)
+		return -EINVAL;
+
+	if ((buf[0] == 'c') && ((buf[1] == '\0') || (buf[1] == '\n'))) {
+		for (int i = 0; i < GPU_EXCEPTION_LIST_END; i++) {
+			p_adev->gpu_shadow_stats[i] =
+				p_adev->gpu_cur_stats[i]
+					? atomic_read(p_adev->gpu_cur_stats[i]) : 0;
+		}
+	}
+
+	return count;
+}
+
+#define DECL_HQM_ENTRY(TYPE, NAME) \
+	[(TYPE)] = #NAME
+static const char *gpu_info_entry[GPU_EXCEPTION_LIST_END] = {
+	DECL_HQM_ENTRY(GPU_HANG,              GHG_S),
+	DECL_HQM_ENTRY(GPU_PAGE_FAULT,        GPF_S),
+	DECL_HQM_ENTRY(GPU_TIMEOUT,           GTO_S),
+	DECL_HQM_ENTRY(GPU_CPU_PAGE_FAULT,    GCF_S),
+	DECL_HQM_ENTRY(GPU_RETRY_HANG_DETECT, GRH_S),
+	DECL_HQM_ENTRY(GPU_RING_TEST_FAIL,    GRF_S)
+};
+#undef DECL_HQM_ENTRY
+
+static ssize_t gpu_info_show(struct kobject *kobj,
+				 struct kobj_attribute *attr, char *buf)
+{
+	ssize_t ret = 0;
+#define BUF_SIZE_gpu_info_show (PAGE_SIZE-1)
+	if (buf == NULL)
+		return -EINVAL;
+
+	for (int i = 0; i < GPU_EXCEPTION_LIST_END; i++) {
+		ret += scnprintf(buf + ret, BUF_SIZE_gpu_info_show-ret,
+			"\"%s\":\"%d\",", gpu_info_entry[i],
+				p_adev->gpu_cur_stats[i]
+				? atomic_read(p_adev->gpu_cur_stats[i]) - p_adev->gpu_shadow_stats[i]
+				: 0);
+	}
+	buf[ret++] = '\n';
+
+#undef BUF_SIZE_gpu_info_show
+	return ret;
+}
+
+static struct kobj_attribute attr_gpu_info = __ATTR_RW(gpu_info);
+#endif
+
+/* sgpu pm monitor sysfs functions */
+static int sgpu_pm_monitor_start(void)
+{
+	struct sgpu_pm_monitor *monitor = &p_adev->pm_monitor;
+
+	if (monitor->monitor_enable)
+		return -EINVAL;
+
+	sgpu_pm_monitor_get_stats(p_adev, &monitor->base_stats);
+
+	monitor->monitor_enable = true;
+
+	return 0;
+}
+
+static int sgpu_pm_monitor_end(void)
+{
+	struct sgpu_pm_monitor *monitor = &p_adev->pm_monitor;
+	struct sgpu_pm_stats *base_stat = &monitor->base_stats;
+	struct sgpu_pm_stats stat;
+	int i;
+
+	if (!monitor->monitor_enable)
+		return -EINVAL;
+
+	sgpu_pm_monitor_get_stats(p_adev, &stat);
+
+	for (i = 0; i < SGPU_POWER_STATE_NR; ++i)
+		monitor->state_duration[i] = stat.state_time[i]
+					     - base_stat->state_time[i];
+	monitor->monitor_duration = stat.last_update - base_stat->last_update;
+
+	monitor->monitor_enable = false;
+
+	return 0;
+}
+
+static ssize_t sgpu_pm_monitor_store(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					const char *buf, size_t count)
+{
+	u32 enable;
+	int ret;
+
+	ret = kstrtou32(buf, 0, &enable);
+	if (ret)
+		return ret;
+
+	if (!!enable)
+		ret = sgpu_pm_monitor_start();
+	else
+		ret = sgpu_pm_monitor_end();
+
+	if (ret)
+		return ret;
+
+	return count;
+}
+
+static ssize_t sgpu_pm_monitor_show(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					char *buf)
+{
+	struct sgpu_pm_monitor *monitor = &p_adev->pm_monitor;
+	uint64_t ratio[SGPU_POWER_STATE_NR] = {0, };
+	char *power_states[SGPU_POWER_STATE_NR] = {"Active",
+							"IFPO power off",
+							"Device suspend"};
+	ssize_t count = 0;
+	int i;
+
+	count += scnprintf(&buf[count], PAGE_SIZE - count,
+				"Last measured PM monitoring data\n");
+
+	if (monitor->monitor_duration) {
+		for (i = 0; i < SGPU_POWER_STATE_NR; ++i)
+			ratio[i] = (monitor->state_duration[i] * 100)
+					/ monitor->monitor_duration;
+	}
+
+	for (i = 0; i < SGPU_POWER_STATE_NR; ++i)
+		count += scnprintf(&buf[count], PAGE_SIZE - count,
+				"%16s : %llu%% (%lluus)\n", power_states[i],
+				ratio[i], monitor->state_duration[i] / 1000);
+
+	count += scnprintf(&buf[count], PAGE_SIZE - count,
+				"Monitor duration : %lluus\n",
+				monitor->monitor_duration / 1000);
+
+	return count;
+}
+struct kobj_attribute attr_gpu_pm_monitor = __ATTR_RW(sgpu_pm_monitor);
+
 /* SKI (Samsung Kernel Interface) */
 static struct kobject *ski_kobj;
 
@@ -1053,6 +1204,10 @@ static struct attribute *ski_gpu_sysfs_entries[] = {
 #ifdef CONFIG_DRM_SGPU_GRAPHIC_MEMORY_RECLAIM
 	&attr_gpu_swap_ctrl.attr,
 #endif
+#if IS_ENABLED(CONFIG_SEC_GPUINFO)
+	&attr_gpu_info.attr,
+#endif
+	&attr_gpu_pm_monitor.attr,
 	NULL,
 };
 
@@ -1134,8 +1289,6 @@ int exynos_interface_init(struct devfreq *df)
 	exynos_pm_qos_add_request(&exynos_gpu_siop_max_qos,
 				  PM_QOS_GPU_THROUGHPUT_MAX,
 				  PM_QOS_MAX_FREQUENCY_DEFAULT_VALUE);
-	exynos_pm_qos_add_request(&exynos_umd_gpu_min_qos,
-				  PM_QOS_GPU_THROUGHPUT_MIN, 0);
 	exynos_pm_qos_add_request(&exynos_afm_gpu_max_qos,
 				  PM_QOS_GPU_THROUGHPUT_MAX,
 				  PM_QOS_MAX_FREQUENCY_DEFAULT_VALUE);
@@ -1148,7 +1301,6 @@ int exynos_interface_init(struct devfreq *df)
 	INIT_DELAYED_WORK(&work_mm_min_clock, gpu_mm_min_reset);
 	schedule_delayed_work(&work_mm_min_clock, 0);
 
-	INIT_DELAYED_WORK(&work_umd_min_clock, gpu_umd_min_reset);
 	mutex_init(&afm_lock);
 
 	ski_kobj = kobject_create_and_add("gpu", kernel_kobj);
@@ -1197,7 +1349,6 @@ int exynos_interface_deinit(struct devfreq *df)
 	unregister_trace_android_vh_meminfo_proc_show(gpu_meminfo_show, p_adev);
 #endif /* CONFIG_DRM_SGPU_VENDOR_HOOKS */
 	cancel_delayed_work_sync(&work_mm_min_clock);
-	cancel_delayed_work_sync(&work_umd_min_clock);
 
 	return 0;
 }
@@ -1578,6 +1729,9 @@ int gpu_dvfs_set_polling_interval(unsigned int value)
 
 	if (!df->governor)
 		return -EINVAL;
+
+	DRM_INFO("change gpu devfreq polling interval(%dms->%ums)",
+						df->profile->polling_ms, value);
 
 	df->governor->event_handler(df, DEVFREQ_GOV_UPDATE_INTERVAL, &value);
 

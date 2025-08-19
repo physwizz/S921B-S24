@@ -48,6 +48,7 @@
 					linux,code = <115>;
 					gpios = <&gpa3 0 0xf>;
 					debounce-interval = <0x0f>;
+					gpio-key,wakeup;
 				};
 			};
 

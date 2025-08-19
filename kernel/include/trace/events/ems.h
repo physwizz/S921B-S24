@@ -452,31 +452,31 @@ TRACE_EVENT(lb_newidle_balance,
 
 TRACE_EVENT(ems_update_cpu_capacity,
 
-		TP_PROTO(int cpu, unsigned long prev, unsigned long new_cap,
-			unsigned long freq_cap, unsigned long arch_cap),
+	TP_PROTO(int cpu, unsigned long prev, unsigned long new_cap,
+		unsigned long freq_cap, unsigned long arch_cap),
 
-		TP_ARGS(cpu, prev, new_cap, freq_cap, arch_cap),
+	TP_ARGS(cpu, prev, new_cap, freq_cap, arch_cap),
 
-		TP_STRUCT__entry(
-			__field(	int,		cpu			)
-			__field(	unsigned long,	prev			)
-			__field(	unsigned long,	new_cap			)
-			__field(	unsigned long,	freq_cap		)
-			__field(	unsigned long,	arch_cap		)
-			),
+	TP_STRUCT__entry(
+		__field(	int,		cpu			)
+		__field(	unsigned long,	prev			)
+		__field(	unsigned long,	new_cap			)
+		__field(	unsigned long,	freq_cap		)
+		__field(	unsigned long,	arch_cap		)
+	),
 
-		TP_fast_assign(
-			__entry->cpu			= cpu;
-			__entry->prev			= prev;
-			__entry->new_cap		= new_cap;
-			__entry->freq_cap		= freq_cap;
-			__entry->arch_cap		= arch_cap;
-			),
+	TP_fast_assign(
+		__entry->cpu			= cpu;
+		__entry->prev			= prev;
+		__entry->new_cap		= new_cap;
+		__entry->freq_cap		= freq_cap;
+		__entry->arch_cap		= arch_cap;
+	),
 
-		TP_printk("cpu=%d prev=%lu new_cap=%lu freq_cap=%lu arch_cap=%lu",
-				__entry->cpu, __entry->prev, __entry->new_cap,
-				__entry->freq_cap, __entry->arch_cap)
-		);
+	TP_printk("cpu=%d prev=%lu new_cap=%lu freq_cap=%lu arch_cap=%lu",
+		__entry->cpu, __entry->prev, __entry->new_cap, __entry->freq_cap,
+		__entry->arch_cap)
+);
 #endif /* _TRACE_EMS_H */
 
 /* This part must be outside protection */

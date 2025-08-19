@@ -355,6 +355,7 @@ enum decon_regs_type {
 #define ENHANCE_PATH_F(_v)			((_v) << 12)
 #define ENHANCE_DITHER_ON			ENHANCE_PATH_F(1)
 #define ENHANCE_DQE_ON				ENHANCE_PATH_F(2)
+#define ENHANCE_RCD_ON				ENHANCE_PATH_F(4)
 #define ENHANCE_DQE_ON_RCD_ON		ENHANCE_PATH_F(6)
 #define ENHANCE_PATH_MASK			(0x7 << 12)
 #define ENHANCE_PATH_GET(_v)			(((_v) >> 12) & 0x7)

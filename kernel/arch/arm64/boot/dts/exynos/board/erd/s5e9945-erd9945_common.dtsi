@@ -1006,7 +1006,7 @@
 };
 
 &chosen {
-        bootargs_ext = "panic_on_warn=1 cpif.cp_btl=on";
+        bootargs_ext = "panic_on_warn=1 cpif.cp_btl=on pm_debug_messages";
 };
 
 &serial_0 {
@@ -1500,6 +1500,15 @@
 
 &pcie_0 {
 	compatible = "exynos-pcie-rc,wifi_ss";
+	interrupts = <GIC_SPI INTREQ__PCIE_GEN4_2L_0_subsystem_int IRQ_TYPE_LEVEL_HIGH>,
+		   <GIC_SPI INTREQ__PCIE_GEN4_2L_0_msi_recieved_from_EP_NUM_0 IRQ_TYPE_LEVEL_HIGH>,
+		   <GIC_SPI INTREQ__PCIE_GEN4_2L_0_msi_recieved_from_EP_NUM_1 IRQ_TYPE_LEVEL_HIGH>,
+		   <GIC_SPI INTREQ__PCIE_GEN4_2L_0_msi_recieved_from_EP_NUM_2 IRQ_TYPE_LEVEL_HIGH>,
+		   <GIC_SPI INTREQ__PCIE_GEN4_2L_0_msi_recieved_from_EP_NUM_3 IRQ_TYPE_LEVEL_HIGH>,
+		   <GIC_SPI INTREQ__PCIE_GEN4_2L_0_msi_recieved_from_EP_NUM_4 IRQ_TYPE_LEVEL_HIGH>,
+		   <GIC_SPI INTREQ__PCIE_GEN4_2L_0_msi_recieved_from_EP_NUM_5 IRQ_TYPE_LEVEL_HIGH>,
+		   <GIC_SPI INTREQ__PCIE_GEN4_2L_0_msi_recieved_from_EP_NUM_6 IRQ_TYPE_LEVEL_HIGH>,
+		   <GIC_SPI INTREQ__PCIE_GEN4_2L_0_msi_recieved_from_EP_NUM_7 IRQ_TYPE_LEVEL_HIGH>;
 	dma-coherent;
 	status = "okay";
 	use-sysmmu = "false";

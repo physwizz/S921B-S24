@@ -218,7 +218,7 @@
 				pktproc_dl_netrx_capacity = <10000>;
 				pktproc_dl_use_napi = <1>;
 				pktproc_dl_use_hw_iocc = <1>;	/* H/W IO cache coherency */
-				pktproc_dl_max_packet_size = <2048>;
+				pktproc_dl_max_packet_size = <1600>;
 				pktproc_dl_use_dedicated_baaw = <1>;
 
 				/* Packet processor for UL */
@@ -232,7 +232,7 @@
 				pktproc_ul_padding_required = <1>; /* for s5123 EVT1 only */
 				pktproc_ul_num_queue = <2>;
 				pktproc_ul_max_packet_size = <2048>;
-				pktproc_ul_hiprio_ack_only = <1>;
+				pktproc_ul_hiprio_ack_only = <0>;
 				pktproc_ul_info_rgn_cached = <0>;
 				pktproc_ul_desc_rgn_cached = <1>;
 				pktproc_ul_buff_rgn_cached = <1>;
@@ -456,12 +456,12 @@
 					};
 					io_device_7 {
 						iod,name = "rmnet";
-						iod,ch = <SIPC_CH_ID_PDP_0>;
+						iod,ch = <SIPC_CH_EX_ID_PDP_0>;
 						iod,format = <IPC_RAW>;
 						iod,io_type = <IODEV_NET>;
 						iod,link_type = <LINKDEV_SHMEM>;
 						iod,attrs = <(IO_ATTR_NO_LINK_HEADER | IO_ATTR_SBD_IPC | IO_ATTR_MULTI_CH)>;
-						iod,ch_count = <8>;
+						iod,ch_count = <30>;
 						iod,ul_num_buffers = <0>;
 						iod,ul_buffer_size = <2048>;
 						iod,dl_num_buffers = <0>;
@@ -508,30 +508,16 @@
 						iod,attrs = <(IO_ATTR_NO_CHECK_MAXQ | IO_ATTR_SIPC5)>;
 					};
 					io_device_12 {
-						iod,name = "smd4";
-						iod,ch = <SIPC_CH_ID_SMD4>;
-						iod,format = <IPC_RAW>;
-						iod,io_type = <IODEV_IPC>;
-						iod,link_type = <LINKDEV_SHMEM>;
-						iod,attrs = <(IO_ATTR_OPTION_REGION | IO_ATTR_SBD_IPC | IO_ATTR_SIPC5)>;
-						iod,ul_num_buffers = <16>;
-						iod,ul_buffer_size = <2048>;
-						iod,dl_num_buffers = <128>;
-						iod,dl_buffer_size = <2048>;
-						iod,option_region = "kor_skt";
-					};
-					io_device_13 {
 						iod,name = "umts_ciq0";
 						iod,ch = <SIPC_CH_ID_CIQ_DATA>;
 						iod,format = <IPC_RAW>;
 						iod,io_type = <IODEV_IPC>;
 						iod,link_type = <LINKDEV_SHMEM>;
-						iod,attrs = <(IO_ATTR_OPTION_REGION | IO_ATTR_SBD_IPC | IO_ATTR_SIPC5)>;
+						iod,attrs = <(IO_ATTR_SBD_IPC | IO_ATTR_SIPC5)>;
 						iod,ul_num_buffers = <16>;
 						iod,ul_buffer_size = <2048>;
 						iod,dl_num_buffers = <128>;
 						iod,dl_buffer_size = <2048>;
-						iod,option_region = "usa_spr";
 					};
 				}; /* end of iodevs */
 			}; /* end of cpif */

@@ -99,11 +99,11 @@ enum s2mps28_gpio_pull_param {
 };
 
 static const char *const s2mps28_biases[] = {
-	"no-pull", "pull-down", "pull-up"
+	"no-pull", "pull-down", "pull-up", "not-use"
 };
 
 static const char *const s2mps28_strengths[] = {
-	"1mA", "2mA", "3mA", "4mA", "5mA", "6mA"
+	"1mA", "2mA", "3mA", "4mA", "5mA", "6mA", "not-use", "not-use"
 };
 
 static const struct pinconf_generic_params s2mps28_gpio_bindings[] = {

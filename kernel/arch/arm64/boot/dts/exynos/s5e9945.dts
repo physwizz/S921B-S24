@@ -883,10 +883,11 @@
 		hts_reg {
 			ectlr1 {
 				index = <0>;
+				disable_cpus = "9";
 			};
 			ectlr2 {
 				index = <1>;
-				disable_cpus = CPU_CL0;
+				disable_cpus = "0-3,9";
 			};
 		};
 	};

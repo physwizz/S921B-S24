@@ -63,79 +63,109 @@ struct is_cap_meta_info {
 };
 
 enum is_subscenario_id {
-	ISS_SUB_SCENARIO_STILL_PREVIEW = 0,                        /* 0: Single preview */
-	ISS_SUB_SCENARIO_STILL_REMOSAIC_PREVIEW = 1,               /* 1: Remosaic preview (Photo RCP on, Portrait 2x RCP on) */
-	ISS_SUB_SCENARIO_STILL_SUPER_NIGHT_PREVIEW = 2,            /* 2: Super night preview */
-	ISS_SUB_SCENARIO_STILL_PORTRAIT_PREVIEW = 3,               /* 3: Portrait preview */
-	ISS_SUB_SCENARIO_STILL_EXPERT_RAW_PREVIEW = 4,             /* 4: Expert RAW preview */
-	ISS_SUB_SCENARIO_STILL_3RD_PARTY_PREVIEW = 5,              /* 5: 3rd party preview */
-	ISS_SUB_SCENARIO_STILL_PREVIEW_PRO_MODE = 6,               /* 6: Pro mode Preview */
+	ISS_SUB_SCENARIO_STILL_PREVIEW = 0,                        /* Single preview */
+	ISS_SUB_SCENARIO_STILL_REMOSAIC_PREVIEW = 1,               /* Remosaic preview (Photo RCP on, Portrait 2x RCP on) */
+	ISS_SUB_SCENARIO_STILL_SUPER_NIGHT_PREVIEW = 2,            /* Super night preview */
+	ISS_SUB_SCENARIO_STILL_PORTRAIT_PREVIEW = 3,               /* Portrait preview */
+	ISS_SUB_SCENARIO_STILL_EXPERT_RAW_PREVIEW = 4,             /* Expert RAW preview */
+	ISS_SUB_SCENARIO_STILL_3RD_PARTY_PREVIEW = 5,              /* 3rd party preview */
+	ISS_SUB_SCENARIO_STILL_PRO_MODE_PREVIEW = 6,               /* Pro mode Preview */
 
-	ISS_SUB_SCENARIO_STILL_SF_CAPTURE = 10,                    /* 10: Single Frame Capture (Single, Burst, Video Snapshot, Panorama) */
-	ISS_SUB_SCENARIO_STILL_PRO_SF_CAPTURE = 11,                /* 11: Single Frame Capture (Pro, HDR off) */
-	ISS_SUB_SCENARIO_STILL_EXPERT_RAW_CAPTURE = 12,            /* 12: Expert RAW Capture (Pro) */
-	ISS_SUB_SCENARIO_STILL_REMOSAIC_SF_CAPTURE = 13,           /* 13: Remosaic Single Frame Capture (HighRes, RCC, RCP single) */
-	ISS_SUB_SCENARIO_STILL_HHDR_AID_CAPTURE = 14,              /* 14: Single Frame S2M Capture (HHDR, AID Processing) */
-	ISS_SUB_SCENARIO_STILL_3RD_PARTY_SF_CAPTURE = 15,          /* 15: 3rd Party Single Frame Capture */
-	ISS_SUB_SCENARIO_STILL_MOTION_FREE_SF_CAPTURE = 16,        /* 16: Single Frame Motion Free Capture */
-	ISS_SUB_SCENARIO_STILL_FACTORY_CAPTURE = 17,               /* 17: Factory Camera Capture */
-	ISS_SUB_SCENARIO_STILL_REMOSAIC_PRO_SF_CAPTURE = 18,       /* 18: Remosaic Pro Single Frame Capture (Pro/Factory HighRes) */
+	ISS_SUB_SCENARIO_STILL_SF_CAPTURE = 10,                    /* Single Frame Capture (Single, Burst, Video Snapshot, Panorama) */
+	ISS_SUB_SCENARIO_STILL_PRO_SF_CAPTURE = 11,                /* Single Frame Capture (Pro, HDR off) */
+	ISS_SUB_SCENARIO_STILL_EXPERT_RAW_SF_CAPTURE = 12,         /* Expert RAW Capture (Pro) */
+	ISS_SUB_SCENARIO_STILL_REMOSAIC_SF_CAPTURE = 13,           /* Remosaic Single Frame Capture (HighRes, RCC, RCP single) */
+	ISS_SUB_SCENARIO_STILL_HHDR_AID_SF_CAPTURE = 14,           /* Single Frame S2M Capture (HHDR, AID Processing) */
+	ISS_SUB_SCENARIO_STILL_3RD_PARTY_SF_CAPTURE = 15,          /* 3rd Party Single Frame Capture */
+	ISS_SUB_SCENARIO_STILL_MOTION_FREE_SF_CAPTURE = 16,        /* Single Frame Motion Free Capture */
+	ISS_SUB_SCENARIO_STILL_FACTORY_SF_CAPTURE = 17,            /* Factory Camera Capture */
+	ISS_SUB_SCENARIO_STILL_REMOSAIC_PRO_SF_CAPTURE = 18,       /* Remosaic Pro Single Frame Capture (Pro/Factory HighRes) */
+	ISS_SUB_SCENARIO_STILL_REMOSAIC_HHDR_AID_SF_CAPTURE = 19,  /* Remosaic Single Frame S2M Capture (HHDR, AID Processing) */
 
-	ISS_SUB_SCENARIO_STILL_MF_CAPTURE = 20,                    /* 20: Multi Frame Capture (TNR, TNR in HDR) */
-	ISS_SUB_SCENARIO_STILL_FLASH_MF_CAPTURE = 21,              /* 21: Flash Multi Frame Capture (TNR) */
-	ISS_SUB_SCENARIO_STILL_HIGH_RES_MF_CAPTURE = 22,           /* 22: HighRes 50M Multi Frame Capture (TNR) */
-	ISS_SUB_SCENARIO_STILL_REMOSAIC_MF_CAPTURE = 23,           /* 23: Remosaic Multi Frame Capture (RCP, RCC TNR) */
-	ISS_SUB_SCENARIO_STILL_3RD_PARTY_MF_CAPTURE = 24,          /* 24: 3rd Party Capture (YOU) */
-	ISS_SUB_SCENARIO_STILL_MOTION_FREE_MF_CAPTURE = 25,        /* 25: Multi Frame Motion Free Capture (TNR) */
+	ISS_SUB_SCENARIO_STILL_MF_CAPTURE = 20,                    /* Multi Frame Capture (TNR, TNR in HDR) */
+	ISS_SUB_SCENARIO_STILL_FLASH_MF_CAPTURE = 21,              /* Flash Multi Frame Capture (TNR) */
+	ISS_SUB_SCENARIO_STILL_HIGH_RES_MF_CAPTURE = 22,           /* HighRes 50M Multi Frame Capture (TNR) */
+	ISS_SUB_SCENARIO_STILL_REMOSAIC_MF_CAPTURE = 23,           /* Remosaic Multi Frame Capture (RCP, RCC TNR) */
+	ISS_SUB_SCENARIO_STILL_3RD_PARTY_MF_CAPTURE = 24,          /* 3rd Party Capture (YOU) */
+	ISS_SUB_SCENARIO_STILL_MOTION_FREE_MF_CAPTURE = 25,        /* Multi Frame Motion Free Capture (TNR) */
 
-	ISS_SUB_SCENARIO_NIGHT_CAPTURE = 30,                       /* 30: Night Capture (Night, Auto Night) */
-	ISS_SUB_SCENARIO_SRZOOM_CAPTURE = 31,                      /* 31: SRZoom Capture (Super Resolution) */
-	ISS_SUB_SCENARIO_HIGH_RES_RAW_CAPTURE = 32,                /* 32: High Resolution PURE_RAW, PROCESSED_RAW Capture */
-	ISS_SUB_SCENARIO_REMOSAIC_NIGHT_CAPTURE = 33,              /* 33: Remosaic Night Capture (RCP, RCC) */
+	ISS_SUB_SCENARIO_NIGHT_SOL_CAPTURE = 30,                   /* Night Capture (Night, Auto Night) */
+	ISS_SUB_SCENARIO_SRZOOM_SOL_CAPTURE = 31,                  /* SRZoom Capture (Super Resolution) */
+	ISS_SUB_SCENARIO_HIGH_RES_RAW_SOL_CAPTURE = 32,            /* High Resolution PURE_RAW, PROCESSED_RAW Capture */
+	ISS_SUB_SCENARIO_REMOSAIC_NIGHT_SOL_CAPTURE = 33,          /* Remosaic Night Capture (RCP, RCC) */
 
-	ISS_SUB_SCENARIO_FHD_VIDEO = 40,                           /* 40: FHD 30fps */
-	ISS_SUB_SCENARIO_UHD_VIDEO = 41,                           /* 41: UHD 30fps */
-	ISS_SUB_SCENARIO_8K_30FPS_VIDEO = 42,                      /* 42: 8k 30fps (Video, Snapshot) */
-	ISS_SUB_SCENARIO_SUPER_STEADY_FHD_30FPS_VIDEO = 43,        /* 43: Super Steady FHD 30fps */
-	ISS_SUB_SCENARIO_SUPER_STEADY_QHD_30FPS_VIDEO = 44,        /* 44: Super Steady QHD 30fps */
-	ISS_SUB_SCENARIO_FHD_60FPS_VIDEO = 45,                     /* 45: FHD 60fps */
-	ISS_SUB_SCENARIO_UHD_60FPS_VIDEO = 46,                     /* 46: UHD 60fps */
+	ISS_SUB_SCENARIO_FHD_30FPS_VIDEO = 40,                     /* FHD 30fps */
+	ISS_SUB_SCENARIO_UHD_30FPS_VIDEO = 41,                     /* UHD 30fps */
+	ISS_SUB_SCENARIO_8K_30FPS_VIDEO = 42,                      /* 8k 30fps (Video, Snapshot) */
+	ISS_SUB_SCENARIO_SUPER_STEADY_FHD_30FPS_VIDEO = 43,        /* Super Steady FHD 30fps */
+	ISS_SUB_SCENARIO_SUPER_STEADY_QHD_30FPS_VIDEO = 44,        /* Super Steady QHD 30fps */
+	ISS_SUB_SCENARIO_FHD_60FPS_VIDEO = 45,                     /* FHD 60fps */
+	ISS_SUB_SCENARIO_UHD_60FPS_VIDEO = 46,                     /* UHD 60fps */
 
-	ISS_SUB_SCENARIO_HDR10_FHD_VIDEO = 50,                     /* 50: HDR10+ FHD 30fps */
-	ISS_SUB_SCENARIO_HDR10_UHD_VIDEO = 51,                     /* 51: HDR10+ UHD 30fps */
-	ISS_SUB_SCENARIO_SUPER_STEADY_HDR10_FHD_VIDEO = 52,        /* 52: Super Steady HDR10+ FHD 30fps */
-	ISS_SUB_SCENARIO_SUPER_STEADY_HDR10_QHD_VIDEO = 53,        /* 53: Super Steady HDR10+ QHD 30fps */
-	ISS_SUB_SCENARIO_HDR10_FHD_60FPS_VIDEO = 54,               /* 54: HDR10+ FHD 60fps */
-	ISS_SUB_SCENARIO_HDR10_UHD_60FPS_VIDEO = 55,               /* 55: HDR10+ UHD 60fps */
+	ISS_SUB_SCENARIO_FHD_30FPS_HDR10_VIDEO = 50,               /* HDR10+ FHD 30fps */
+	ISS_SUB_SCENARIO_UHD_30FPS_HDR10_VIDEO = 51,               /* HDR10+ UHD 30fps */
+	ISS_SUB_SCENARIO_SUPER_STEADY_FHD_HDR10_VIDEO = 52,        /* HDR10+ Super Steady FHD 30fps */
+	ISS_SUB_SCENARIO_SUPER_STEADY_QHD_HDR10_VIDEO = 53,        /* HDR10+ Super Steady QHD 30fps */
+	ISS_SUB_SCENARIO_FHD_60FPS_HDR10_VIDEO = 54,               /* HDR10+ FHD 60fps */
+	ISS_SUB_SCENARIO_UHD_60FPS_HDR10_VIDEO = 55,               /* HDR10+ UHD 60fps */
 
-	ISS_SUB_SCENARIO_RCV_FHD_VIDEO= 60,                        /* 60: Remosaic Crop FHD 30fps/60fps */
-	ISS_SUB_SCENARIO_RCV_UHD_VIDEO = 61,                       /* 61: Remosaic Crop UHD 30fps/60fps */
+	ISS_SUB_SCENARIO_RCV_FHD_VIDEO = 60,                       /* Remosaic Crop FHD 30fps / 60fps */
+	ISS_SUB_SCENARIO_RCV_UHD_VIDEO = 61,                       /* Remosaic Crop UHD 30fps / 60fps */
 
-	ISS_SUB_SCENARIO_HDR10_RCV_FHD_VIDEO = 70,                 /* 70: HDR10+ Remosaic Crop FHD 30fps/60fps */
-	ISS_SUB_SCENARIO_HDR10_RCV_UHD_VIDEO = 71,                 /* 71: HDR10+ Remosaic Crop UHD 30fps/60fps */
+	ISS_SUB_SCENARIO_RCV_FHD_HDR10_VIDEO = 70,                 /* HDR10+ Remosaic Crop FHD 30fps / 60fps */
+	ISS_SUB_SCENARIO_RCV_UHD_HDR10_VIDEO = 71,                 /* HDR10+ Remosaic Crop UHD 30fps / 60fps */
 
-	ISS_SUB_SCENARIO_HIGH_SPEED_VIDEO = 80,                    /* 80: FHD 240fps (Slow motion, Super Slow motion) */
-	ISS_SUB_SCENARIO_HIGH_SPEED_FHD_120_VIDEO = 81,            /* 81: FHD 120fps (Slow motion, ProVideo) */
-	ISS_SUB_SCENARIO_HIGH_SPEED_UHD_120_VIDEO = 82,            /* 82: UHD 120fps (Slow motion, ProVideo) */
+	ISS_SUB_SCENARIO_HIGH_SPEED_VIDEO = 80,                    /* FHD 240fps (Slow motion, Super Slow motion) */
+	ISS_SUB_SCENARIO_HIGH_SPEED_FHD_120_VIDEO = 81,            /* FHD 120fps (Slow motion, ProVideo) */
+	ISS_SUB_SCENARIO_HIGH_SPEED_UHD_120_VIDEO = 82,            /* UHD 120fps (Slow motion, ProVideo) */
 
-	ISS_SUB_SCENARIO_3RD_PARTY_VIDEO = 90,                     /* 90: 3rd Party Video */
-	ISS_SUB_SCENARIO_3RD_PARTY_BINNING_VIDEO = 91,             /* 91: 3rd Party Video binning (VTCall) */
-	ISS_SUB_SCENARIO_IQ_EVAL_VIDEO = 92,                       /* 92: IQ Eval Video */
-	ISS_SUB_SCENARIO_IQ_EVAL_CAPTURE = 93,                     /* 93: IQ Eval Capture */
-	ISS_SUB_SCENARIO_3RD_PARTY_HDR10_VIDEO = 94,               /* 94: 3rd Party HDR10 Video */
-	ISS_SUB_SCENARIO_3RD_PARTY_HLG_VIDEO = 95,                 /* 95: 3rd Party HLG Video */
+	ISS_SUB_SCENARIO_3RD_PARTY_VIDEO = 90,                     /* 3rd Party Video, U OS */
+	ISS_SUB_SCENARIO_3RD_PARTY_BINNING_VIDEO = 91,             /* 3rd Party Video binning (VTCall) */
+	ISS_SUB_SCENARIO_IQ_EVAL_VIDEO = 92,                       /* IQ Eval Video */
+	ISS_SUB_SCENARIO_IQ_EVAL_CAPTURE = 93,                     /* IQ Eval Capture */
+	ISS_SUB_SCENARIO_3RD_PARTY_HDR10_VIDEO = 94,               /* 3rd Party HDR10 Video, U OS */
+	ISS_SUB_SCENARIO_3RD_PARTY_HLG_VIDEO = 95,                 /* 3rd Party HLG Video, U OS */
+
+	ISS_SUB_SCENARIO_FHD_30FPS_HLG10_VIDEO = 140,              /* HLG10 FHD 30fps */
+	ISS_SUB_SCENARIO_FHD_60FPS_HLG10_VIDEO = 141,              /* HLG10 FHD 60fps */
+	ISS_SUB_SCENARIO_UHD_30FPS_HLG10_VIDEO = 142,              /* HLG10 UHD 30fps */
+	ISS_SUB_SCENARIO_UHD_60FPS_HLG10_VIDEO = 143,              /* HLG10 UHD 60fps */
+	ISS_SUB_SCENARIO_8K_30FPS_HLG10_VIDEO = 144,               /* HLG10 8k 30fps (Video, Snapshot) */
+	ISS_SUB_SCENARIO_SUPER_STEADY_FHD_HLG10_VIDEO = 145,       /* HLG10 Super Steady FHD 30fps */
+	ISS_SUB_SCENARIO_SUPER_STEADY_QHD_HLG10_VIDEO = 146,       /* HLG10 Super Steady QHD 30fps */
+
+	ISS_SUB_SCENARIO_RCV_FHD_HLG10_VIDEO = 160,                /* HLG10 Remosaic Crop FHD 30fps / 60fps */
+	ISS_SUB_SCENARIO_RCV_UHD_HLG10_VIDEO = 161,                /* HLG10 Remosaic Crop UHD 30fps / 60fps */
+
+	ISS_SUB_SCENARIO_FHD_30FPS_LOG10_VIDEO = 170,              /* LOG10 FHD 30fps */
+	ISS_SUB_SCENARIO_FHD_60FPS_LOG10_VIDEO = 171,              /* LOG10 FHD 60fps */
+	ISS_SUB_SCENARIO_UHD_30FPS_LOG10_VIDEO = 172,              /* LOG10 UHD 30fps */
+	ISS_SUB_SCENARIO_UHD_60FPS_LOG10_VIDEO = 173,              /* LOG10 UHD 60fps */
+	ISS_SUB_SCENARIO_8K_30FPS_LOG10_VIDEO = 174,               /* LOG10 8k 30fps (Video, Snapshot) */
+	ISS_SUB_SCENARIO_SUPER_STEADY_FHD_LOG10_VIDEO = 175,       /* LOG10 Super Steady FHD 30fps */
+	ISS_SUB_SCENARIO_SUPER_STEADY_QHD_LOG10_VIDEO = 176,       /* LOG10 Super Steady QHD 30fps */
+
+	ISS_SUB_SCENARIO_RCV_FHD_LOG10_VIDEO = 190,                /* LOG10 Remosaic Crop FHD 30fps / 60fps */
+	ISS_SUB_SCENARIO_RCV_UHD_LOG10_VIDEO = 191,                /* LOG10 Remosaic Crop UHD 30fps / 60fps */
+
+	ISS_SUB_SCENARIO_HIGH_SPEED_HLG10_VIDEO = 200,             /* HLG10 FHD 240fps (Slow motion, Super Slow motion) */
+	ISS_SUB_SCENARIO_HIGH_SPEED_FHD_120_HLG10_VIDEO = 201,     /* HLG10 FHD 120fps (Slow motion, ProVideo) */
+	ISS_SUB_SCENARIO_HIGH_SPEED_UHD_120_HLG10_VIDEO = 202,     /* HLG10 UHD 120fps (Slow motion, ProVideo) */
+
+	ISS_SUB_SCENARIO_HIGH_SPEED_FHD_120_LOG10_VIDEO = 206,     /* LOG10 FHD 120fps (Slow motion, ProVideo) */
+
 	ISS_SUB_END,
 };
 
-#define IS_VIDEO_HDR_SCENARIO(setfile)				\
-	(((setfile) == ISS_SUB_SCENARIO_FHD_VIDEO)		 \
-	||((setfile) == ISS_SUB_SCENARIO_FHD_60FPS_VIDEO)		\
-	|| ((setfile) == ISS_SUB_SCENARIO_HDR10_FHD_VIDEO)		\
-	|| ((setfile) == ISS_SUB_SCENARIO_HDR10_UHD_VIDEO)		\
-	|| ((setfile) == ISS_SUB_SCENARIO_HDR10_FHD_60FPS_VIDEO)		\
-	|| ((setfile) == ISS_SUB_SCENARIO_HDR10_UHD_60FPS_VIDEO)		\
-	|| ((setfile) == ISS_SUB_SCENARIO_HDR10_RCV_FHD_VIDEO)		\
-	|| ((setfile) == ISS_SUB_SCENARIO_HDR10_RCV_UHD_VIDEO))
+#define IS_VIDEO_HDR_SCENARIO(setfile)							\
+	(((setfile) == ISS_SUB_SCENARIO_FHD_30FPS_VIDEO)				\
+	||((setfile) == ISS_SUB_SCENARIO_FHD_60FPS_VIDEO)				\
+	|| ((setfile) == ISS_SUB_SCENARIO_FHD_30FPS_HDR10_VIDEO)		\
+	|| ((setfile) == ISS_SUB_SCENARIO_UHD_30FPS_HDR10_VIDEO)		\
+	|| ((setfile) == ISS_SUB_SCENARIO_FHD_60FPS_HDR10_VIDEO)		\
+	|| ((setfile) == ISS_SUB_SCENARIO_UHD_60FPS_HDR10_VIDEO)		\
+	|| ((setfile) == ISS_SUB_SCENARIO_RCV_FHD_HDR10_VIDEO)		\
+	|| ((setfile) == ISS_SUB_SCENARIO_RCV_UHD_HDR10_VIDEO))
 
 enum is_scenario_is {
 	IS_SCENARIO_SWVDIS = 1,
@@ -572,7 +602,10 @@ struct camera2_jpeg_ctl {
 enum facedetect_mode {
 	FACEDETECT_MODE_OFF = 1,
 	FACEDETECT_MODE_SIMPLE,
-	FACEDETECT_MODE_FULL
+	FACEDETECT_MODE_FULL,
+
+	/* vendor feature */
+	FACEDETECT_MODE_TRACKING = 102,
 };
 
 enum stats_mode {
@@ -864,6 +897,7 @@ enum aa_scene_mode {
 	AA_SCENE_MODE_LIGHT_TRAIL      = 148,
 	AA_SCENE_MODE_ASTRO            = 149,
 	AA_SCENE_MODE_SW_ND_FILTER     = 150,
+	AA_SCENE_MODE_STEREO_VIDEO     = 151,
 };
 
 enum aa_effect_mode {
@@ -1237,6 +1271,15 @@ enum aa_adaptive_pixel_mode {
 	AA_ADAPTIVE_PIXEL_MODE_OFF,
 };
 
+enum aa_video_dr_mode {
+	AA_VIDEO_DR_MODE_SDR = 0,
+	AA_VIDEO_DR_MODE_HDR10_PLUS,
+	AA_VIDEO_DR_MODE_3HDR,
+	AA_VIDEO_DR_MODE_HLG10,
+	AA_VIDEO_DR_MODE_HDR10,
+	AA_VIDEO_DR_MODE_LOG10,
+};
+
 struct camera2_video_output_size {
 	uint16_t			width;
 	uint16_t			height;
@@ -1322,8 +1365,9 @@ struct camera2_aa_ctl {
 	// static info for remosaic preview crop zoom ratio (0:invalid)
 	uint32_t			vendor_remosaicCropZoomRatio;
 	enum aa_transient_action	vendor_transientAction;
-	enum aa_adaptive_pixel_mode	vendor_adaptviePixelMode;
-	uint32_t			vendor_reserved[24];
+	enum aa_adaptive_pixel_mode	vendor_adaptivePixelMode;
+	enum aa_video_dr_mode		vendor_videoDrMode;
+	uint32_t			vendor_reserved[23];
 };
 
 struct aa_apexInfo {
@@ -2170,9 +2214,23 @@ struct camera2_optical_flow_Info {
 	int32_t blocksNum;
 };
 
+struct camera2_motion_free_capture_info {
+	uint32_t flicker_data;
+	uint32_t motionScore;
+	uint32_t haveBlock;
+	uint32_t aeStatus;
+	uint32_t globalMotion;
+};
+
 enum camera_scene_optimizer_modes {
 	CAMERA_SCENE_OPTIMIZER_MODE_OFF     = 0,
 	CAMERA_SCENE_OPTIMIZER_MODE_ON      = 1,
+};
+
+enum camera_fold_state {
+	CAMERA_FOLD_UNFOLDED = 0,
+	CAMERA_FOLD_FOLDED = 6,
+	CAMERA_FOLD_INVALID = 0xFF,
 };
 
 /** \brief
@@ -2239,7 +2297,9 @@ struct camera2_uctl {
 	uint32_t			textDetectionInfo;
 	struct camera2_optical_flow_Info opticalFlowInfo;
 	enum camera_scene_optimizer_modes sceneOptimizerMode;
-	uint32_t			reserved[45];
+	uint32_t			scenarioIdx;
+	enum camera_fold_state foldState;
+	uint32_t			reserved[43];
 };
 
 struct camera2_udm {
@@ -2274,7 +2334,8 @@ struct camera2_udm {
 	uint64_t			sensorVsyncTime;
 	enum camera_nr_iteration_mode   nrIterationMode;
 	uint32_t			globalMotionState;
-	uint32_t                        reserved[45];
+	struct camera2_motion_free_capture_info	motionFreeInfo;
+	uint32_t 			reserved[40];
 };
 
 struct camera2_shot {

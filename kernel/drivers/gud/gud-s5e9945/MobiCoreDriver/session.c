@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2013-2022 TRUSTONIC LIMITED
+ * Copyright (c) 2013-2023 TRUSTONIC LIMITED
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -28,6 +28,7 @@
 #include <linux/net.h>
 #include <net/sock.h>		/* sockfd_lookup */
 #include <linux/version.h>
+
 #if KERNEL_VERSION(4, 11, 0) <= LINUX_VERSION_CODE
 #include <linux/sched/clock.h>	/* local_clock */
 #include <linux/sched/task.h>	/* put_task_struct */
@@ -527,6 +528,8 @@ struct tee_session *session_create(struct tee_client *client,
 		mcp_session_init(&session->mcp_session);
 	}
 
+	session->is_cancelled = false;
+
 	client_get(client);
 	session->client = client;
 	kref_init(&session->kref);
@@ -582,6 +585,22 @@ static void session_release(struct kref *kref)
 int session_put(struct tee_session *session)
 {
 	return kref_put(&session->kref, session_release);
+}
+
+/*
+ * Simply return current nq session state as defined in
+ * enum nq_notif_state (nq.h)
+ */
+int session_get_state(struct tee_session *session)
+{
+	int ret = 0;
+
+	if (session->is_gp)
+		ret = session->iwp_session.nq_session.state;
+	else
+		ret = session->mcp_session.nq_session.state;
+
+	return ret;
 }
 
 static int wsm_debug_structs(struct kasnprintf_buf *buf, struct tee_wsm *wsm,
@@ -771,11 +790,25 @@ int session_mc_cleanup_session(struct tee_session *session)
  */
 int session_mc_notify(struct tee_session *session)
 {
+#ifdef MC_SHADOW_BUFFER
+	int i;
+#endif /* MC_SHADOW_BUFFER */
+
 	if (!session) {
 		mc_dev_devel("Session pointer is null");
 		return -EINVAL;
 	}
 
+#ifdef MC_SHADOW_BUFFER
+	mutex_lock(&session->wsms_lock);
+	if (session->tci.in_use)
+		tee_mmu_copy_to_shadow(session->tci.mmu);
+
+	for (i = 0; i < MC_MAP_MAX; i++)
+		if (session->wsms[i].in_use)
+			tee_mmu_copy_to_shadow(session->wsms[i].mmu);
+	mutex_unlock(&session->wsms_lock);
+#endif /* MC_SHADOW_BUFFER */
 	return mcp_notify(&session->mcp_session);
 }
 
@@ -784,7 +817,26 @@ int session_mc_notify(struct tee_session *session)
  */
 int session_mc_wait(struct tee_session *session, s32 timeout)
 {
-	return mcp_wait(&session->mcp_session, timeout);
+	int ret;
+#ifdef MC_SHADOW_BUFFER
+	int i;
+#endif /* MC_SHADOW_BUFFER */
+
+	ret = mcp_wait(&session->mcp_session, timeout);
+
+#ifdef MC_SHADOW_BUFFER
+	mutex_lock(&session->wsms_lock);
+	for (i = 0; i < MC_MAP_MAX; i++)
+		if (session->wsms[i].in_use)
+			tee_mmu_copy_from_shadow(session->wsms[i].mmu);
+
+	if (session->tci.in_use)
+		tee_mmu_copy_from_shadow(session->tci.mmu);
+
+	tee_mmu_delete_zombies();
+	mutex_unlock(&session->wsms_lock);
+#endif /* MC_SHADOW_BUFFER */
+	return ret;
 }
 
 /*
@@ -860,18 +912,24 @@ int session_mc_unmap(struct tee_session *session,
 
 	if (i == MC_MAP_MAX) {
 		ret = -EINVAL;
-		mc_dev_devel("maps[%d] va=%llx sva=%llx not found",
-			     i, buf[i].va, buf[i].sva);
+		mc_dev_devel("maps[%d] va=%llx sva=%llx len=%u not found",
+			     i, buf->va, buf->sva, buf->len);
 		goto out;
 	}
 
 	wsm = &session->wsms[i];
 	tee_mmu_buffer(wsm->mmu, &map);
+#ifdef MC_SHADOW_BUFFER
+	tee_mmu_copy_from_shadow(wsm->mmu);
+#endif /* MC_SHADOW_BUFFER */
 	map.secure_va = wsm->sva;
 
 	ret = mcp_unmap(session->mcp_session.sid, &map);
 	if (!ret)
 		wsm_free(session, wsm);
+#ifdef MC_SHADOW_BUFFER
+	tee_mmu_delete_zombies();
+#endif /* MC_SHADOW_BUFFER */
 
 out:
 	mutex_unlock(&session->wsms_lock);
@@ -894,12 +952,24 @@ static void unmap_gp_bufs(struct tee_session *session,
 	/* Create WSMs from bufs */
 	mutex_lock(&session->wsms_lock);
 	for (i = 0; i < MC_MAP_MAX; i++) {
-		if (session->wsms[i].in_use)
+		if (session->wsms[i].in_use) {
+#ifdef MC_SHADOW_BUFFER
+			(void)tee_mmu_copy_from_shadow(session->wsms[i].mmu);
+#endif /* MC_SHADOW_BUFFER */
 			wsm_free(session, &session->wsms[i]);
+		}
 
-		if (maps[i].sva)
+		if (maps[i].sva) {
+#ifdef MC_SHADOW_BUFFER
+			(void)tee_mmu_copy_from_shadow(maps[i].map.mmu);
+#endif /* MC_SHADOW_BUFFER */
 			client_put_cwsm_sva(session->client, maps[i].sva);
+			client_put_cwsm_mmu(session->client, maps[i].map.mmu);
+		}
 	}
+#ifdef MC_SHADOW_BUFFER
+	tee_mmu_delete_zombies();
+#endif /* MC_SHADOW_BUFFER */
 	mutex_unlock(&session->wsms_lock);
 }
 
@@ -909,10 +979,16 @@ static int map_gp_bufs(struct tee_session *session,
 		       struct iwp_buffer_map *maps)
 {
 	int i, ret = 0;
+#ifdef MC_SHADOW_BUFFER
+	int copy_shadow = 0;
+#endif
 
 	/* Create WSMs from bufs */
 	mutex_lock(&session->wsms_lock);
 	for (i = 0; i < MC_MAP_MAX; i++) {
+#ifdef MC_SHADOW_BUFFER
+		copy_shadow = 0;
+#endif
 		/* Reset reference for temporary memory */
 		maps[i].map.addr = 0;
 		/* Reset reference for registered memory */
@@ -928,18 +1004,38 @@ static int map_gp_bufs(struct tee_session *session,
 			}
 
 			tee_mmu_buffer(session->wsms[i].mmu, &maps[i].map);
+#ifdef MC_SHADOW_BUFFER
+			copy_shadow = 1;
+#endif
 		} else if (parents[i]) {
 			/* Registered memory, already mapped */
 			maps[i].sva = client_get_cwsm_sva(session->client,
 							  parents[i]);
+
+			maps[i].map.mmu = client_get_cwsm_mmu(session->client,
+							      parents[i]);
 			if (!maps[i].sva) {
 				ret = -EINVAL;
 				mc_dev_devel("couldn't find shared mem");
 				break;
 			}
+#ifdef MC_SHADOW_BUFFER
+			copy_shadow = 1;
+#endif
 
-			mc_dev_devel("param[%d] has sva %x", i, maps[i].sva);
+			mc_dev_devel("param[%d] has sva %x, mmu %p",
+				     i, maps[i].sva, maps[i].map.mmu);
 		}
+#ifdef MC_SHADOW_BUFFER
+		if (copy_shadow && maps[i].map.mmu) {
+			ret = tee_mmu_copy_to_shadow(maps[i].map.mmu);
+			if (ret) {
+				ret = -EINVAL;
+				mc_dev_devel("mmu copy to shadow failed");
+				break;
+			}
+		}
+#endif /* MC_SHADOW_BUFFER */
 	}
 	mutex_unlock(&session->wsms_lock);
 

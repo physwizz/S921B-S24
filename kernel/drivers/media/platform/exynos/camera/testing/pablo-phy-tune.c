@@ -31,6 +31,7 @@
 static u32 open_window;
 static u32 total_err;
 static u32 first_open;
+bool fst_phy_check_step;
 
 static int pablo_test_get_phy_tune(char *buffer, const struct kernel_param *kp);
 static const struct kernel_param_ops pablo_param_ops_phy_tune = {
@@ -322,7 +323,10 @@ int pablo_test_set_phy_tune(const char *val, const struct kernel_param *kp)
 	csi = v4l2_get_subdevdata(sensor->subdev_csi);
 	phy_desc = phy_get_drvdata(csi->phy);
 
-	sensor_stream_off(sd_csi, sd_mod);
+	if (fst_phy_check_step) {
+		sensor_stream_off(sd_csi, sd_mod);
+		fst_phy_check_step = false;
+	}
 
 	data_lane = csi->sensor_cfg->lanes + 1;
 

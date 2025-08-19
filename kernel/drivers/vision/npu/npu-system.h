@@ -256,6 +256,13 @@ struct npu_system {
 	struct npu_precision_model_info	active_info[PRECISION_LEN];
 	struct mutex model_lock;
 	u32 precision_index;
+
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+	struct workqueue_struct *wq;
+	struct work_struct work_report;
+
+	u32 enter_suspend;
+#endif
 };
 
 static inline struct npu_io_data *npu_get_io_data(struct npu_system *system, const char *name)

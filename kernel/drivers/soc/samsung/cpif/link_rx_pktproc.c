@@ -103,7 +103,7 @@ static bool pktproc_check_hw_checksum(u8 status)
 
 static void pktproc_set_pktgen_checksum(struct pktproc_queue *q, u8 *data)
 {
-	unsigned int off;
+	size_t off;
 	struct udphdr *uh;
 
 	switch (data[0] & 0xF0) {
@@ -265,6 +265,7 @@ static int pktproc_clear_data_addr(struct pktproc_queue *q)
 	struct pktproc_desc_sktbuf *desc = q->desc_sktbuf;
 	struct pktproc_adaptor *ppa = q->ppa;
 	u32 fore;
+	unsigned long flags;
 
 	if (ppa->desc_mode != DESC_MODE_SKTBUF) {
 		mif_err_limited("Invalid desc_mode %d\n", ppa->desc_mode);
@@ -275,6 +276,8 @@ static int pktproc_clear_data_addr(struct pktproc_queue *q)
 		mif_err_limited("Buffer manager is not set\n");
 		return -EPERM;
 	}
+
+	spin_lock_irqsave(&q->lock, flags);
 
 	fore = *q->fore_ptr;
 
@@ -293,6 +296,8 @@ static int pktproc_clear_data_addr(struct pktproc_queue *q)
 	memset(desc, 0, q->desc_size);
 
 	cpif_init_netrx_mng(q->manager);
+
+	spin_unlock_irqrestore(&q->lock, flags);
 
 	return 0;
 }
@@ -350,6 +355,9 @@ static int pktproc_fill_data_addr(struct pktproc_queue *q)
 	space = circ_get_space(q->num_desc, fore, q->done_ptr);
 	pp_debug("Q%d:%d/%d/%d Space:%d\n",
 		q->q_idx, fore, *q->rear_ptr, q->done_ptr, space);
+
+	if (!(q->manager->data_pool->page_alloc_complete))
+		cpif_page_pool_continue(NETRX_POOL_PAGE_SIZE, q->manager->data_pool);
 
 	for (i = 0; i < space; i++) {
 		struct cpif_addr_pair *addrpair = cpif_map_rx_buf(q->manager, fore);
@@ -644,7 +652,7 @@ error:
 #if IS_ENABLED(CONFIG_CP_PKTPROC_LRO)
 static u32 cpif_get_headlen(struct sk_buff *skb)
 {
-	u32 headlen;
+	size_t headlen;
 	struct iphdr *iph = (struct iphdr *)skb->data;
 	struct ipv6hdr *ipv6h;
 	struct tcphdr *th = NULL;
@@ -671,7 +679,7 @@ static u32 cpif_get_headlen(struct sk_buff *skb)
 
 static void finish_up_lro(struct sk_buff *skb)
 {
-	u32 headlen;
+	size_t headlen;
 	struct iphdr *iph = (struct iphdr *)skb->data;
 	struct ipv6hdr *ipv6h;
 	struct tcphdr *th = NULL;
@@ -722,7 +730,7 @@ static void modify_lro_len(u32 target_len, unsigned char *src)
 	struct iphdr *iph = (struct iphdr *)src;
 	struct ipv6hdr *ipv6h;
 	struct udphdr *uh = NULL;
-	u32 headlen;
+	size_t headlen;
 	int net_len;
 
 	if (iph->version == 4) {
@@ -897,7 +905,7 @@ restart_lro:
 		if (stream->empty) {
 			mif_err("stream#%d is empty.\n", desc_done_ptr.lro_q_idx);
 			ret = -EINVAL;
-			goto rx_error_on_desc;
+			goto rx_error_drop;
 		}
 
 		src += desc_done_ptr.lro_head_offset;
@@ -1174,7 +1182,7 @@ static unsigned int pktproc_perftest_gen_rx_packet_sktbuf_mode(
 	u32 packet_len = perftest_data[perf->mode].packet_len;
 	u32 rear_ptr;
 	unsigned int space, loop_count;
-	u8 *src;
+	u8 *src = NULL;
 	u32 *seq;
 	u16 *dst_port;
 	u16 *dst_addr;
@@ -1206,7 +1214,10 @@ static unsigned int pktproc_perftest_gen_rx_packet_sktbuf_mode(
 		src = desc[rear_ptr].cp_data_paddr -
 				q->cp_buff_pbase + q->q_buff_vbase;
 #endif
-
+		if (!src) {
+			mif_err_limited("src is null\n");
+			return -EINVAL;
+		}
 		memset(src, 0x0, desc[rear_ptr].length);
 		memcpy(src, perftest_data[perf->mode].header, header_len);
 		seq = (u32 *)(src + header_len);
@@ -1263,9 +1274,6 @@ static int pktproc_perftest_thread(void *arg)
 	bool session_queue = false;
 	int i, pkts;
 
-	if (perf->session > PKTPROC_MAX_QUEUE)
-		perf->session = PKTPROC_MAX_QUEUE;
-
 	if (ppa->use_exclusive_irq && (perf->session > 1) && (perf->session <= ppa->num_queue))
 		session_queue = true;
 
@@ -1311,6 +1319,7 @@ static ssize_t perftest_store(struct device *dev,
 	struct mem_link_device *mld = to_mem_link_device(ld);
 	struct pktproc_adaptor *ppa = &mld->pktproc;
 	struct pktproc_perftest *perf = &ppa->perftest;
+	unsigned int mode = 0, session, perf_cpu;
 
 	static struct task_struct *worker_task;
 	int ret;
@@ -1326,7 +1335,7 @@ static ssize_t perftest_store(struct device *dev,
 	switch (perf->mode) {
 	case PERFTEST_MODE_CLAT:
 		ret = sscanf(buf, "%d %d %hu %d %d %hx:%hx:%hx:%hx:%hx:%hx:%hx:%hx %d %d %d %d",
-			     &perf->mode, &perf->session, &perf->ch, &perf->cpu, &perf->udelay,
+			     &mode, &session, &perf->ch, &perf_cpu, &perf->udelay,
 			     &perf->clat_ipv6[0], &perf->clat_ipv6[1], &perf->clat_ipv6[2],
 			     &perf->clat_ipv6[3], &perf->clat_ipv6[4], &perf->clat_ipv6[5],
 			     &perf->clat_ipv6[6], &perf->clat_ipv6[7],
@@ -1335,14 +1344,18 @@ static ssize_t perftest_store(struct device *dev,
 		break;
 	default:
 		ret = sscanf(buf, "%d %d %hu %d %d %d %d %d %d",
-			     &perf->mode, &perf->session, &perf->ch, &perf->cpu, &perf->udelay,
+			     &mode, &session, &perf->ch, &perf_cpu, &perf->udelay,
 			     &perf->ipi_cpu[0], &perf->ipi_cpu[1], &perf->ipi_cpu[2],
 			     &perf->ipi_cpu[3]);
 		break;
 	}
 
-	if (ret < 1)
+	if (ret < 1 || mode > PERFTEST_MODE_MAX)
 		return -EINVAL;
+
+	perf->mode = mode;
+	perf->session = session > PKTPROC_MAX_QUEUE ? PKTPROC_MAX_QUEUE : session;
+	perf->cpu = perf_cpu > num_possible_cpus() ? num_possible_cpus() - 1 : perf_cpu;
 
 	switch (perf->mode) {
 	case PERFTEST_MODE_STOP:
@@ -1467,6 +1480,9 @@ static irqreturn_t pktproc_irq_handler(int irq, void *arg)
 	tpmon_start();
 #endif
 
+#if IS_ENABLED(CONFIG_CLO)
+	q->flush_time = q->mld->link_dev.update_flush_time(q->flush_time);
+#endif
 	napi_schedule(q->napi_ptr);
 
 	return IRQ_HANDLED;
@@ -1668,6 +1684,9 @@ int pktproc_init(struct pktproc_adaptor *ppa)
 #if IS_ENABLED(CONFIG_LINK_DEVICE_PCIE_IOMMU)
 			cpif_pcie_iommu_reset(q);
 #endif
+			if (q->manager && !(q->manager->data_pool->page_alloc_complete))
+				cpif_page_pool_continue(NETRX_POOL_PAGE_SIZE, q->manager->data_pool);
+
 			if (pktproc_check_active(q->ppa, q->q_idx))
 				q->clear_data_addr(q);
 			if (q->manager)

@@ -557,42 +557,6 @@ static void __mfc_dec_update_pix_format(struct mfc_ctx *ctx, struct v4l2_format 
 	}
 }
 
-static int __mfc_dec_update_disp_res(struct mfc_ctx *ctx, struct v4l2_format *f)
-{
-	struct mfc_dec *dec = ctx->dec_priv;
-
-	dec->disp_res_change--;
-	mfc_ctx_debug(2, "[DRC] disp_res_change %d\n", dec->disp_res_change);
-
-	if (mfc_rm_query_state(ctx, EQUAL_BIGGER, MFCINST_RUNNING)) {
-		mfc_ctx_debug(2, "dec update disp_res\n");
-		MFC_TRACE_CTX("** DEC update disp_res\n");
-
-		__mfc_dec_update_pix_format(ctx, f);
-
-		/*
-		 * Do not clear WAIT_G_FMT except RUNNING state
-		 * because the resolution change (DRC) case uses WAIT_G_FMT
-		 */
-		if (mfc_rm_query_state(ctx, EQUAL, MFCINST_RUNNING)
-				&& (ctx->wait_state & WAIT_G_FMT) != 0) {
-			ctx->wait_state &= ~(WAIT_G_FMT);
-			mfc_ctx_debug(2, "clear WAIT_G_FMT %d\n", ctx->wait_state);
-			MFC_TRACE_CTX("** DEC clear WAIT_G_FMT(wait_state %d)\n", ctx->wait_state);
-		}
-	} else {
-		/*
-		 * In case of HEAD_PARSED state,
-		 * the resolution would be changed and it is not display resolution
-		 * so cannot update display resolution
-		 */
-		mfc_ctx_err("dec update disp_res, wrong state\n");
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
 /* Get format */
 static int mfc_dec_g_fmt_vid_cap_mplane(struct file *file, void *priv,
 						struct v4l2_format *f)
@@ -616,17 +580,17 @@ static int mfc_dec_g_fmt_vid_cap_mplane(struct file *file, void *priv,
 			core_ctx->state, ctx->wait_state);
 
 	mutex_lock(&ctx->drc_wait_mutex);
-	if (dec->disp_res_change) {
-		if (__mfc_dec_update_disp_res(ctx, f) == 0) {
-			mutex_unlock(&ctx->drc_wait_mutex);
-			return 0;
-		}
+	if (dec->disp_drc.disp_res_change) {
+		__mfc_dec_update_pix_format(ctx, f);
+		mutex_unlock(&ctx->drc_wait_mutex);
+		return 0;
 	}
 	mutex_unlock(&ctx->drc_wait_mutex);
 
 	if (core_ctx->state == MFCINST_GOT_INST ||
 	    core_ctx->state == MFCINST_RES_CHANGE_INIT ||
 	    core_ctx->state == MFCINST_RES_CHANGE_FLUSH ||
+	    core_ctx->state == MFCINST_RES_CHANGE_FLUSH_FINISHED ||
 	    core_ctx->state == MFCINST_RES_CHANGE_END) {
 		/* If there is no source buffer to parsing, we can't SEQ_START */
 		mutex_lock(&ctx->drc_wait_mutex);
@@ -1219,8 +1183,8 @@ static int mfc_dec_streamon(struct file *file, void *priv,
 		mfc_ctx_err("unknown v4l2 buffer type\n");
 	}
 
-	mfc_ctx_debug(2, "src: %d, dst: %d, dpb_count = %d\n",
-		  mfc_get_queue_count(&ctx->buf_queue_lock, &ctx->src_buf_ready_queue),
+	mfc_ctx_info("dec streamon(type: %d) is finished, src: %d, dst: %d, dpb_count = %d\n",
+		  type, mfc_get_queue_count(&ctx->buf_queue_lock, &ctx->src_buf_ready_queue),
 		  mfc_get_queue_count(&ctx->buf_queue_lock, &ctx->dst_buf_queue),
 		  ctx->dpb_count);
 
@@ -1250,6 +1214,8 @@ static int mfc_dec_streamoff(struct file *file, void *priv,
 	} else {
 		mfc_ctx_err("unknown v4l2 buffer type\n");
 	}
+
+	mfc_ctx_info("dec streamoff(type: %d) is finished\n", type);
 
 	mfc_ctx_debug_leave();
 
@@ -1364,6 +1330,7 @@ static int __mfc_dec_get_ctrl_val(struct mfc_ctx *ctx, struct v4l2_control *ctrl
 			mfc_rm_query_state(ctx, EQUAL, MFCINST_HEAD_PARSED))
 			ctrl->value = MFCSTATE_DEC_S3D_REALLOC;
 		else if (core_ctx->state == MFCINST_RES_CHANGE_FLUSH
+				|| core_ctx->state == MFCINST_RES_CHANGE_FLUSH_FINISHED
 				|| core_ctx->state == MFCINST_RES_CHANGE_END
 				|| core_ctx->state == MFCINST_HEAD_PARSED
 				|| dec->inter_res_change)
@@ -1594,6 +1561,10 @@ static int mfc_dec_s_ctrl(struct file *file, void *priv,
 		mfc_ctx_debug(2, "[BATCH] disable decoder batch mode: %d\n", ctrl->value);
 		ctx->dec_batch_disable = ctrl->value;
 		break;
+	case V4L2_CID_MPEG_MFC_HEIF_MODE:
+		mfc_ctx_debug(2, "[HEIF] heif mode: %d\n", ctrl->value);
+		ctx->is_heif_mode = ctrl->value;
+		break;
 	default:
 		list_for_each_entry(ctx_ctrl, &ctx->ctrls, list) {
 			if (!(ctx_ctrl->type & MFC_CTRL_TYPE_SET))
@@ -1620,6 +1591,38 @@ static int mfc_dec_s_ctrl(struct file *file, void *priv,
 	return 0;
 }
 
+static void __mfc_dec_update_disp_res(struct mfc_ctx *ctx, struct v4l2_selection *s)
+{
+	struct mfc_dec *dec = ctx->dec_priv;
+
+	s->r.left = 0;
+	s->r.top = 0;
+	s->r.width = dec->disp_drc.width[dec->disp_drc.pop_idx];
+	s->r.height = dec->disp_drc.height[dec->disp_drc.pop_idx];
+	mfc_ctx_debug(2, "[FRAME] Composing info: w=%d h=%d\n", s->r.width, s->r.height);
+
+	dec->disp_drc.disp_res_change--;
+	mfc_ctx_debug(3, "[DRC] disp_res_change[%d] count %d\n",
+			dec->disp_drc.pop_idx, dec->disp_drc.disp_res_change);
+	dec->disp_drc.pop_idx = ++dec->disp_drc.pop_idx % MFC_MAX_DRC_FRAME;
+
+	if (!dec->disp_drc.disp_res_change) {
+		dec->disp_drc.push_idx = 0;
+		dec->disp_drc.pop_idx = 0;
+	}
+
+	/*
+	 * Do not clear WAIT_G_FMT except RUNNING state
+	 * because the resolution change (DRC) case uses WAIT_G_FMT
+	 */
+	if (mfc_rm_query_state(ctx, EQUAL, MFCINST_RUNNING)
+			&& (ctx->wait_state & WAIT_G_FMT) != 0) {
+		ctx->wait_state &= ~(WAIT_G_FMT);
+		mfc_ctx_debug(2, "clear WAIT_G_FMT %d\n", ctx->wait_state);
+		MFC_TRACE_CTX("** DEC clear WAIT_G_FMT(wait_state %d)\n", ctx->wait_state);
+	}
+}
+
 /* Get cropping information */
 static int mfc_dec_g_selection(struct file *file, void *priv,
 		struct v4l2_selection *s)
@@ -1637,6 +1640,14 @@ static int mfc_dec_g_selection(struct file *file, void *priv,
 
 	core = mfc_get_main_core_lock(dev, ctx);
 	core_ctx = core->core_ctx[ctx->num];
+
+	mutex_lock(&ctx->drc_wait_mutex);
+	if (dec->disp_drc.disp_res_change) {
+		__mfc_dec_update_disp_res(ctx, s);
+		mutex_unlock(&ctx->drc_wait_mutex);
+		return 0;
+	}
+	mutex_unlock(&ctx->drc_wait_mutex);
 
 	if (!ready_to_get_crop(core_ctx)) {
 		mfc_err("ready to get compose failed\n");

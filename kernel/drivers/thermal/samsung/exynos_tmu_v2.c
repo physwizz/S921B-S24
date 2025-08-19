@@ -215,11 +215,11 @@ void exynos_tmu_callback_hotplug(char cpuhp_name[], bool hotplug)
 	}
 	if (hotplug) {
 		cpumask_andnot(&mask, cpu_possible_mask, &data->cpu_domain);
-		ecs_request(data->cpuhp_name, &mask);
+		ecs_request(data->cpuhp_name, &mask, ECS_MAX);
 		pr_info("[esca_acpm_tmu] %s hotplug_out: 0x%02x\n",
 				data->cpuhp_name, *(unsigned int *)cpumask_bits(&mask));
 	} else {
-		ecs_request(data->cpuhp_name, cpu_possible_mask);
+		ecs_request(data->cpuhp_name, cpu_possible_mask, ECS_MAX);
 		pr_info("[esca_acpm_tmu] %s hotplug_in: 0x%02x\n",
 				data->cpuhp_name, *(unsigned int *)cpumask_bits(cpu_possible_mask));
 	}
@@ -507,7 +507,7 @@ static void exynos_throttle_cpu_hotplug(struct kthread_work *work)
 			 * If current temperature is lower than low threshold,
 			 * call cluster1_cores_hotplug(false) for hotplugged out cpus.
 			 */
-			ecs_request(data->cpuhp_name, cpu_possible_mask);
+			ecs_request(data->cpuhp_name, cpu_possible_mask, ECS_MAX);
 			data->is_cpu_hotplugged_out = false;
 		}
 	} else {
@@ -518,7 +518,7 @@ static void exynos_throttle_cpu_hotplug(struct kthread_work *work)
 			 */
 			data->is_cpu_hotplugged_out = true;
 			cpumask_andnot(&mask, cpu_possible_mask, &data->cpu_domain);
-			ecs_request(data->cpuhp_name, &mask);
+			ecs_request(data->cpuhp_name, &mask, ECS_MAX);
 		}
 	}
 
@@ -1015,40 +1015,6 @@ static int exynos_get_temp(struct thermal_zone_device *tz, int *temp)
 #endif
 	return 0;
 }
-
-#if IS_ENABLED(CONFIG_SEC_BOOTSTAT)
-void sec_bootstat_get_thermal(int *temp)
-{
-	struct exynos_tmu_data *data;
-
-	list_for_each_entry(data, &dtm_dev_list, node) {
-		if (!strncasecmp(data->tmu_name, "BIG", THERMAL_NAME_LENGTH)) {
-			exynos_get_temp(data->tzd, &temp[0]);
-			temp[0] /= 1000;
-		} else if (!strncasecmp(data->tmu_name, "MIDH", THERMAL_NAME_LENGTH)) {
-			exynos_get_temp(data->tzd, &temp[1]);
-			temp[1] /= 1000;
-		} else if (!strncasecmp(data->tmu_name, "MIDL", THERMAL_NAME_LENGTH)) {
-			exynos_get_temp(data->tzd, &temp[2]);
-			temp[2] /= 1000;
-		} else if (!strncasecmp(data->tmu_name, "LITTLE", THERMAL_NAME_LENGTH)) {
-			exynos_get_temp(data->tzd, &temp[3]);
-			temp[3] /= 1000;
-		} else if (!strncasecmp(data->tmu_name, "G3D", THERMAL_NAME_LENGTH)) {
-			exynos_get_temp(data->tzd, &temp[4]);
-			temp[4] /= 1000;
-		} else if (!strncasecmp(data->tmu_name, "ISP", THERMAL_NAME_LENGTH)) {
-			exynos_get_temp(data->tzd, &temp[5]);
-			temp[5] /= 1000;
-		} else if (!strncasecmp(data->tmu_name, "NPU", THERMAL_NAME_LENGTH)) {
-			exynos_get_temp(data->tzd, &temp[6]);
-			temp[6] /= 1000;
-		} else
-			continue;
-	}
-}
-EXPORT_SYMBOL(sec_bootstat_get_thermal);
-#endif
 
 static int exynos_get_trend(struct thermal_zone_device *tz, int trip, enum thermal_trend *trend)
 {
@@ -1911,7 +1877,7 @@ static int exynos_tmu_irq_work_init(struct platform_device *pdev)
 	if (data->hotplug_enable) {
 		kthread_init_work(&data->hotplug_work, exynos_throttle_cpu_hotplug);
 		snprintf(data->cpuhp_name, THERMAL_NAME_LENGTH, "DTM_%s", data->tmu_name);
-		ecs_request_register(data->cpuhp_name, cpu_possible_mask);
+		ecs_request_register(data->cpuhp_name, cpu_possible_mask, ECS_MAX);
 	}
 #endif
 
@@ -3582,7 +3548,7 @@ static void exynos_tmu_register_hotplug_request(struct exynos_tmu_data *data)
 {
 	snprintf(data->cpuhp_name, THERMAL_NAME_LENGTH, "DTM_%s", data->tmu_name);
 #if IS_ENABLED(CONFIG_SCHED_EMS)
-	ecs_request_register(data->cpuhp_name, cpu_possible_mask);
+	ecs_request_register(data->cpuhp_name, cpu_possible_mask, ECS_MAX);
 #endif
 }
 #endif

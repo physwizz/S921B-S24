@@ -51,6 +51,7 @@
 #include <linux/dma-fence.h>
 #include <linux/pci.h>
 #include <linux/aer.h>
+#include <linux/pm_qos.h>
 
 #include <drm/ttm/ttm_bo_api.h>
 #include <drm/ttm/ttm_bo_driver.h>
@@ -101,6 +102,7 @@
 #include "sgpu_debug.h"
 #include "sgpu_ifpo.h"
 #include "sgpu_swap.h"
+#include "sgpu_pm_monitor.h"
 
 #define MAX_GPU_INSTANCE		16
 
@@ -205,6 +207,8 @@ extern int sgpu_unscheduled_job_debug;
 extern int sgpu_profiler_user_time;
 extern int sgpu_jobtimeout_to_panic;
 
+extern int sgpu_devfreq_polling_ms;
+
 #define AMDGPU_VM_MAX_NUM_CTX			4096
 #define AMDGPU_SG_THRESHOLD			(256*1024*1024)
 #define AMDGPU_DEFAULT_GTT_SIZE_MB		8192ULL /* 8GB by default */
@@ -244,6 +248,10 @@ extern int sgpu_jobtimeout_to_panic;
 /* max cursor sizes (in pixels) */
 #define CIK_CURSOR_WIDTH 128
 #define CIK_CURSOR_HEIGHT 128
+
+#ifdef CONFIG_DRM_SGPU_DVFS
+#define DEVFREQ_POLLING_MS 32
+#endif
 
 struct amdgpu_device;
 struct amdgpu_ib;
@@ -721,10 +729,6 @@ struct amdgpu_cs_parser {
 
 	unsigned			num_post_deps;
 	struct amdgpu_cs_post_dep	*post_deps;
-
-	/* minlock set from UMD for resetting gpu minlock frequency */
-	unsigned int			min_freq_lock_clock;
-	unsigned int			min_freq_lock_duration;
 };
 
 static inline u32 amdgpu_get_ib_value(struct amdgpu_cs_parser *p,
@@ -966,6 +970,18 @@ struct amdgpu_sws {
 	DECLARE_BITMAP(broken_queue_bitmap, AMDGPU_MAX_COMPUTE_QUEUES);
 };
 
+#if IS_ENABLED(CONFIG_SEC_GPUINFO)
+enum gpu_exception_type {
+	GPU_HANG,	          // = 0 GHG_S
+	GPU_PAGE_FAULT,       // GPF_S
+	GPU_TIMEOUT,          // GTO_S
+	GPU_CPU_PAGE_FAULT,   // GCF_S
+	GPU_RETRY_HANG_DETECT,// GRH_S
+	GPU_RING_TEST_FAIL,   // GRF_S
+	GPU_EXCEPTION_LIST_END,
+};
+#endif
+
 #define AMDGPU_RESET_MAGIC_NUM 64
 #define AMDGPU_MAX_DF_PERFMONS 4
 struct amdgpu_device {
@@ -1082,6 +1098,15 @@ struct amdgpu_device {
 	atomic64_t			num_vram_cpu_page_faults;
 	atomic_t			gpu_reset_counter;
 	atomic_t			vram_lost_counter;
+#if IS_ENABLED(CONFIG_SEC_GPUINFO)
+	int                 gpu_shadow_stats[GPU_EXCEPTION_LIST_END];
+	atomic_t            *gpu_cur_stats[GPU_EXCEPTION_LIST_END];
+	atomic_t			gpu_page_fault_counter;
+	atomic_t			gpu_retry_counter;
+	atomic_t			gpu_job_timeout_counter;
+	atomic_t			gpu_vram_cpu_page_fault_counter;
+	atomic_t			gpu_ring_test_fail_counter;
+#endif
 	void				*sysram_scratch_v;
 	dma_addr_t			sysram_scratch_p;
 	size_t				num_kernel_pages;
@@ -1210,6 +1235,7 @@ struct amdgpu_device {
 	bool                            probe_done;
 
 	struct sgpu_ifpo		ifpo;
+	struct sgpu_pm_monitor		pm_monitor;
 
 	/* Chip product information */
 	char				product_number[16];
@@ -1287,6 +1313,13 @@ struct amdgpu_device {
 	bool				edc_enable;
 
 	unsigned long			ifpo_disable_freq;
+#ifdef CONFIG_DRM_SGPU_DVFS
+	uint32_t			dsu_max_freq;
+	struct dev_pm_qos_request       dsu_min_req;
+	atomic_t			compute_job_count;
+	struct delayed_work		compute_job_finish_work;
+	struct mutex                    dsu_freq_change_mutex;
+#endif
 };
 
 static inline struct amdgpu_device *drm_to_adev(struct drm_device *ddev)
@@ -1303,6 +1336,15 @@ static inline struct amdgpu_device *amdgpu_ttm_adev(struct ttm_device *bdev)
 {
 	return container_of(bdev, struct amdgpu_device, mman.bdev);
 }
+
+#if IS_ENABLED(CONFIG_SEC_GPUINFO)
+static inline void sgpu_hqm_log_event(struct amdgpu_device *adev, enum gpu_exception_type event)
+{
+	if (adev->gpu_cur_stats[event])
+		atomic_inc(adev->gpu_cur_stats[event]);
+}
+#endif
+
 #if IS_ENABLED(CONFIG_SOC_S5E9945) && !IS_ENABLED(CONFIG_SOC_S5E9945_EVT0)
 void sgpu_devfreq_set_didt_edc(struct amdgpu_device *adev, unsigned long freq);
 void vangogh_lite_didt_edc_init(struct amdgpu_device *adev);
@@ -1598,9 +1640,18 @@ extern struct device sync_dev;
 #ifdef CONFIG_DRM_SGPU_VENDOR_HOOKS
 void sgpu_add_total_pages(unsigned long nr);
 void sgpu_sub_total_pages(unsigned long nr);
+#ifdef CONFIG_DRM_SGPU_GRAPHIC_MEMORY_RECLAIM
+void sgpu_add_swap_pages(unsigned long nr);
+void sgpu_sub_swap_pages(unsigned long nr);
+#else
+#define sgpu_add_swap_pages(nr) do { } while (0)
+#define sgpu_sub_swap_pages(nr) do { } while (0)
+#endif
 #else
 #define sgpu_add_total_pages(nr) do { } while (0)
 #define sgpu_sub_total_pages(nr) do { } while (0)
+#define sgpu_add_swap_pages(nr) do { } while (0)
+#define sgpu_sub_swap_pages(nr) do { } while (0)
 #endif
 
 #endif

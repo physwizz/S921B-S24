@@ -51,6 +51,7 @@ typedef enum {
 	NPU_NW_CMD_CLEAR_CB,
 	NPU_NW_CMD_MODE,
 	NPU_NW_CMD_IMB_SIZE,
+	NPU_NW_CMD_SUSPEND,
 	NPU_NW_CMD_END,
 } nw_cmd_e;
 

@@ -83,4 +83,14 @@ bool mxman_if_subsys_active(struct mxman *mxman, enum scsc_subsystem sub);
 /* Check if any users are active */
 bool mxman_if_users_active(struct mxman *mxman);
 
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+/* Check if recovery operation is in progress */
+bool mxman_if_warm_reset_in_progress(void);
+#endif
+
+#ifdef CONFIG_HDM_WLBT_SUPPORT
+/* hdm_wlan/bt_support for test */
+int mxman_if_get_hdm_wlan_support(void);
+int mxman_if_get_hdm_bt_support(void);
+#endif
 #endif

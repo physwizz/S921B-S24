@@ -23,6 +23,15 @@
 		{									\
 			pr_info("%s:%d: " fmt,			\
 				__func__, __LINE__, ##args);	\
+		}									\
+	} while (0)
+
+#define print_tsmux_wfdlogger(level, fmt, args...)			\
+	do {							\
+		if ((g_tsmux_debug_level >= level) || (g_tsmux_log_level >= level))		\
+		{									\
+			pr_info("%s:%d: " fmt,			\
+				__func__, __LINE__, ##args);	\
 			wfd_logger_write(g_tsmux_logger, "%s:%d " fmt,	\
 				__func__, __LINE__, ##args);	\
 		}									\

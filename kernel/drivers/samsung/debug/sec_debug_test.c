@@ -36,6 +36,9 @@
 
 #include "sec_debug_internal.h"
 
+#include <linux/slab.h>
+#include "../../../../mm/slab.h"
+
 typedef void (*force_error_func)(char **argv, int argc);
 
 static void simulate_KP(char **argv, int argc);
@@ -113,6 +116,7 @@ static void simulate_UBSAN_OOB(char **argv, int argc);
 static void simulate_UBSAN_OOB_PTR(char **argv, int argc);
 static void simulate_FPSIMD_CORRUPT(char **argv, int argc);
 static void simulate_CFI(char **argv, int argc);
+static void simulate_FREELIST_CORRUPT(char **argv, int argc);
 
 enum {
 	FORCE_KERNEL_PANIC = 0,		/* KP */
@@ -190,6 +194,7 @@ enum {
 	FORCE_UBSAN_OOB_PTR,		/* UBSAN OUT-OF-BOUND PTR */
 	FORCE_FPSIMD_CORRUPT,		/* FPSIMD CONTEXT CORRUPTION */
 	FORCE_CFI,			/* CFI FAILURE */
+	FORCE_FREELIST_CORRUPT,		/* FREELIST CORRUPT */
 	NR_FORCE_ERROR,
 };
 
@@ -279,6 +284,7 @@ struct force_error force_error_vector = {
 		{"ubsan-oobptr",	&simulate_UBSAN_OOB_PTR},
 		{"fpsimd",	&simulate_FPSIMD_CORRUPT},
 		{"cfi",		&simulate_CFI},
+		{"freelist-corrupt",		&simulate_FREELIST_CORRUPT},
 	}
 };
 
@@ -2294,6 +2300,36 @@ static void simulate_CFI(char **argv, int argc)
 	pr_crit("%s: end\n", __func__);
 
 	cfi_test_block.test_func = __test_cfi_func;
+}
+
+static void simulate_FREELIST_CORRUPT(char **argv, int argc)
+{
+	unsigned long *p;
+	int size = 8192;
+	struct slab *slab;
+	unsigned long pattern = 0x8000;
+	int ret;
+
+	if (argc == 2) {
+		ret = kstrtoint(argv[0], 0, &size);
+		if (ret == 0)
+			ret = kstrtoul(argv[1], 0, &pattern);
+	}
+
+	pr_crit("%s() arg : %d %lx\n", __func__, size, pattern);
+
+	if (size <= 0 || size > KMALLOC_MAX_CACHE_SIZE)
+		size = 8192;
+
+	p = kmalloc(size, GFP_KERNEL);
+
+	if (p) {
+		pr_crit("freed object: %px\n", p);
+
+		slab = virt_to_slab(p);
+		kfree(p);
+		*(p + slab->slab_cache->offset / sizeof(unsigned long)) = pattern;
+	}
 }
 
 static int sec_debug_get_force_error(char *buffer, const struct kernel_param *kp)

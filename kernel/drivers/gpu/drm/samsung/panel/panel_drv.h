@@ -259,6 +259,7 @@ struct panel_drv_funcs {
 	int (*register_error_cb)(struct panel_device *, void *);
 	int (*get_panel_state)(struct panel_device *, void *);
 	int (*attach_adapter)(struct panel_device *, void *);
+	int (*set_adapter_fifo_size)(struct panel_device *, unsigned int);
 
 	/* panel control operation */
 	int (*probe)(struct panel_device *);
@@ -276,6 +277,7 @@ struct panel_drv_funcs {
 #if IS_ENABLED(CONFIG_USDM_PANEL_BIG_LOCK)
 	int (*lock)(struct panel_device *);
 	int (*unlock)(struct panel_device *);
+	int (*set_lock_pid)(struct panel_device *, int);
 #endif
 	int (*reset_lp11)(struct panel_device *);
 	int (*reset_disable)(struct panel_device *);
@@ -408,6 +410,7 @@ enum {
 	PANEL_WORK_CHECK_CONDITION,
 	PANEL_WORK_UPDATE,
 	PANEL_WORK_EVASION_DISP_DET,
+	PANEL_WORK_LATE_PROBE,
 	PANEL_WORK_MAX,
 };
 
@@ -759,6 +762,7 @@ int panel_decoder_test(struct panel_device *panel, u8 *buf, int len);
 #if defined(CONFIG_USDM_PANEL_VCOM_TRIM_TEST)
 int panel_vcom_trim_test(struct panel_device *panel, u8 *buf, int len);
 #endif
+int panel_check_mipi_read_test(struct panel_device *panel, char *buf);
 int panel_ddi_init(struct panel_device *panel);
 
 #ifdef CONFIG_USDM_PANEL_DIM_FLASH

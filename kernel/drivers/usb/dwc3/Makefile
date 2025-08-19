@@ -54,6 +54,7 @@ obj-$(CONFIG_USB_DWC3_QCOM)		+= dwc3-qcom.o
 obj-$(CONFIG_USB_DWC3_EXYNOS_MODULE)		+= dwc3-exynos-usb.o
 dwc3-exynos-usb-y			+= dwc3-exynos.o
 dwc3-exynos-usb-y			+= dwc3-exynos-otg.o
+dwc3-exynos-usb-y                       += dwc3_kret_ops.o
 ifneq ($(CONFIG_USB_EXYNOS_TPMON_MODULE),)
 	dwc3-exynos-usb-y			+= exynos_usb_tpmon.o
 endif

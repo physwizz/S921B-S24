@@ -1644,8 +1644,8 @@ bool is_sensor_peri_check_super_steady(struct is_device_sensor *device)
 {
 	if ((device->ischain->setfile & IS_SETFILE_MASK) == ISS_SUB_SCENARIO_SUPER_STEADY_FHD_30FPS_VIDEO
 		|| (device->ischain->setfile & IS_SETFILE_MASK) == ISS_SUB_SCENARIO_SUPER_STEADY_QHD_30FPS_VIDEO
-		|| (device->ischain->setfile & IS_SETFILE_MASK) == ISS_SUB_SCENARIO_SUPER_STEADY_HDR10_FHD_VIDEO
-		|| (device->ischain->setfile & IS_SETFILE_MASK) == ISS_SUB_SCENARIO_SUPER_STEADY_HDR10_QHD_VIDEO)
+		|| (device->ischain->setfile & IS_SETFILE_MASK) == ISS_SUB_SCENARIO_SUPER_STEADY_FHD_HDR10_VIDEO
+		|| (device->ischain->setfile & IS_SETFILE_MASK) == ISS_SUB_SCENARIO_SUPER_STEADY_QHD_HDR10_VIDEO)
 		return true;
 	else
 		return false;
@@ -1800,7 +1800,11 @@ int is_sensor_peri_s_stream(struct is_device_sensor *device,
 			device_mcu = &core->sensor[0];
 
 			if ((device_mcu && device_mcu->mcu && device_mcu->subdev_mcu) || (sensor_peri->mcu && sensor_peri->subdev_mcu)) {
-				if (!sensor_peri->mcu) {
+				if (!sensor_peri->mcu && sensor_peri->module->position != SENSOR_POSITION_FRONT) {
+					ret = CALL_OISOPS(device_mcu->mcu->ois, ois_set_dev_ctrl, device_mcu->subdev_mcu, 0);
+					if (ret < 0)
+						err("v4l2_subdev_call(ois_set_dev_ctrl) is fail(%d)", ret);
+
 					if (check_mcu_disable == OIS_USE_UW_ONLY) {
 						ret = CALL_OISOPS(device_mcu->mcu->ois, ois_set_power_mode, device_mcu->subdev_mcu, OIS_USE_UW_ONLY);
 					} else {
@@ -1811,6 +1815,10 @@ int is_sensor_peri_s_stream(struct is_device_sensor *device,
 					subdev_mcu = device_mcu->subdev_mcu;
 					info("[%s] Use default mcu.\n", __func__);
 				} else if (check_mcu_disable == OIS_USE_UW_WIDE && sensor_peri->mcu) {
+					ret = CALL_OISOPS(sensor_peri->mcu->ois, ois_set_dev_ctrl, sensor_peri->subdev_mcu, 0);
+					if (ret < 0)
+						err("v4l2_subdev_call(ois_set_dev_ctrl) is fail(%d)", ret);
+
 					ret = CALL_OISOPS(sensor_peri->mcu->ois, ois_set_power_mode, sensor_peri->subdev_mcu, OIS_USE_UW_WIDE);
 					current_mcu = sensor_peri->mcu;
 					subdev_mcu = sensor_peri->subdev_mcu;

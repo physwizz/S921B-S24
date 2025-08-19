@@ -13,6 +13,8 @@
  * published by the Free Software Foundation.
  */
 
+#include "exynos_gpio_config_macros.dtsi"
+
 / {
 	fragment@model {
 		target-path = "/";
@@ -31,6 +33,41 @@
 				pinctrl-names = "default";
 				pinctrl-0=<&interposer_det_1 &interposer_det_2
 					&interposer_det_3 &interposer_det_4>;
+			};
+
+			sec-bootstat {
+				thermal-zones {
+					/* max number of thermal-zones is 10 */
+					/* max length of display-name is 4 */
+					zone_big {
+						zone-name = "BIG";
+						display-name = "BIG";
+					};
+					zone_midh {
+						zone-name = "MIDH";
+						display-name = "MIDH";
+					};
+					zone_midl {
+						zone-name = "MIDL";
+						display-name = "MIDL";
+					};
+					zone_lit {
+						zone-name = "LITTLE";
+						display-name = "LIT";
+					};
+					zone_g3d {
+						zone-name = "G3D";
+						display-name = "G3D";
+					};
+					zone_isp {
+						zone-name = "ISP";
+						display-name = "ISP";
+					};
+					zone_npu {
+						zone-name = "NPU";
+						display-name = "NPU";
+					};
+				};
 			};
 
 		}; /* end of __overlay__ */

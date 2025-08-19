@@ -394,7 +394,10 @@ static int secdbg_base_built_probe(struct platform_device *pdev)
 	pr_info("%s: va: %llx ++ %x\n", __func__, (uint64_t)(rmem->priv), (unsigned int)(rmem->size));
 
 	secdbg_comm_auto_comment_init();
+
+#if IS_ENABLED(CONFIG_SEC_DEBUG_MEMTAB)
 	secdbg_base_built_set_memtab_info((struct sec_debug_memtab *)get_sdn_lv1(SDN_LV1_MEMTAB));
+#endif
 
 	register_reboot_notifier(&secdbg_base_reboot_nb);
 

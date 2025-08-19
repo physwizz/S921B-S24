@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2013-2022 TRUSTONIC LIMITED
+ * Copyright (c) 2013-2023 TRUSTONIC LIMITED
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -944,6 +944,9 @@ int mc_admin_init(struct cdev *cdev, int (*tee_start_cb)(void),
 	l_ctx.tee_stop_cb = tee_stop_cb;
 	l_ctx.last_tee_ret = TEE_START_NOT_TRIGGERED;
 	l_ctx.is_initialised = true;
+#ifdef	MC_SHADOW_BUFFER
+	mmu_init();
+#endif
 	return 0;
 }
 

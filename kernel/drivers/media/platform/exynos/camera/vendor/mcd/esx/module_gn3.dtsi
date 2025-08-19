@@ -158,6 +158,15 @@
 						option { votf = <0>; };
 					};
 
+					mode5_secure { /* SENSOR_GN3_4080X3060_60FPS_R10 */
+						common = <4080 3060 60 0 5 CSI_DATA_LANES_3 3315 CSI_MODE_VC_DT LRTE_ENABLE PD_NONE EX_PDAF_OFF>;
+						vc0 = </* in */ 0 HW_FORMAT_RAW10 DATA_IMG 4080 3060	/* out */ HW_FORMAT_RAW10 VC_NOTHING 2040 1530>;
+						vc1 = </* in */ 1 HW_FORMAT_UNKNOWN DATA_NONE 0 0		/* out */ HW_FORMAT_UNKNOWN VC_NOTHING 0 0>;
+						vc2 = </* in */ 2 HW_FORMAT_RAW10_POTF DATA_HPD 4080 764	/* out */ HW_FORMAT_UNKNOWN VC_NOTHING 0 0>;
+						vc3 = </* in */ 3 HW_FORMAT_UNKNOWN DATA_NONE 0 0		/* out */ HW_FORMAT_UNKNOWN VC_NOTHING 0 0>;
+						option { votf = <0>; };
+					};
+
 					mode5_aeb { /* SENSOR_GN3_4080X3060_60FPS_R10 EX_AEB*/
 						common = <4080 3060 60 0 5 CSI_DATA_LANES_3 3315 CSI_MODE_VC_DT LRTE_ENABLE PD_MOD3 EX_AEB>;
 						vc0 = </* in */ 0 HW_FORMAT_RAW10 DATA_IMG 4080 3060	/* out */ HW_FORMAT_RAW10 VC_NOTHING 4080 3060>;

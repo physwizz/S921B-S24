@@ -1,5 +1,5 @@
 #include <linux/kconfig.h>
-#include "modap/platform_mif.h"
+#include "platform_mif.h"
 
 #if IS_ENABLED(CONFIG_SCSC_MEMLOG)
 #include "scsc_mif_abs.h"

@@ -1295,6 +1295,7 @@ static int is_hw_pdp_open(struct is_hw_ip *hw_ip, u32 instance)
 	INIT_LIST_HEAD(&pdp->list_of_paf_action);
 	spin_lock_init(&pdp->slock_paf_s_param);
 	spin_lock_init(&pdp->slock_oneshot);
+	spin_lock_init(&pdp->slock_shot);
 
 	pablo_set_affinity_irq(pdp->irq[PDP_INT1], true);
 	pablo_set_affinity_irq(pdp->irq[PDP_INT2], true);
@@ -1785,8 +1786,7 @@ static int is_hw_pdp_disable(struct is_hw_ip *hw_ip, u32 instance, ulong hw_map)
 {
 	int ret = 0;
 	struct is_pdp *pdp;
-
-	FIMC_BUG(!hw_ip);
+	unsigned long flag;
 
 	if (!test_bit_variables(hw_ip->id, &hw_map)) {
 		mswarn_hw("Not mapped. hw_map 0x%lx", instance, hw_ip, hw_map);
@@ -1810,7 +1810,11 @@ static int is_hw_pdp_disable(struct is_hw_ip *hw_ip, u32 instance, ulong hw_map)
 		if ((atomic_read(&hw_ip->instance) == instance) &&
 			(test_bit(HW_CONFIG, &hw_ip->state))) {
 			ret = is_hw_pdp_stop(hw_ip, instance);
+
+			spin_lock_irqsave(&pdp->slock_shot, flag);
 			is_hw_pdp_clear(hw_ip);
+			spin_unlock_irqrestore(&pdp->slock_shot, flag);
+
 			return ret;
 		}
 		mswarn_hw("Occupied by S%d", instance, hw_ip, atomic_read(&hw_ip->instance));
@@ -1818,7 +1822,10 @@ static int is_hw_pdp_disable(struct is_hw_ip *hw_ip, u32 instance, ulong hw_map)
 	}
 
 	ret = is_hw_pdp_stop(hw_ip, instance);
+
+	spin_lock_irqsave(&pdp->slock_shot, flag);
 	is_hw_pdp_clear(hw_ip);
+	spin_unlock_irqrestore(&pdp->slock_shot, flag);
 
 	if (flush_work(&pdp->work_stat[WORK_PDP_STAT0]))
 		msinfo_hw("flush pdp wq for stat0\n", instance, hw_ip);
@@ -1830,8 +1837,7 @@ static int is_hw_pdp_disable(struct is_hw_ip *hw_ip, u32 instance, ulong hw_map)
 	return ret;
 }
 
-static int is_hw_pdp_shot(struct is_hw_ip *hw_ip, struct is_frame *frame,
-	ulong hw_map)
+static int _is_hw_pdp_shot(struct is_hw_ip *hw_ip, struct is_frame *frame, ulong hw_map)
 {
 	int ret = 0;
 	int i, cur_idx;
@@ -1857,6 +1863,11 @@ static int is_hw_pdp_shot(struct is_hw_ip *hw_ip, struct is_frame *frame,
 
 	if (!test_bit(HW_INIT, &hw_ip->state)) {
 		mserr_hw("not initialized!!", instance, hw_ip);
+		return -EINVAL;
+	}
+
+	if (!test_bit(instance, &hw_ip->run_rsc_state)) {
+		mserr_hw("not run!!", instance, hw_ip);
 		return -EINVAL;
 	}
 
@@ -1925,6 +1936,20 @@ static int is_hw_pdp_shot(struct is_hw_ip *hw_ip, struct is_frame *frame,
 		if (pdp_hw_g_idle_state(pdp->base))
 			pdp_hw_s_one_shot_enable(pdp);
 	}
+
+	return ret;
+}
+
+static int is_hw_pdp_shot(struct is_hw_ip *hw_ip, struct is_frame *frame, ulong hw_map)
+{
+	int ret;
+	unsigned long flag;
+	struct is_pdp *pdp;
+
+	pdp = (struct is_pdp *)hw_ip->priv_info;
+	spin_lock_irqsave(&pdp->slock_shot, flag);
+	ret = _is_hw_pdp_shot(hw_ip, frame, hw_map);
+	spin_unlock_irqrestore(&pdp->slock_shot, flag);
 
 	return ret;
 }

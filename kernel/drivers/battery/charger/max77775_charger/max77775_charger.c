@@ -35,6 +35,9 @@
 #define WC_CURRENT_WORK_STEP_OTG	200
 #define AICL_WORK_DELAY		100
 
+#if IS_ENABLED(CONFIG_WRL_MODE4_FG_SETTING)
+static bool is_wireless_mode_4_set;
+#endif
 static unsigned int __read_mostly lpcharge;
 module_param(lpcharge, uint, 0444);
 static int factory_mode;
@@ -504,8 +507,10 @@ static int reduce_input_current(struct max77775_charger_data *charger)
 	int input_current = 0, max_value = 0;
 
 	input_current = max77775_get_input_current(charger);
-	if (input_current <= MINIMUM_INPUT_CURRENT)
+	if (input_current <= MINIMUM_INPUT_CURRENT) {
+		charger->input_current = input_current;
 		return input_current;
+	}
 
 	if (is_wcin_type(charger->cable_type) || is_wireless_fake_type(charger->cable_type))
 		max_value = 1600;
@@ -1272,10 +1277,6 @@ static void max77775_charger_initialize(struct max77775_charger_data *charger)
 			MAX77775_RECYCLE_EN_ENABLE << CHG_CNFG_01_RECYCLE_EN_SHIFT,
 			CHG_CNFG_01_RECYCLE_EN_MASK);
 
-	/* OTG off(UNO on), boost off */
-	max77775_update_reg(charger->i2c, MAX77775_CHG_REG_CNFG_00,
-			0, CHG_CNFG_00_OTG_CTRL);
-
 	/* otg current limit 900mA */
 	max77775_update_reg(charger->i2c, MAX77775_CHG_REG_CNFG_02,
 			MAX77775_OTG_ILIM_900 << CHG_CNFG_02_OTG_ILIM_SHIFT,
@@ -1380,6 +1381,9 @@ static void max77775_charger_initialize(struct max77775_charger_data *charger)
 	max77775_set_ship_exit_db(charger, 4000);
 
 	/* disable auto shipmode, this should work under 2.6V */
+	max77775_update_reg(charger->i2c, MAX77775_CHG_REG_CNFG_13,
+			    0x00 << CHG_CNFG_13_AUTOSHIP_TH_SHIFT,
+			    CHG_CNFG_13_AUTOSHIP_TH_MASK);
 	max77775_set_auto_ship_mode(charger, 0);
 	max77775_set_ship_entry_db(charger, 192);
 
@@ -2028,6 +2032,25 @@ static void set_icl_wcin_otg_work(struct work_struct *work)
 	__pm_relax(charger->set_icl_wcin_otg_ws);
 }
 
+#if IS_ENABLED(CONFIG_WRL_MODE4_FG_SETTING)
+static void max77775_chg_check_wireless_mode4(struct max77775_charger_data *charger)
+{
+	union power_supply_propval value = {0, };
+
+	if (charger->cnfg00_mode == MAX77775_MODE_4_BUCK_ON && is_wireless_all_type(charger->cable_type)) {
+		if (!is_wireless_mode_4_set) {
+			is_wireless_mode_4_set = true;
+			value.intval = 1;
+			psy_do_property("max77775-fuelgauge", set, POWER_SUPPLY_EXT_PROP_WIRELESS_MODE_4, value);
+		}
+	} else if (is_wireless_mode_4_set) {
+		is_wireless_mode_4_set = false;
+		value.intval = 0;
+		psy_do_property("max77775-fuelgauge", set, POWER_SUPPLY_EXT_PROP_WIRELESS_MODE_4, value);
+	}
+}
+#endif
+
 static void max77775_chg_set_mode_state(struct max77775_charger_data *charger,
 					unsigned int state)
 {
@@ -2277,9 +2300,14 @@ static void max77775_chg_set_mode_state(struct max77775_charger_data *charger,
 	if (max77775_get_facmode())
 		charger->cnfg00_mode |= MAX77775_MODE_4_BUCK_ON;
 
-	pr_info("%s: current_mode(0x%x)\n", __func__, charger->cnfg00_mode);
+	pr_info("%s: prev(0x%x) -> current_mode(0x%x)\n", __func__, prev_mode, charger->cnfg00_mode);
 	max77775_update_reg(charger->i2c, MAX77775_CHG_REG_CNFG_00,
 			charger->cnfg00_mode, CHG_CNFG_00_MODE_MASK);
+
+#if IS_ENABLED(CONFIG_WRL_MODE4_FG_SETTING)
+	if (charger->cnfg00_mode != prev_mode)
+		max77775_chg_check_wireless_mode4(charger);
+#endif
 
 	if (((charger->cnfg00_mode == MAX77775_MODE_F_BUCK_CHG_BOOST_OTG_ON) &&
 		((prev_mode == MAX77775_MODE_A_BOOST_OTG_ON) || (prev_mode == MAX77775_MODE_5_BUCK_CHG_ON))) ||
@@ -2423,6 +2451,9 @@ static int max77775_chg_set_property(struct power_supply *psy,
 				}
 			}
 		}
+#if IS_ENABLED(CONFIG_WRL_MODE4_FG_SETTING)
+		max77775_chg_check_wireless_mode4(charger);
+#endif
 		break;
 		/* val->intval : input charging current */
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT:
@@ -2985,6 +3016,7 @@ static void max77775_aicl_isr_work(struct work_struct *work)
 		pr_info("%s: skip\n", __func__);
 		charger->aicl_curr = 0;
 		sec_votef("ICL", VOTER_AICL, false, 0);
+		cancel_delayed_work(&charger->aicl_work);
 		__pm_relax(charger->aicl_ws);
 		return;
 	}
@@ -3435,6 +3467,9 @@ static int max77775_charger_probe(struct platform_device *pdev)
 	if (ret < 0)
 		pr_err("%s not found charger dt! ret[%d]\n", __func__, ret);
 #endif
+#if IS_ENABLED(CONFIG_WRL_MODE4_FG_SETTING)
+	is_wireless_mode_4_set = false;
+#endif
 	platform_set_drvdata(pdev, charger);
 
 	max77775_charger_initialize(charger);
@@ -3748,9 +3783,8 @@ static void max77775_charger_shutdown(struct platform_device *pdev)
 		max77775_write_reg(charger->i2c, MAX77775_CHG_REG_CNFG_12, reg_data);
 
 #if defined(CONFIG_SHIPMODE_BY_VBAT) && !defined(CONFIG_SEC_FACTORY)
-		/* enable auto shipmode */
-		if ((charger->cable_type != POWER_SUPPLY_TYPE_BATTERY &&
-				charger->cable_type != POWER_SUPPLY_TYPE_UNKNOWN) || lpcharge) {
+		/* case with stray voltage due to TA connection */
+		if (!is_nocharge_type(charger->cable_type) || lpcharge) {
 			if (max77775_check_current_level())
 				max77775_check_auto_shipmode_level(charger, 2);
 			else

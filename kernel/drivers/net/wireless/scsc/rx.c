@@ -319,8 +319,15 @@ static int slsi_mbssid_to_ssid_list(struct slsi_dev *sdev, struct netdev_vif *nd
 				    u8 *scan_ssid, int ssid_len,
 				    u8 *bssid, int freq, int rssi, u8 akm_type)
 {
+	struct net_device *dev = slsi_get_netdev(ndev_vif->sdev, ndev_vif->ifnum);
+	struct ieee80211_channel *channel = NULL;
 	struct slsi_ssid_info *ssid_info;
 	int found = 0;
+
+	channel = ieee80211_get_channel(sdev->wiphy, SLSI_FREQ_FW_TO_HOST(freq));
+	if (channel)
+		slsi_roam_channel_cache_add_entry(sdev, dev, scan_ssid, ssid_len, bssid,
+						  channel->hw_value, channel->band);
 
 	list_for_each_entry(ssid_info, &ndev_vif->sta.ssid_info, list) {
 		struct slsi_bssid_info *current_result, *bssid_info;
@@ -2209,7 +2216,7 @@ void slsi_rx_channel_switched_ind(struct slsi_dev *sdev, struct net_device *dev,
 	ndev_vif->chandef_saved = chandef;
 	SLSI_NET_INFO(dev, "width:%dMHz, center_freq1:%dMHz, primary:%dMHz\n",
 		      ch_width, (int)chandef.center_freq1, freq);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 22))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 94))
         cfg80211_ch_switch_notify(dev, &chandef, 0, 0);
 #elif (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 41))
 	cfg80211_ch_switch_notify(dev, &chandef, 0);
@@ -2976,7 +2983,7 @@ void slsi_rx_synchronised_ind(struct slsi_dev *sdev, struct net_device *dev, str
 		memset(&auth_request, 0x00, sizeof(auth_request));
 		auth_request.action = NL80211_EXTERNAL_AUTH_START;
 #if (KERNEL_VERSION(6, 1, 0) <= LINUX_VERSION_CODE)
-		if (ndev_vif->sta.sta_bss) {
+		if (ndev_vif->sta.sta_bss && sdev->fw_eht_enabled) {
 			beacon_ies = ndev_vif->sta.sta_bss->ies;
 			if (beacon_ies) {
 				ml_ie = cfg80211_find_ext_elem(WLAN_EID_EXT_EHT_MULTI_LINK,
@@ -2988,6 +2995,8 @@ void slsi_rx_synchronised_ind(struct slsi_dev *sdev, struct net_device *dev, str
 #define BASIC_ML_IE_COMMON_INFO_LEN (2 + 1 + ETH_ALEN)
 				if (ml_ie && ml_ie->datalen > BASIC_ML_IE_COMMON_INFO_LEN) {
 					ether_addr_copy(auth_request.mld_addr, ml_ie->data + 4);
+					SLSI_INFO(sdev, "[MLD] Multi Link Authentication AP MLD %d addr: "MACSTR"\n",
+						  MAC2STR(auth_request.mld_addr));
 				}
 			}
 		}
@@ -3490,27 +3499,10 @@ static inline u8 mle_common_size(struct slsi_dev *sdev, const u8 *data)
 			common += ETH_ALEN;
 		return common;
 	default:
-		SLSI_WARN(sdev, "Invalid control type\n");
+		SLSI_WARN(sdev, "[MLD] Invalid control type\n");
 	return 0;
 	}
 	return common + mle->variable[0];
-}
-
-static size_t slsi_mlo_fragments_length(struct slsi_dev *sdev, const u8 *frag_data, size_t remaining_len)
-{
-	const struct element *elem = (const struct element *)frag_data;
-	size_t frags_len = 0;
-	if (remaining_len <= 2)
-		return 0;
-
-	if (elem->id == WLAN_EID_FRAGMENT) {
-		frags_len += elem->datalen + 2;
-		if (elem->datalen == 255 && (remaining_len > (elem->datalen + 2)))
-			frags_len += slsi_mlo_fragments_length(sdev, elem->data, remaining_len - elem->datalen - 2);
-		else
-			return frags_len;
-	}
-	return frags_len;
 }
 
 static void slsi_get_mld_addr(struct slsi_dev *sdev, struct net_device *dev,
@@ -3536,6 +3528,57 @@ static void slsi_get_mld_addr(struct slsi_dev *sdev, struct net_device *dev,
 	}
 }
 
+static size_t slsi_mlo_defrag_data(struct slsi_dev *sdev, const u8 *data, size_t data_len,
+				   u8 *buf, size_t buf_size, size_t total_ie_len, size_t fragment_id)
+{
+	const u8 *pos, *end = data + total_ie_len;
+	size_t min_defrag_len = 255;
+	size_t offset = 0;
+
+	if (!data || !data_len || !buf)
+		return 0;
+
+	if (data_len < min_defrag_len) {
+		if (data_len <= buf_size) {
+			memcpy(buf, data, data_len);
+			return data_len;
+		} else {
+			SLSI_ERR(sdev, "[MLD] Lesser Buffer size (%ld) allocated needed (%ld)\n", buf_size, data_len);
+			return 0;
+		}
+	}
+	if (min_defrag_len <= buf_size) {
+		memcpy(&buf[offset], data, min_defrag_len - 1);
+		offset += min_defrag_len;
+		total_ie_len -= min_defrag_len - 1;
+		buf_size -= min_defrag_len - 1;
+	} else {
+		SLSI_ERR(sdev, "[MLD] Lesser Buffer size (%ld) allocated needed (%ld)\n", buf_size, data_len);
+		return 0;
+	}
+	pos = &data[min_defrag_len];
+	while (data_len == min_defrag_len && pos[0] == fragment_id && pos[1]) {
+		size_t elen = 2 + pos[1];
+		data_len = pos[1];
+
+		if (elen > (size_t)(end - pos))
+			break;
+		if (pos[1] <= buf_size) {
+			/* Copy only the fragment data (without the EID and length) */
+			memcpy(&buf[offset], &pos[2], pos[1]);
+			pos += elen;
+			total_ie_len -= elen;
+			buf_size -= elen - 2;
+			offset += elen;
+		} else {
+			SLSI_ERR(sdev, "[MLD] Lesser Buffer size (%ld) allocated needed (%ld)\n", buf_size, data_len);
+			return 0;
+		}
+	}
+	return offset;
+}
+
+
 static bool slsi_process_mlo_ie(struct slsi_dev *sdev, struct net_device *dev,
 				u8 *ie, size_t ie_len, bool is_assoc_req)
 {
@@ -3543,6 +3586,8 @@ static bool slsi_process_mlo_ie(struct slsi_dev *sdev, struct net_device *dev,
 	struct slsi_vif_sta *sta = &ndev_vif->sta;
 	const struct element *ml_ie = NULL, *sub_elem = NULL;
 	int total_ml_ie_len = 0;
+	u8 *defrag_ml_data;
+	u8 *defrag_prof_data;
 
 	ml_ie = cfg80211_find_ext_elem(WLAN_EID_EXT_EHT_MULTI_LINK, ie, ie_len);
 	if (!ml_ie)
@@ -3556,26 +3601,40 @@ static bool slsi_process_mlo_ie(struct slsi_dev *sdev, struct net_device *dev,
 	if (ml_ie->datalen < BASIC_ML_IE_COMMON_INFO_LEN)
 		return false;
 
-	if (ml_ie->datalen == 255 && (ie_len > (ml_ie->data + ml_ie->datalen - ie))) {
-		total_ml_ie_len = ml_ie->datalen + slsi_mlo_fragments_length(sdev, ml_ie->data + ml_ie->datalen,
-									     ie_len - (ml_ie->data + ml_ie->datalen - ie));
-	} else {
-		total_ml_ie_len = ml_ie->datalen;
+	defrag_ml_data = kmalloc((ie_len - ((u8 *)ml_ie - ie)), GFP_KERNEL);
+	if (!defrag_ml_data) {
+		SLSI_ERR(sdev, "[MLD] malloc failed for ML IE(len:%ld)\n", (ie_len - ((u8 *)ml_ie - ie)));
+		return false;
+	}
+	total_ml_ie_len = slsi_mlo_defrag_data(sdev, ml_ie->data, ml_ie->datalen, defrag_ml_data,
+					       (ie_len - ((u8 *)ml_ie - ie)), ie_len, WLAN_EID_FRAGMENT);
+
+	if (total_ml_ie_len == 0) {
+		kfree(defrag_ml_data);
+		return false;
 	}
 
-	if (total_ml_ie_len > ie_len)
+	slsi_get_mld_addr(sdev, dev, defrag_ml_data, is_assoc_req);
+
+	defrag_prof_data = kmalloc(total_ml_ie_len, GFP_KERNEL);
+	if (!defrag_prof_data) {
+		SLSI_ERR(sdev, "[MLD] malloc failed for STA profile(len:%ld)\n", total_ml_ie_len);
+		kfree(defrag_ml_data);
 		return false;
-
-	slsi_get_mld_addr(sdev, dev, ml_ie->data, is_assoc_req);
-
-	for_each_element(sub_elem, ml_ie->data + mle_common_size(sdev, ml_ie->data),
-			 total_ml_ie_len - mle_common_size(sdev, ml_ie->data)) {
+	}
+	for_each_element(sub_elem, defrag_ml_data + mle_common_size(sdev, defrag_ml_data),
+			 total_ml_ie_len - mle_common_size(sdev, defrag_ml_data)) {
 		if (sub_elem->id != IEEE80211_MLE_SUBELEM_PER_STA_PROFILE) {
 			continue;
 		} else {
-			struct ieee80211_mle_per_sta_profile *prof = (struct ieee80211_mle_per_sta_profile *)sub_elem->data;
-			u16 control;
-			u8 link_id;
+#define WLAN_STA_PROFILE_EID_FRAGMENT (254)
+			int sta_profile_len = slsi_mlo_defrag_data(sdev, sub_elem->data, sub_elem->datalen,
+								   defrag_prof_data,
+								   (total_ml_ie_len - ((u8 *)sub_elem - defrag_ml_data)),
+								   total_ml_ie_len, WLAN_STA_PROFILE_EID_FRAGMENT);
+			struct ieee80211_mle_per_sta_profile *prof = (struct ieee80211_mle_per_sta_profile *)defrag_prof_data;
+			u16 control = 0;
+			u8 link_id = -1;
 
 			control = le16_to_cpu(prof->control);
 			link_id = control & IEEE80211_MLE_STA_CONTROL_LINK_ID;
@@ -3586,8 +3645,7 @@ static bool slsi_process_mlo_ie(struct slsi_dev *sdev, struct net_device *dev,
         (2 + /* STA Control field */ \
          1 + /* STA Info Length field (Basic) */ \
          ETH_ALEN) /* STA MAC Address field (Basic) */
-
-			if (prof->sta_info_len < BASIC_ML_IE_STA_INFO_LEN)
+			if (sta_profile_len < BASIC_ML_IE_STA_INFO_LEN)
 				continue;
 
 			if (control & IEEE80211_MLE_STA_CONTROL_STA_MAC_ADDR_PRESENT) {
@@ -3600,6 +3658,8 @@ static bool slsi_process_mlo_ie(struct slsi_dev *sdev, struct net_device *dev,
 			}
 		}
 	}
+	kfree(defrag_prof_data);
+	kfree(defrag_ml_data);
 	return true;
 }
 
@@ -3620,18 +3680,18 @@ static void slsi_notify_mld_connect_done(struct slsi_dev *sdev,
 
 	/* Process Assoc Resp MLO IE to get BSSID and STA MAC address */
 	if(!slsi_process_mlo_ie(sdev, dev, assoc_rsp_ie, assoc_rsp_ie_len, false)) {
-		SLSI_ERR(sdev, "Failed to process Multi Link IE in Association Response\n");
+		SLSI_ERR(sdev, "[MLD] Failed to process Multi Link IE in Association Response\n");
 		return;
 	}
 
 	/* Process Assoc req MLO IE to get BSSID and STA MAC address */
 	if(!slsi_process_mlo_ie(sdev, dev, assoc_ie, assoc_ie_len, true)) {
-		SLSI_ERR(sdev, "Failed to process Multi Link IE in Association Request\n");
+		SLSI_ERR(sdev, "[MLD] Failed to process Multi Link IE in Association Request\n");
 		return;
 	}
 
 	for (link_id = 0; link_id < MAX_NUM_MLD_LINKS; link_id++) {
-		if ((!ndev_vif->sta.valid_links) & BIT(link_id))
+		if (!(ndev_vif->sta.valid_links & BIT(link_id)))
 			continue;
 		if (link_id == ndev_vif->sta.assoc_resp_link_id) {
 			params.links[link_id].bssid = bssid;
@@ -3642,6 +3702,8 @@ static void slsi_notify_mld_connect_done(struct slsi_dev *sdev,
 			params.links[link_id].bssid = ndev_vif->sta.links[link_id].bssid;
 			params.links[link_id].addr = ndev_vif->sta.links[link_id].addr;
 		}
+		SLSI_INFO(sdev, "[MLD] Multi Link Association link %d addr: "MACSTR" BSSID: "MACSTR"\n", link_id,
+			  MAC2STR(params.links[link_id].addr), MAC2STR(params.links[link_id].bssid));
 	}
 	params.status = status;
 	params.req_ie = assoc_ie;
@@ -4835,6 +4897,7 @@ void slsi_rx_received_frame_ind(struct slsi_dev *sdev, struct net_device *dev, s
 		/* Populate wake reason stats here */
 		if (unlikely(slsi_skb_cb_get(skb)->wakeup)) {
 			schedule_work(&sdev->wakeup_time_work);
+			skb->mark = SLSI_WAKEUP_PKT_MARK;
 			slsi_rx_update_wake_stats(sdev, ehdr, skb->len - fapi_get_siglen(skb), skb);
 		}
 
@@ -5201,10 +5264,14 @@ void slsi_rx_twt_teardown_indication(struct slsi_dev *sdev, struct net_device *d
 	default:
 		reason_code = TWT_RESULTCODE_UNKNOWN;
 	}
-	for (setup_id_idx = 0; setup_id_idx < SLSI_MAX_NUMBER_SETUP_ID; setup_id_idx++) {
-		if (sdev->twt_setup_id[setup_id_idx] == setup_id) {
-			sdev->twt_setup_id[setup_id_idx] = 0;
-			break;
+	if (!setup_id) {
+		memset(sdev->twt_setup_id, 0, SLSI_MAX_NUMBER_SETUP_ID * sizeof(int));
+	} else {
+		for (setup_id_idx = 0; setup_id_idx < SLSI_MAX_NUMBER_SETUP_ID; setup_id_idx++) {
+			if (sdev->twt_setup_id[setup_id_idx] == setup_id) {
+				sdev->twt_setup_id[setup_id_idx] = 0;
+				break;
+			}
 		}
 	}
 	slsi_send_twt_teardown(sdev, dev, setup_id, reason_code);
@@ -5279,3 +5346,39 @@ void slsi_rx_delayed_wakeup_indication(struct slsi_dev *sdev, struct net_device 
 	kfree_skb(skb);
 }
 
+void slsi_rx_sr_params_changed_indication(struct slsi_dev *sdev, struct net_device *dev, struct sk_buff *skb)
+{
+	struct netdev_vif *ndev_vif = netdev_priv(dev);
+	struct slsi_spatial_reuse_params sr_ind;
+
+	SLSI_MUTEX_LOCK(ndev_vif->vif_mutex);
+
+	if (!ndev_vif->activated) {
+		SLSI_NET_DBG1(dev, SLSI_MLME, "VIF not activated\n");
+		goto exit_with_lock;
+	}
+
+	if (WLBT_WARN(ndev_vif->vif_type != FAPI_VIFTYPE_STATION, "Not a Station VIF\n"))
+		goto exit_with_lock;
+
+	sr_ind.srg_obss_pd_min_offset = fapi_get_buff(skb, u.mlme_spatial_reuse_parameters_ind.srg_obss_pd_min_offset);
+	sr_ind.srg_obss_pd_max_offset = fapi_get_buff(skb, u.mlme_spatial_reuse_parameters_ind.srg_obss_pd_max_offset);
+	sr_ind.non_srg_obss_pd_max_offset =
+		fapi_get_buff(skb, u.mlme_spatial_reuse_parameters_ind.non_srg_obss_pd_max_offset);
+	sr_ind.hesiga_sr_value15allowed =
+		fapi_get_buff(skb, u.mlme_spatial_reuse_parameters_ind.hesiga_spatial_reuse_value15allowed);
+	sr_ind.non_srg_obss_pd_sr_allowed =
+		fapi_get_buff(skb, u.mlme_spatial_reuse_parameters_ind.non_srg_obss_pd_sr_allowed);
+
+	ndev_vif->sta.srg_obss_pd_min_offset = sr_ind.srg_obss_pd_min_offset;
+	ndev_vif->sta.srg_obss_pd_max_offset = sr_ind.srg_obss_pd_max_offset;
+	ndev_vif->sta.non_srg_obss_pd_max_offset = sr_ind.non_srg_obss_pd_max_offset;
+	ndev_vif->sta.hesiga_spatial_reuse_value15allowed = sr_ind.hesiga_sr_value15allowed;
+	ndev_vif->sta.non_srg_obss_pd_sr_allowed = sr_ind.non_srg_obss_pd_sr_allowed;
+
+	slsi_vendor_change_sr_parameter_event(sdev, dev, sr_ind);
+
+exit_with_lock:
+	SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
+	kfree_skb(skb);
+}

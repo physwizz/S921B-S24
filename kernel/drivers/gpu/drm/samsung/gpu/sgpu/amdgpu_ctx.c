@@ -122,7 +122,7 @@ static int amdgpu_ctx_init_entity(struct amdgpu_ctx *ctx, u32 hw_ip,
 		return  -ENOMEM;
 
 	entity->sequence = 1;
-	priority = (ctx->override_priority == DRM_SCHED_PRIORITY_UNSET) ?
+	priority = (ctx->override_priority == DRM_SCHED_PRIORITY_UNSET_FOR_SGPU) ?
 				ctx->init_priority : ctx->override_priority;
 	hw_prio = amdgpu_ctx_prio_sched_to_hw(adev, priority, hw_ip);
 
@@ -197,8 +197,8 @@ static int amdgpu_ctx_init(struct amdgpu_device *adev,
 	ctx->reset_counter = atomic_read(&adev->gpu_reset_counter);
 	ctx->reset_counter_query = ctx->reset_counter;
 	ctx->vram_lost_counter = atomic_read(&adev->vram_lost_counter);
-	ctx->init_priority = priority;
-	ctx->override_priority = DRM_SCHED_PRIORITY_UNSET;
+	ctx->init_priority = DRM_SCHED_PRIORITY_NORMAL;
+	ctx->override_priority = DRM_SCHED_PRIORITY_UNSET_FOR_SGPU;
 	ctx->fpriv = fpriv;
 
 	return 0;
@@ -666,15 +666,14 @@ static void amdgpu_ctx_set_entity_priority(struct amdgpu_ctx *ctx,
 	}
 }
 
-void amdgpu_ctx_priority_override(struct amdgpu_ctx *ctx,
-				  enum drm_sched_priority priority)
+void amdgpu_ctx_priority_override(struct amdgpu_ctx *ctx, int drm_priority)
 {
 	enum drm_sched_priority ctx_prio;
 	unsigned i, j;
 
-	ctx->override_priority = priority;
+	ctx->override_priority = drm_priority;
 
-	ctx_prio = (ctx->override_priority == DRM_SCHED_PRIORITY_UNSET) ?
+	ctx_prio = (ctx->override_priority == DRM_SCHED_PRIORITY_UNSET_FOR_SGPU) ?
 			ctx->init_priority : ctx->override_priority;
 	for (i = 0; i < AMDGPU_HW_IP_NUM; ++i) {
 		for (j = 0; j < amdgpu_ctx_num_entities[i]; ++j) {

@@ -22,10 +22,12 @@
 
 struct repeater_data {
 	int (*enable)(void *data, bool en);
+	int (*set_bypass)(void *data, bool enable);
 	void *private_data;
 };
 
 extern int repeater_enable(bool en);
+extern int eusb_repeater_set_bypass(bool en);
 extern int repeater_core_register(struct repeater_data *data);
 extern void repeater_core_unregister(void);
 

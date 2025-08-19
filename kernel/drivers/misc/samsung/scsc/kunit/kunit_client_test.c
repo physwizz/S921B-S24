@@ -1,3 +1,6 @@
+#define copy_from_user(args...) (0)
+#define alloc_chrdev_region(args...) (0)
+
 static int auto_start;
 void set_auto_start(int autostart)
 {
@@ -36,3 +39,6 @@ int (*fp_scsc_client_test_module_init)(void) = &scsc_client_test_module_init;
 
 static void __exit scsc_client_test_module_exit(void);
 void (*fp_scsc_client_test_module_exit)(void) = &scsc_client_test_module_exit;
+
+static void delay_start_func(struct work_struct *work);
+void (*fp_delay_start_func)(struct work_struct *work) = &delay_start_func;

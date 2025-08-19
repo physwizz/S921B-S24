@@ -34,6 +34,7 @@ enum pablo_camif_vc_id {
 	CAMIF_VC_IMG,
 	CAMIF_VC_HPD,
 	CAMIF_VC_VPD,
+	CAMIF_VC_EMB,
 	CAMIF_VC_ID_NUM,
 };
 

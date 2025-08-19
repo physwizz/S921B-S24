@@ -20,6 +20,8 @@ int iodev_open(struct inode *inode, struct file *filp)
 
 	atomic_inc(&iod->opened);
 
+	iod->opened_time = ktime_get();
+
 	list_for_each_entry(ld, &msd->link_dev_list, list) {
 		if (IS_CONNECTED(iod, ld) && ld->init_comm) {
 			ret = ld->init_comm(ld, iod);
@@ -164,6 +166,17 @@ long iodev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			mif_err("copy_to_user fail:%lu\n", err);
 			return err;
 		}
+
+		return 0;
+	}
+	case IOCTL_SET_MINIDUMP_MODE: {
+		if (copy_from_user(&ld->minidump_mode, (const void __user *)arg,
+			sizeof(ld->minidump_mode))) {
+			mif_err("IOCTL_SET_MINIDUMP_MODE err\n");
+			return -EFAULT;
+		}
+
+		mif_info("minidump mode:%d\n", ld->minidump_mode);
 
 		return 0;
 	}

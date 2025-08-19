@@ -72,7 +72,8 @@ static DEFINE_MUTEX(fw_load_mutex);
 
 static inline bool __is_fw_bin_permanent(void)
 {
-	return _icpu_fw.mem_desc[ICPU_FW_MEM_BIN].permanent;
+	return (_icpu_fw.mem_desc[ICPU_FW_MEM_BIN].permanent &&
+		!is_get_debug_param(IS_DEBUG_PARAM_ICPU_RELOAD));
 }
 
 #define ICPU_FIRMWARE_VERSION_OFFSET 80
@@ -84,7 +85,8 @@ static void __free_firmware_mem(void)
 
 	for (i = 0; i < _icpu_fw.num_mem; i++) {
 		desc = &_icpu_fw.mem_desc[i];
-		if (desc->permanent == false && desc->icpubuf) {
+		if ((desc->permanent == false || is_get_debug_param(IS_DEBUG_PARAM_ICPU_RELOAD)) &&
+			desc->icpubuf) {
 			ICPU_INFO("free firmware mem name(%s), size(0x%x)",
 					desc->mem_name, desc->size);
 			pablo_icpu_mem_free(desc->icpubuf);

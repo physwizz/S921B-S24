@@ -294,6 +294,7 @@ int frame_manager_open(struct is_framemgr *this, u32 buffers, bool need_param)
 		if (!this->parameters) {
 			err("failed to allocate parameters");
 			vfree(this->frames);
+			this->frames = NULL;
 			return -ENOMEM;
 		}
 	}

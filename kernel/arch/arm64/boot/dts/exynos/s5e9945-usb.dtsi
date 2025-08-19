@@ -81,7 +81,7 @@
 
 			/* disable u1/u2 */
 			snps,dis-u1-entry-quirk;
-			snps,dis-u2-entry-quirk;
+			snps,dis-u2-entry-quirk;		
 
 			/*
 			 * dis-u2-freeclk-exists-quirk, dis_u2_susphy_quirk are alternative.
@@ -124,7 +124,7 @@
 		has_other_phy = <0>;
 		/* if combo phy is used, it must be set to 1. usbphy_sub_info is enabled */
 		has_combo_phy = <1>;
-		sub_phy_version = <0x800>;
+		sub_phy_version = <0x801>;
 		/* 0: ROM, 1: RAM, No definition means 0 */
 		snps_usbdp_ram_mode = <1>;
 

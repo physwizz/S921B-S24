@@ -11,6 +11,7 @@
 #include <scsc/scsc_logring.h>
 #include "scsc_mif_abs.h"
 #include "scsc_mx_impl.h"
+#include "wlbt_ramsd.h"
 #ifdef CONFIG_SCSC_WLBTD
 #include "scsc_wlbtd.h"
 #endif
@@ -113,6 +114,7 @@ static int __init scsc_mx_module_init(void)
 		SCSC_RELEASE_POINT,
 		SCSC_RELEASE_CUSTOMER);
 	scsc_mif_abs_register(&mx_module_mif_if);
+	wlbt_ramsd_create();
 	return 0;
 }
 
@@ -127,6 +129,7 @@ static void __exit scsc_mx_module_exit(void)
 		kfree(mx_node);
 	}
 
+	wlbt_ramsd_destroy();
 	scsc_mif_abs_unregister(&mx_module_mif_if);
 
 	SCSC_TAG_INFO(MXMAN, SCSC_MX_CORE_MODDESC " unloaded\n");

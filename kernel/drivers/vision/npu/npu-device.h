@@ -102,6 +102,10 @@ struct npu_device {
 #if IS_ENABLED(CONFIG_SOC_S5E9945)
 	atomic_t power_active;
 #endif
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+	u32 is_first;
+	struct npu_session *first_session;
+#endif
 };
 
 int npu_device_open(struct npu_device *device);

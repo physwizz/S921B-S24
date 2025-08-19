@@ -212,7 +212,7 @@ static const struct attribute_group sim_group = {
 	.name = "sim",
 };
 
-static int get_ds_detect(struct device_node *np)
+int get_ds_detect(void)
 {
 	if (ds_detect > 2 || ds_detect < 1)
 		ds_detect = 2;
@@ -395,11 +395,7 @@ static int init_control_messages(struct modem_ctl *mc)
 	mif_dt_read_u32(np, "sbi_sys_rev_mask", sbi_sys_rev_mask);
 	mif_dt_read_u32(np, "sbi_sys_rev_pos", sbi_sys_rev_pos);
 
-	ds_det = get_ds_detect(np);
-	if (ds_det < 0) {
-		mif_err("ds_det error:%d\n", ds_det);
-		return -EINVAL;
-	}
+	ds_det = get_ds_detect();
 
 	update_ctrl_msg(&mld->ap2cp_united_status, ds_det, mc->sbi_ds_det_mask,
 			mc->sbi_ds_det_pos);

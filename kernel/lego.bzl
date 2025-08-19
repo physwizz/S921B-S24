@@ -2,8 +2,15 @@
 # SPDX-License-Identifier: GPL-2.0
 # COPYRIGHT(C) 2023 Samsung Electronics Co., Ltd. All Right Reserved.
 
+lego_module_list_first = [
+
+]
+
+lego_module_list_second = [
+
+]
+
 lego_module_list = [
-"drivers/battery/battery_auth/ds28e30/sec-auth-ds28e30.ko",
 "drivers/battery/charger/max77705_charger/max77705_charger.ko",
 "drivers/battery/charger/max77775_charger/max77775_charger.ko",
 "drivers/battery/charger/pca9481_charger/pca9481_charger.ko",
@@ -37,6 +44,7 @@ lego_module_list = [
 "drivers/mfd/maxim/mfd_max77705.ko",
 "drivers/mfd/maxim/mfd_max77775.ko",
 "drivers/misc/dev_ril_bridge.ko",
+"drivers/mstdrv/mstdrv.ko",
 "drivers/muic/common/common_muic.ko",
 "drivers/net/dropdump/dropdump.ko",
 "drivers/nfc/lsi/nfc_slsi_sec.ko",
@@ -58,6 +66,7 @@ lego_module_list = [
 "drivers/samsung/debug/sec_debug_reset_reason.ko",
 "drivers/samsung/debug/sec_debug_sched_info.ko",
 "drivers/samsung/debug/sec_debug_sched_report.ko",
+"drivers/samsung/debug/sec_debug_slab_info.ko",
 "drivers/samsung/debug/sec_debug_softdog.ko",
 "drivers/samsung/debug/sec_debug_stacktrace.ko",
 "drivers/samsung/debug/sec_debug_test.ko",
@@ -88,14 +97,13 @@ lego_module_list = [
 ]
 
 lego_dtbo_list = [
-"e1s_eur_openx_w01_r17.dtbo",
-"e1s_eur_openx_w01_r16.dtbo",
-"e1s_eur_openx_w01_r14.dtbo",
-"e1s_eur_openx_w01_r13.dtbo",
-"e1s_eur_openx_w01_r12.dtbo",
-"e1s_eur_openx_w01_r11.dtbo",
-"e1s_eur_openx_w01_r08.dtbo",
-"e1s_eur_openx_w01_r07.dtbo",
-"e1s_eur_openx_w01_r05.dtbo",
-"e1s_eur_openx_w01_r04.dtbo"
+"e1s_kor_singlex_w01_r17.dtbo",
+"e1s_kor_singlex_w01_r16.dtbo",
+"e1s_kor_singlex_w01_r14.dtbo",
+"e1s_kor_singlex_w01_r13.dtbo",
+"e1s_kor_singlex_w01_r12.dtbo",
+"e1s_kor_singlex_w01_r11.dtbo",
+"e1s_kor_singlex_w01_r10.dtbo",
+"e1s_kor_singlex_w01_r08.dtbo"
 ]
+lego_model = 'e1s'

@@ -24,8 +24,9 @@ static inline bool is_sensor_sub_vc_skip(struct is_device_sensor *sensor,
 	ulong seamless_mode = sensor->aeb_state & IS_SENSOR_AEB_MODE_MASK;
 	unsigned long mask;
 
-	mask = BIT_MASK(sensor->cfg->img_vc[CSI_OTF_OUT_SHORT]) |
-	       BIT_MASK(sensor->cfg->hpd_vc[CSI_OTF_OUT_SHORT]);
+	mask = BIT_MASK(sensor->cfg->img_vc[CSI_OTF_OUT_SHORT]);
+	if(sensor->cfg->pd_mode != PD_NONE)
+		mask |= BIT_MASK(sensor->cfg->hpd_vc[CSI_OTF_OUT_SHORT]);
 
 	if (!test_bit(vc, &mask))
 		return false;

@@ -1888,8 +1888,7 @@ static int cnss_pci_handle_mhi_poweron_timeout(struct cnss_pci_data *pci_priv)
 {
 	struct cnss_plat_data *plat_priv = pci_priv->plat_priv;
 /* [TEMP][DEBUG][CN 06926081] Assert Panic to obtain full dump / ipc log */
-	panic("MHI power up returns timeout\n");
-
+    panic("MHI power up returns timeout\n");
 	if (cnss_mhi_scan_rddm_cookie(pci_priv, DEVICE_RDDM_COOKIE) ||
 	    cnss_get_dev_sol_value(plat_priv) > 0) {
 		/* Wait for RDDM if RDDM cookie is set or device SOL GPIO is
@@ -3250,8 +3249,16 @@ retry:
 			if (retry == POWER_ON_RETRY_MAX_TIMES) {
 				cnss_pr_dbg("Retry #%d. Set BT_EN GPIO(%u) low\n",
 					    retry, bt_en_gpio);
-				if (bt_en_gpio >= 0)
+				if (bt_en_gpio >= 0) {
+#if defined(CONFIG_SEC_FORCE_CHANGE_BT_EN)
+					cnss_pr_err("Update PCIE link down event\n");
+					cnss_pci_update_link_event(pci_priv,
+						BUS_EVENT_PCI_LINK_DOWN_BT_EN_DOWN, NULL);
+#endif /* CONFIG_SEC_FORCE_CHANGE_BT_EN */
 					gpio_direction_output(bt_en_gpio, 0);
+				}
+
+
 				cnss_pr_dbg("BT_EN GPIO val: %d\n",
 					    gpio_get_value(bt_en_gpio));
 			}

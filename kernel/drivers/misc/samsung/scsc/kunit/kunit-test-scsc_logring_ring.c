@@ -1,5 +1,5 @@
 #include <kunit/test.h>
-#include "../scsc_logring_ring.h"
+#include "../logs/scsc_logring_ring.h"
 
 extern uint32_t (*fp_get_calculated_crc)(struct scsc_ring_record *rec, loff_t pos);
 extern bool (*fp_is_ring_read_pos_valid)(struct scsc_ring_buffer *rb, loff_t pos);

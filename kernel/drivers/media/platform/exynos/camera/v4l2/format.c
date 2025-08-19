@@ -81,7 +81,10 @@ static void widths01_sps(struct is_frame_cfg *fc, unsigned int sizes[])
 	sizes[p] = SIZE_OF_META_PLANE;
 }
 
-/* V4L2_PIX_FMT_NV12, V4L2_PIX_FMT_NV21 */
+/*
+ * V4L2_PIX_FMT_NV12, V4L2_PIX_FMT_NV21,
+ * V4L2_PIX_FMT_P010,
+ */
 static void widths01_420_sps(struct is_frame_cfg *fc, unsigned int sizes[])
 {
 	struct is_fmt *fmt = fc->format;
@@ -701,6 +704,21 @@ static struct is_fmt is_formats[] = {
 		.sbwc_lossy_fr	= 0,
 		.setup_plane_sz	= widths01_420_sps,
 	}, {
+#if PKV_VER_GE(6, 0, 0)
+		.name           = "Y/CbCr 4:2:0 10-bit per component",
+		.pixelformat    = V4L2_PIX_FMT_P010,
+		.num_planes     = 1 + NUM_OF_META_PLANE,
+		.bitsperpixel   = { 16, 16 },
+		.hw_format      = DMA_INOUT_FORMAT_YUV420,
+		.hw_order       = DMA_INOUT_ORDER_CbCr,
+		.hw_bitwidth    = DMA_INOUT_BIT_WIDTH_16BIT,
+		.hw_plane       = DMA_INOUT_PLANE_2,
+		.sbwc_type      = NONE,
+		.sbwc_align     = 0,
+		.sbwc_lossy_fr  = 0,
+		.setup_plane_sz = widths01_420_sps,
+	}, {
+#endif
 		.name		= "YUV 4:2:0 non-contiguous 2-planar, Y/CbCr",
 		.pixelformat	= V4L2_PIX_FMT_NV12M,
 		.num_planes	= 2 + NUM_OF_META_PLANE,

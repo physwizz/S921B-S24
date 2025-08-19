@@ -493,7 +493,7 @@ static void disable_domain_cpus(struct ufc_domain *dom)
 		return;
 
 	cpumask_andnot(&ufc.active_cpus, &ufc.active_cpus, &dom->cpus);
-	ecs_request("UFC", &ufc.active_cpus);
+	ecs_request("UFC", &ufc.active_cpus, ECS_MAX);
 }
 
 static void enable_domain_cpus(struct ufc_domain *dom)
@@ -502,7 +502,7 @@ static void enable_domain_cpus(struct ufc_domain *dom)
 		return;
 
 	cpumask_or(&ufc.active_cpus, &ufc.active_cpus, &dom->cpus);
-	ecs_request("UFC", &ufc.active_cpus);
+	ecs_request("UFC", &ufc.active_cpus, ECS_MAX);
 }
 
 static struct freq_qos_request *get_freq_qos_req(struct ufc_domain *dom, int ctrl_type)
@@ -741,6 +741,7 @@ static void update_little_max_limit(void)
 	freq_qos_update_request(req, freq);
 }
 
+static bool ab_enabled = true;
 static void update_min_limit(void)
 {
 	enum ufc_ctrl_type type = PM_QOS_MIN_LIMIT;
@@ -759,7 +760,7 @@ static void update_min_limit(void)
 
 		index = find_cloest_vfreq_index(ufc.min_limit_table, freq, CPUFREQ_RELATION_L);
 		min_limit = ufc.min_limit_table[index];
-		if (ufc.low_freq_table)
+		if (ab_enabled && ufc.low_freq_table)
 			low_freq = ufc.low_freq_table[index];
 
 		for (i = 0; i < ufc.num_of_domain; i++) {
@@ -967,6 +968,26 @@ static ssize_t cpufreq_min_limit_store(struct kobject *kobj, const char *buf, si
 	return count;
 }
 static UFC_ATTR_RW(cpufreq_min_limit);
+
+static ssize_t ab_enabled_show(struct kobject *kobj, char *buf)
+{
+	return snprintf(buf, 3, "%d\n", ab_enabled);
+}
+static ssize_t ab_enabled_store(struct kobject *kobj, const char *buf, size_t count)
+{
+	int input;
+
+	if (!sscanf(buf, "%1d", &input))
+		return -EINVAL;
+
+	if (input)
+		ab_enabled = true;
+	else
+		ab_enabled = false;
+
+	return count;
+}
+static UFC_ATTR_RW(ab_enabled);
 
 static ssize_t cpufreq_min_limit_wo_boost_show(struct kobject *kobj, char *buf)
 {
@@ -1194,6 +1215,7 @@ static struct attribute *exynos_ufc_attrs[] = {
 	&attr_debug_min_table.attr,
 	&attr_info.attr,
 	&attr_debug_id.attr,
+	&attr_ab_enabled.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(exynos_ufc);
@@ -1676,7 +1698,7 @@ static int exynos_ufc_init(struct platform_device *pdev)
 	}
 
 	cpumask_setall(&ufc.active_cpus);
-	if (ecs_request_register("UFC", &ufc.active_cpus)) {
+	if (ecs_request_register("UFC", &ufc.active_cpus, ECS_MAX)) {
 		pr_info("exynos-ufc: Failed to register ecs\n");
 		ufc_free_all();
 		return 0;

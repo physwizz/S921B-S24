@@ -25,7 +25,7 @@
 #include <linux/of.h>
 #include <linux/types.h>
 #include <linux/pm.h>
-#include <common_define.h>
+#include "common_define.h"
 
 #define MAX_I2C_MANAGER_NUM     5
 

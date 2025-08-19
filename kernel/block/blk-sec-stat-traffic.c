@@ -24,7 +24,6 @@ struct traffic {
 	int level;
 	unsigned int timestamp;
 
-	struct gendisk *gd;
 	struct work_struct update_work;
 	struct delayed_work notify_work;
 };
@@ -88,7 +87,7 @@ static void notify_traffic_level(struct traffic *traffic)
 
 #define MB(x) ((x) / 1024 / 1024)
 
-static void update_traffic(struct work_struct *work)
+static void update_traffic_level(struct work_struct *work)
 {
 	struct traffic *traffic = UPDATE_WORK_TO_TRAFFIC(work);
 	struct traffic old = *traffic;
@@ -137,7 +136,6 @@ void blk_sec_stat_traffic_update(struct request *rq, unsigned int data_size)
 	if ((duration_ms < interval_ms) && (amount < interval_bytes))
 		return;
 
-	traffic.gd = rq->part->bd_disk;
 	schedule_work(&traffic.update_work);
 }
 
@@ -146,8 +144,7 @@ static void init_traffic(struct traffic *traffic)
 	traffic->transferred_bytes = 0;
 	traffic->level = 0;
 	traffic->timestamp = jiffies_to_msecs(jiffies);
-	traffic->gd = NULL;
-	INIT_WORK(&traffic->update_work, update_traffic);
+	INIT_WORK(&traffic->update_work, update_traffic_level);
 	INIT_DELAYED_WORK(&traffic->notify_work, send_uevent);
 }
 

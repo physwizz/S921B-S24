@@ -75,6 +75,7 @@ int send_panic_to_cp_notifier(struct notifier_block *nb, unsigned long action,
 			      void *nb_data);
 int modem_force_crash_exit(struct modem_ctl *mc);
 void handle_cp_fault(bool crash);
+int get_ds_detect(void);
 
 #if IS_ENABLED(CONFIG_SEC_MODEM_S5100) || IS_ENABLED(CONFIG_SEC_MODEM_S5400)
 void s5100_send_dump_noti(struct modem_ctl *mc);

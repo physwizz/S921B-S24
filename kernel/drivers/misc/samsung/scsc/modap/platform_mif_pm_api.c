@@ -1,7 +1,7 @@
 #include "modap/platform_mif_pm_api.h"
 #include "modap/platform_mif_regmap_api.h"
 #include "mif_reg.h"
-#if IS_ENABLED(CONFIG_SOC_S5E8845)
+#if IS_ENABLED(CONFIG_WLBT_EXYNOS_S2MPU)
 #include <soc/samsung/exynos/exynos-s2mpu.h>
 #endif
 
@@ -131,7 +131,7 @@ done:
 static int platform_mif_pmu_reset_assert(struct scsc_mif_abs *interface)
 {
 	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
-#if IS_ENABLED(CONFIG_SOC_S5E8845)
+#if IS_ENABLED(CONFIG_WLBT_EXYNOS_S2MPU)
 	int ret = exynos_s2mpu_backup_subsystem("WLBT");
 
 	if (ret)

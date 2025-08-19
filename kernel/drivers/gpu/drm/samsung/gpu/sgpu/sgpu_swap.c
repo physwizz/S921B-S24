@@ -20,6 +20,12 @@
 
 #define SGPU_TTM_TT_FLAG_SWAPPED BIT(30)
 
+void sgpu_tt_destroy_notify(struct ttm_tt *ttm)
+{
+	if (unlikely(!!(ttm->page_flags & SGPU_TTM_TT_FLAG_SWAPPED)))
+		sgpu_sub_swap_pages(ttm->num_pages);
+}
+
 int sgpu_tt_swapin(struct ttm_tt *ttm)
 {
 	struct address_space *swap_space;
@@ -58,6 +64,8 @@ int sgpu_tt_swapin(struct ttm_tt *ttm)
 	fput(swap_storage);
 	ttm->swap_storage = NULL;
 	ttm->page_flags &= ~SGPU_TTM_TT_FLAG_SWAPPED;
+
+	sgpu_sub_swap_pages(ttm->num_pages);
 
 	return 0;
 
@@ -102,15 +110,20 @@ static int sgpu_tt_swapout(struct ttm_device *bdev, struct ttm_tt *ttm, gfp_t gf
 		put_page(to_page);
 	}
 
+	ret = reclaim_shmem_address_space(swap_space);
+	if (ret < 0) {
+		DRM_ERROR("Failed to reclaim bounce shm: %d bytes (err %d)\n",
+			  ttm->num_pages, ret);
+		goto out_err;
+	}
+
 	ttm_tt_unpopulate(bdev, ttm);
 
 	ttm->swap_storage = swap_storage;
 	ttm->page_flags |= SGPU_TTM_TT_FLAG_SWAPPED;
 
-	ret = reclaim_shmem_address_space(swap_space);
-	if (ret < 0)
-		DRM_ERROR("Failed to reclaim bounce shm: %d bytes (err %d)\n",
-			  ttm->num_pages, ret);
+	sgpu_add_swap_pages(ttm->num_pages);
+
 	return ret;
 out_err:
 	fput(swap_storage);
@@ -227,6 +240,7 @@ struct sgpu_proc_node {
 	struct list_head node;
 	struct mutex swap_lock;
 	atomic_t swap_lock_count;
+	atomic_t swapin_pending;
 	bool swap_in_progress;
 	wait_queue_head_t wait_swap;
 };
@@ -274,7 +288,7 @@ static bool sgpu_swap_continue(struct sgpu_proc_node *proc)
 	if (!mutex_trylock(&proc->swap_lock))
 		return false;
 
-	if (atomic_read(&proc->swap_lock_count) > 0) {
+	if (atomic_read(&proc->swap_lock_count) > 0 || atomic_read(&proc->swapin_pending) > 0) {
 		mutex_unlock(&proc->swap_lock);
 		return false;
 	}
@@ -403,15 +417,24 @@ static void sgpu_swap_proc(struct sgpu_proc_node *proc, unsigned long val)
 {
 	bool (*swap_func)(struct sgpu_proc_ctx *c, unsigned long l, struct swap_stat *s);
 	struct sgpu_proc_ctx *ctx;
-	bool swapin;
+	bool swapin = !val;
 	struct swap_stat stat = { 0 };
-	ktime_t begin;
+	ktime_t begin = ktime_get();
+	const char *opname = "";
 
-	swapin = !val;
-	swap_func = swapin ? &sgpu_proc_swapin : &sgpu_proc_swapout;
+	if (swapin) {
+		swap_func = &sgpu_proc_swapin;
+		atomic_inc(&proc->swapin_pending);
+		opname = "in";
+	} else {
+		swap_func = &sgpu_proc_swapout;
+		opname = "out";
+	}
 
-	begin = ktime_get();
 	mutex_lock(&proc->lock);
+
+	if (swapin)
+		atomic_dec(&proc->swapin_pending);
 
 	list_for_each_entry(ctx, &proc->ctx_list, node) {
 		bool cont;
@@ -432,7 +455,7 @@ static void sgpu_swap_proc(struct sgpu_proc_node *proc, unsigned long val)
 		trace_gmr_swapout(proc->tgid, val / PAGE_SIZE, 0, stat.nr_byte_swapped / PAGE_SIZE,
 				  ktime_us_delta(ktime_get(), begin));
 
-	DRM_INFO("TGID %d Swap-%s: %u/%u buffers, %u/%u bytes\n", proc->tgid, swapin ? "in" : "out",
+	DRM_INFO("TGID %d Swap-%s: %u/%u buffers, %u/%u bytes\n", proc->tgid, opname,
 		 stat.nr_bo_swapped, stat.nr_bo_tried, stat.nr_byte_tried, stat.nr_byte_swapped);
 }
 

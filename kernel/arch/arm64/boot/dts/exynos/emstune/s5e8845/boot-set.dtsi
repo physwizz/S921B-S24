@@ -23,6 +23,8 @@
 			};
 		};
 
+		gsc { };
+
 		fclamp {
 			monitor-group {
 				top-app         = <1>;

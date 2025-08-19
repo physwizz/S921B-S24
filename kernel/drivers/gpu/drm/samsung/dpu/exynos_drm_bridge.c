@@ -116,6 +116,17 @@ static void exynos_bridge_atomic_post_disable(struct drm_bridge *bridge,
 	DPU_ATRACE_END(__func__);
 }
 
+static void exynos_bridge_post_disable(struct drm_bridge *bridge)
+{
+	struct exynos_drm_bridge *exynos_bridge = to_exynos_bridge(bridge);
+	const struct exynos_drm_bridge_funcs *funcs = exynos_bridge->funcs;
+
+	DPU_ATRACE_BEGIN(__func__);
+	if (funcs && funcs->lastclose)
+		funcs->lastclose(exynos_bridge);
+	DPU_ATRACE_END(__func__);
+}
+
 static void exynos_bridge_mode_set(struct drm_bridge *bridge,
 				  const struct drm_display_mode *mode,
 				  const struct drm_display_mode *adjusted_mode)
@@ -196,6 +207,7 @@ static const struct drm_bridge_funcs exynos_bridge_funcs = {
 	.atomic_enable 			= exynos_bridge_atomic_enable,
 	.atomic_disable 		= exynos_bridge_atomic_disable,
 	.atomic_post_disable 		= exynos_bridge_atomic_post_disable,
+	.post_disable 			= exynos_bridge_post_disable,
 	.mode_set 			= exynos_bridge_mode_set,
 	.atomic_check			= exynos_drm_bridge_atomic_check,
 	.atomic_duplicate_state		= exynos_drm_bridge_atomic_duplicate_state,

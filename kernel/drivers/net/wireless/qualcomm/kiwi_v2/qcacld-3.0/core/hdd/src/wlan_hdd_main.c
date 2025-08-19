@@ -3000,10 +3000,8 @@ int hdd_update_tgt_cfg(hdd_handle_t hdd_handle, struct wma_tgt_cfg *cfg)
 
 	status = ucfg_mlme_cfg_get_vht_tx_bfee_ant_supp(hdd_ctx->psoc,
 							&value);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		status = false;
+	if (QDF_IS_STATUS_ERROR(status))
 		hdd_err("set tx_bfee_ant_supp failed");
-	}
 
 	status = ucfg_mlme_set_restricted_80p80_bw_supp(hdd_ctx->psoc,
 							cfg->restricted_80p80_bw_supp);
@@ -3014,10 +3012,8 @@ int hdd_update_tgt_cfg(hdd_handle_t hdd_handle, struct wma_tgt_cfg *cfg)
 	    !cfg->tx_bfee_8ss_enabled) {
 		status = ucfg_mlme_cfg_set_vht_tx_bfee_ant_supp(hdd_ctx->psoc,
 				MLME_VHT_CSN_BEAMFORMEE_ANT_SUPPORTED_FW_DEF);
-		if (QDF_IS_STATUS_ERROR(status)) {
-			status = false;
+		if (QDF_IS_STATUS_ERROR(status))
 			hdd_err("set tx_bfee_ant_supp failed");
-		}
 	}
 
 	hdd_update_tid_to_link_supported(hdd_ctx, &cfg->services);
@@ -4039,6 +4035,21 @@ static bool hdd_is_cac_in_progress(void)
 	return (hdd_ctx->dev_dfs_cac_status == DFS_CAC_IN_PROGRESS);
 }
 
+static QDF_STATUS
+wlan_hdd_set_tx_rx_nss_cb(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
+			  uint8_t tx_nss, uint8_t rx_nss)
+{
+	struct wlan_hdd_link_info *link_info;
+
+	link_info = wlan_hdd_get_link_info_from_vdev(psoc, vdev_id);
+	if (!link_info) {
+		hdd_err("Invalid vdev %d", vdev_id);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	return hdd_update_nss(link_info, tx_nss, rx_nss);
+}
+
 static void hdd_register_policy_manager_callback(
 			struct wlan_objmgr_psoc *psoc)
 {
@@ -4066,6 +4077,7 @@ static void hdd_register_policy_manager_callback(
 	hdd_cbacks.wlan_get_sap_acs_band =
 			wlan_get_sap_acs_band;
 	hdd_cbacks.wlan_check_cc_intf_cb = wlan_hdd_check_cc_intf_cb;
+	hdd_cbacks.wlan_set_tx_rx_nss_cb = wlan_hdd_set_tx_rx_nss_cb;
 
 	if (QDF_STATUS_SUCCESS !=
 	    policy_mgr_register_hdd_cb(psoc, &hdd_cbacks)) {
@@ -5498,12 +5510,16 @@ static int hdd_open(struct net_device *net_dev)
 	struct osif_vdev_sync *vdev_sync;
 
 	errno = osif_vdev_sync_trans_start(net_dev, &vdev_sync);
-	if (errno)
+	if (errno) {
+		hdd_err("__DEBUG__ VDEV TRANS start failed, with error: %d", errno);
 		return errno;
+	}
 
 	errno = __hdd_open(net_dev);
-	if (!errno)
+	if (!errno) {
+		hdd_err("__DEBUG__ __hdd_open failed, with error: %d", errno);
 		osif_vdev_cache_command(vdev_sync, NO_COMMAND);
+	}
 
 	osif_vdev_sync_trans_stop(vdev_sync);
 
@@ -6400,7 +6416,7 @@ hdd_set_derived_multicast_list(struct wlan_objmgr_psoc *psoc,
 			       struct pmo_mc_addr_list_params *mc_list_request,
 			       int *mc_count)
 {
-	int i = 0, j = 0, list_count = *mc_count;
+	uint8_t i = 0, j = 0, list_count = *mc_count;
 	struct qdf_mac_addr *peer_mc_addr_list = NULL;
 	uint8_t  driver_mc_cnt = 0;
 	uint32_t max_ndp_sessions = 0;
@@ -6416,7 +6432,8 @@ hdd_set_derived_multicast_list(struct wlan_objmgr_psoc *psoc,
 						 &peer_mc_addr_list[j]))
 				break;
 		}
-		if (i == list_count) {
+		if (i == list_count &&
+		    (list_count + driver_mc_cnt < PMO_MAX_MC_ADDR_LIST)) {
 			qdf_mem_copy(
 			   &(mc_list_request->mc_addr[list_count +
 						driver_mc_cnt].bytes),
@@ -14000,6 +14017,9 @@ static int __hdd_psoc_idle_restart(struct hdd_context *hdd_ctx)
 
 	ret = hdd_wlan_start_modules(hdd_ctx, false);
 
+	if (!qdf_is_fw_down())
+		cds_set_recovery_in_progress(false);
+
 	hdd_soc_idle_restart_unlock();
 
 	return ret;
@@ -17634,37 +17654,75 @@ QDF_STATUS hdd_md_bl_evt_cb(void *ctx, struct sir_md_bl_evt *event)
 }
 #endif /* WLAN_FEATURE_MOTION_DETECTION */
 
-/**
- * hdd_ssr_on_pagefault_cb - Callback to trigger SSR because
- * of host wake up by firmware with reason pagefault
- *
- * Return: None
- */
-static void hdd_ssr_on_pagefault_cb(void)
+static QDF_STATUS hdd_ssr_on_pagefault_cb(struct hdd_context *hdd_ctx)
 {
 	uint32_t ssr_frequency_on_pagefault;
-	struct hdd_context *hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
-	qdf_time_t curr_time;
+	qdf_time_t curr_time, ssr_threshold;
 
 	hdd_enter();
 
 	if (!hdd_ctx)
-		return;
+		return QDF_STATUS_E_NULL_VALUE;
 
 	ssr_frequency_on_pagefault =
 		ucfg_pmo_get_ssr_frequency_on_pagefault(hdd_ctx->psoc);
 
-	curr_time = qdf_get_time_of_the_day_ms();
+	curr_time = qdf_get_system_uptime();
+	ssr_threshold = qdf_system_msecs_to_ticks(ssr_frequency_on_pagefault);
 
 	if (!hdd_ctx->last_pagefault_ssr_time ||
-	    (curr_time - hdd_ctx->last_pagefault_ssr_time) >=
-					ssr_frequency_on_pagefault) {
+	    (curr_time - hdd_ctx->last_pagefault_ssr_time) >= ssr_threshold) {
 		hdd_info("curr_time %lu last_pagefault_ssr_time %lu ssr_frequency %d",
 			 curr_time, hdd_ctx->last_pagefault_ssr_time,
-			 ssr_frequency_on_pagefault);
+			 ssr_threshold);
 		hdd_ctx->last_pagefault_ssr_time = curr_time;
 		cds_trigger_recovery(QDF_HOST_WAKEUP_REASON_PAGEFAULT);
+
+		return QDF_STATUS_SUCCESS;
 	}
+
+	return QDF_STATUS_E_AGAIN;
+}
+
+#define FW_PAGE_FAULT_IDX QCA_NL80211_VENDOR_SUBCMD_FW_PAGE_FAULT_REPORT_INDEX
+static QDF_STATUS hdd_send_pagefault_report_to_user(struct hdd_context *hdd_ctx,
+						    void *buf, uint32_t buf_len)
+{
+	struct sk_buff *event_buf;
+	int flags = cds_get_gfp_flags();
+	uint8_t *ev_data = buf;
+	uint16_t event_len = NLMSG_HDRLEN + buf_len;
+
+	event_buf = wlan_cfg80211_vendor_event_alloc(hdd_ctx->wiphy, NULL,
+						     event_len,
+						     FW_PAGE_FAULT_IDX, flags);
+	if (!event_buf) {
+		hdd_err("wlan_cfg80211_vendor_event_alloc failed");
+		return QDF_STATUS_E_NOMEM;
+	}
+
+	if (nla_put(event_buf, QCA_WLAN_VENDOR_ATTR_FW_PAGE_FAULT_REPORT_DATA,
+		    buf_len, ev_data)) {
+		hdd_debug("Failed to fill pagefault blob data");
+		wlan_cfg80211_vendor_free_skb(event_buf);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	wlan_cfg80211_vendor_event(event_buf, flags);
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS hdd_pagefault_action_cb(void *buf, uint32_t buf_len)
+{
+	struct hdd_context *hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
+
+	if (!hdd_ctx)
+		return QDF_STATUS_E_NULL_VALUE;
+
+	if (wlan_pmo_enable_ssr_on_page_fault(hdd_ctx->psoc))
+		return hdd_ssr_on_pagefault_cb(hdd_ctx);
+
+	return hdd_send_pagefault_report_to_user(hdd_ctx, buf, buf_len);
 }
 
 /**
@@ -17775,7 +17833,7 @@ int hdd_register_cb(struct hdd_context *hdd_ctx)
 	sme_async_oem_event_init(mac_handle,
 				 hdd_oem_event_async_cb);
 
-	sme_register_ssr_on_pagefault_cb(mac_handle, hdd_ssr_on_pagefault_cb);
+	sme_register_pagefault_cb(mac_handle, hdd_pagefault_action_cb);
 
 	hdd_exit();
 
@@ -21818,6 +21876,57 @@ int hdd_we_set_ch_width(struct wlan_hdd_link_info *link_info, int ch_width)
 
 	hdd_err("Invalid ch_width %d", ch_width);
 	return -EINVAL;
+}
+
+#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
+bool
+wlan_hdd_is_link_switch_in_progress(struct wlan_hdd_link_info *link_info)
+{
+	struct wlan_objmgr_vdev *vdev;
+	bool ret = false;
+
+	if (!link_info) {
+		hdd_err_rl("Invalid link info");
+		return ret;
+	}
+
+	if (!wlan_hdd_is_mlo_connection(link_info))
+		return ret;
+
+	vdev = hdd_objmgr_get_vdev_by_user(link_info, WLAN_OSIF_STATS_ID);
+	if (!vdev) {
+		hdd_err("invalid vdev");
+		return ret;
+	}
+
+	ret = mlo_mgr_is_link_switch_in_progress(vdev);
+
+	hdd_objmgr_put_vdev_by_user(vdev, WLAN_OSIF_STATS_ID);
+	return ret;
+}
+#endif
+
+bool wlan_hdd_is_mlo_connection(struct wlan_hdd_link_info *link_info)
+{
+	struct wlan_objmgr_vdev *vdev;
+	bool ret = false;
+
+	if (!link_info) {
+		hdd_err("Invalid link_info");
+		return ret;
+	}
+
+	vdev = hdd_objmgr_get_vdev_by_user(link_info, WLAN_OSIF_STATS_ID);
+	if (!vdev) {
+		hdd_err("invalid vdev");
+		return ret;
+	}
+
+	if (wlan_vdev_mlme_is_mlo_vdev(vdev))
+		ret = true;
+
+	hdd_objmgr_put_vdev_by_user(vdev, WLAN_OSIF_STATS_ID);
+	return ret;
 }
 
 /* Register the module init/exit functions */

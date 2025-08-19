@@ -612,7 +612,8 @@ not_found:
 
 #if IS_ENABLED(CONFIG_SOC_S5E8825) || IS_ENABLED(CONFIG_SOC_S5E5515) \
 	|| IS_ENABLED(CONFIG_SOC_S5E8535) || IS_ENABLED(CONFIG_SOC_S5E8835) \
-	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845)
+	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845) \
+	|| IS_ENABLED(CONFIG_SOC_S5E5535)
 int mxman_res_pmu_init(struct mxman *mxman, mifpmuisr_handler handler)
 #else
 int mxman_res_pmu_init(struct mxman *mxman)
@@ -623,7 +624,8 @@ int mxman_res_pmu_init(struct mxman *mxman)
 
 #if IS_ENABLED(CONFIG_SOC_S5E8825) || IS_ENABLED(CONFIG_SOC_S5E5515) \
 	|| IS_ENABLED(CONFIG_SOC_S5E8535) || IS_ENABLED(CONFIG_SOC_S5E8835) \
-	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845)
+	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845) \
+	|| IS_ENABLED(CONFIG_SOC_S5E5535)
 	mifpmuman_init(scsc_mx_get_mifpmuman(mxman->mx), mif, handler, mxman);
 #else
 	mifpmuman_init(scsc_mx_get_mifpmuman(mxman->mx), mif, NULL, NULL);
@@ -643,16 +645,47 @@ int mxman_res_pmu_deinit(struct mxman *mxman)
 	return 0;
 }
 
+#ifdef CONFIG_SCSC_XO_CDAC_CON
+int mxman_res_dcxo_config_update(struct mxman *mxman)
+{
+	int r;
+	SCSC_TAG_INFO(MXMAN, "Update dcxo config before wlan/wpan boot\n");
+        r = mifpmuman_send_rfic_dcxo_config(scsc_mx_get_mifpmuman(mxman->mx));
+        if (r) {
+                SCSC_TAG_INFO(MXMAN, "PMU error\n");
+                return r;
+        }
+	mxman->is_dcxo_set = true;
+
+	return 0;
+}
+#endif
+
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+int mxman_res_pmu_boot(struct mxman *mxman, enum scsc_subsystem sub, bool recovery_enable)
+#else
 int mxman_res_pmu_boot(struct mxman *mxman, enum scsc_subsystem sub)
+#endif
 {
 	int r;
 #if IS_ENABLED(CONFIG_SOC_S5E8825) || IS_ENABLED(CONFIG_SOC_S5E5515) \
 	|| IS_ENABLED(CONFIG_SOC_S5E8535) || IS_ENABLED(CONFIG_SOC_S5E8835) \
-	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845)
+	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845) \
+	|| IS_ENABLED(CONFIG_SOC_S5E5535)
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	r = mifpmuman_recovery_mode_subsystem(scsc_mx_get_mifpmuman(mxman->mx), recovery_enable);
+	if (r) {
+		SCSC_TAG_INFO(MXMAN, "PMU error\n");
+		goto exit;
+	}
+#endif
 	/* This should be a blocking call, mifpmu should do the waitqueue */
 	r = mifpmuman_start_subsystem(scsc_mx_get_mifpmuman(mxman->mx), sub);
 	if (r)
 		SCSC_TAG_INFO(MXMAN, "PMU error\n");
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+exit:
+#endif
 	return r;
 #else
         enum pmu_msg msg;
@@ -683,7 +716,8 @@ int mxman_res_pmu_boot(struct mxman *mxman, enum scsc_subsystem sub)
 
 #if IS_ENABLED(CONFIG_SOC_S5E8825) || IS_ENABLED(CONFIG_SOC_S5E5515) \
 	|| IS_ENABLED(CONFIG_SOC_S5E8535) || IS_ENABLED(CONFIG_SOC_S5E8835) \
-	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845)
+	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845) \
+	|| IS_ENABLED(CONFIG_SOC_S5E5535)
 int mxman_res_pmu_reset(struct mxman *mxman, enum scsc_subsystem sub)
 {
 	int r;
@@ -726,13 +760,25 @@ int mxman_res_pmu_reset(struct mxman *mxman, enum scsc_subsystem sub)
 
 #if IS_ENABLED(CONFIG_SOC_S5E8825) || IS_ENABLED(CONFIG_SOC_S5E5515) \
 	|| IS_ENABLED(CONFIG_SOC_S5E8535) || IS_ENABLED(CONFIG_SOC_S5E8835) \
-	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845)
+	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845) \
+	|| IS_ENABLED(CONFIG_SOC_S5E5535)
 int mxman_res_pmu_monitor(struct mxman *mxman, enum scsc_subsystem sub)
 {
 	int r;
 
 	/* This should be a blocking call, mifpmu should do the waitqueue */
 	r = mifpmuman_force_monitor_mode_subsystem(scsc_mx_get_mifpmuman(mxman->mx), sub);
+	if (r)
+		SCSC_TAG_INFO(MXMAN, "PMU error\n");
+	return r;
+}
+
+int mxman_res_pmu_scan2mem(struct mxman *mxman, bool dump)
+{
+	int r;
+
+	/* This should be a blocking call, mifpmu should do the waitqueue */
+	r = mifpmuman_trigger_scan2mem(scsc_mx_get_mifpmuman(mxman->mx), dump);
 	if (r)
 		SCSC_TAG_INFO(MXMAN, "PMU error\n");
 	return r;
@@ -1328,7 +1374,7 @@ void mxman_res_control_suspend_gpio(struct mxman *mxman, u8 value)
 
 	mif = scsc_mx_get_mif_abs(mxman->mx);
 #ifdef CONFIG_SCSC_BB_REDWOOD
-	mif->control_suspend_gpio(value);
+	mif->control_suspend_gpio(mif,value);
 #endif
 }
 

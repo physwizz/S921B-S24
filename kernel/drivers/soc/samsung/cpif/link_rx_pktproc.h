@@ -230,6 +230,10 @@ struct pktproc_queue {
 	struct napi_struct *napi_ptr;
 	atomic_t stop_napi_poll;
 
+#if IS_ENABLED(CONFIG_CLO)
+	struct timespec64 flush_time;
+#endif
+
 	/* Statistics */
 	struct pktproc_statistics stat;
 

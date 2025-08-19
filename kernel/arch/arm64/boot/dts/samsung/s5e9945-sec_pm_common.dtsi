@@ -23,7 +23,7 @@
 				status = "okay";
 			};
 
-			sec_pm_smpl_warn {
+			sec_pm_smpl_warn: sec-pm-smpl-warn {
 				compatible = "samsung,sec-pm-smpl-warn";
 				status = "okay";
 				policy_cpus = <4 7 9>;

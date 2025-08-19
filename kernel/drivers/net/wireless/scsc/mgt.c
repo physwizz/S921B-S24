@@ -2292,13 +2292,16 @@ static int slsi_get_mib_entry_value(struct slsi_dev *sdev, struct slsi_mib_value
 #if defined(CONFIG_SCSC_WLAN_TAS)
 	slsi_tas_get_config(sdev, values, &mib_index);
 #endif
+	if (values[++mib_index].type != SLSI_MIB_TYPE_NONE) {
+		sdev->fw_eht_enabled = (values[mib_index].u.uintValue) ? true : false;
+	} else {
+		sdev->fw_eht_enabled = false;
+		SLSI_ERR(sdev, "Error reading mib unifiEhtActivated\n");
+	}
+
 	return r;
 }
 
-#if defined(CONFIG_SCSC_WLAN_TAS)
-/* TODO: To be removed here after autogen */
-#define SLSI_PSID_UNIFI_SAR_ALLOWANCE 6222
-#endif
 static int slsi_mib_initial_get(struct slsi_dev *sdev)
 {
 	struct slsi_mib_data mibreq = { 0, NULL };
@@ -2318,7 +2321,7 @@ static int slsi_mib_initial_get(struct slsi_dev *sdev)
 		{ SLSI_PSID_UNIFI_NAN_ACTIVATED, {0, 0} },
 		{ SLSI_PSID_UNIFI_DEFAULT_DWELL_TIME, {0, 0} },
 #ifdef CONFIG_SCSC_WLAN_WIFI_SHARING
-		{ SLSI_PSID_UNIFI_WI_FI_SHARING5_GHZ_CHANNEL, {0, 0} },
+		{ SLSI_PSID_UNIFI_WI_FI_SHARING_CHANNELS, {0, 0} },
 #endif
 		{ SLSI_PSID_UNIFI_DUAL_BAND_CONCURRENCY, {0, 0} },
 #ifdef SCSC_SEP_VERSION
@@ -2349,14 +2352,14 @@ static int slsi_mib_initial_get(struct slsi_dev *sdev)
 #if defined(CONFIG_SCSC_WLAN_TAS)
 		{ SLSI_PSID_UNIFI_SAR_ALLOWANCE, {0, 0} },
 #endif
-
+		{ SLSI_PSID_UNIFI_EHT_ACTIVATED_FW, {0, 0} },
 	};/*Check the mibrsp.dataLength when a new mib is added*/
 
 	r = slsi_mib_encode_get_list(&mibreq, sizeof(get_values) / sizeof(struct slsi_mib_get_entry), get_values);
 	if (r != SLSI_MIB_STATUS_SUCCESS)
 		return -ENOMEM;
 
-	mibrsp.dataLength = 334;
+	mibrsp.dataLength = 342;
 	mibrsp.data = kmalloc(mibrsp.dataLength, GFP_KERNEL);
 	if (!mibrsp.data) {
 		kfree(mibreq.data);
@@ -3509,6 +3512,11 @@ void slsi_vif_deactivated(struct slsi_dev *sdev, struct net_device *dev)
 		ndev_vif->sta.tdls_candidate_setup_count = 0;
 		ndev_vif->sta.twt_peer_cap = 0;
 		memset(&sdev->twt_setup_id, 0, sizeof(sdev->twt_setup_id));
+		ndev_vif->sta.srg_obss_pd_min_offset = 0;
+		ndev_vif->sta.srg_obss_pd_max_offset = 0;
+		ndev_vif->sta.non_srg_obss_pd_max_offset = 0;
+		ndev_vif->sta.hesiga_spatial_reuse_value15allowed = 0;
+		ndev_vif->sta.non_srg_obss_pd_sr_allowed = 0;
 	}
 
 	/* MUST be done first to ensure that other code doesn't treat the VIF as still active */
@@ -6386,7 +6394,7 @@ static void slsi_roam_channel_cache_add_channel(struct slsi_roaming_network_map_
 #endif
 }
 
-void slsi_roam_channel_cache_add_entry(struct slsi_dev *sdev, struct net_device *dev, const u8 *ssid,
+void slsi_roam_channel_cache_add_entry(struct slsi_dev *sdev, struct net_device *dev, const u8 *ssid, u8 ssid_len,
 				       const u8 *bssid, u8 channel, enum nl80211_band band)
 {
 	struct slsi_roaming_network_map_entry *network_map;
@@ -6395,8 +6403,8 @@ void slsi_roam_channel_cache_add_entry(struct slsi_dev *sdev, struct net_device 
 	int idx;
 
 	list_for_each_entry(network_map, &ndev_vif->sta.network_map, list) {
-		if (network_map->ssid.ssid_len == ssid[1] &&
-		    memcmp(network_map->ssid.ssid, &ssid[2], ssid[1]) == 0) {
+		if (network_map->ssid.ssid_len == ssid_len &&
+		    memcmp(network_map->ssid.ssid, ssid, ssid_len) == 0) {
 			found = 1;
 			network_map->last_seen_jiffies = jiffies;
 			idx = slsi_get_channel_jiffies_index(channel, band);
@@ -6411,11 +6419,11 @@ void slsi_roam_channel_cache_add_entry(struct slsi_dev *sdev, struct net_device 
 		struct slsi_roaming_network_map_entry *network_map;
 
 		SLSI_NET_DBG3(dev, SLSI_MLME, "New Entry : Channel: %d Band: %d: %.*s\n",
-			      channel, band, ssid[1], &ssid[2]);
+			      channel, band, ssid_len, ssid);
 		network_map = kzalloc(sizeof(*network_map), GFP_ATOMIC);
 		if (network_map) {
-			network_map->ssid.ssid_len = ssid[1];
-			memcpy(network_map->ssid.ssid, &ssid[2], ssid[1]);
+			network_map->ssid.ssid_len = ssid_len;
+			memcpy(network_map->ssid.ssid, ssid, ssid_len);
 			network_map->channels_24_ghz = 0;
 			network_map->channels_5_ghz = 0;
 			if (sdev->band_6g_supported)
@@ -6428,7 +6436,7 @@ void slsi_roam_channel_cache_add_entry(struct slsi_dev *sdev, struct net_device 
 			slsi_roam_channel_cache_add_channel(network_map, channel, band, sdev->band_6g_supported);
 			list_add(&network_map->list, &ndev_vif->sta.network_map);
 		} else {
-			SLSI_ERR(sdev, "New Entry : %.*s kmalloc() failed\n", ssid[1], &ssid[2]);
+			SLSI_ERR(sdev, "New Entry : %.*s kmalloc() failed\n", ssid_len, ssid);
 		}
 	}
 }
@@ -6487,7 +6495,7 @@ void slsi_roam_channel_cache_add(struct slsi_dev *sdev, struct net_device *dev, 
 		return;
 	}
 
-	slsi_roam_channel_cache_add_entry(sdev, dev, scan_ssid, mgmt->bssid, chan, band);
+	slsi_roam_channel_cache_add_entry(sdev, dev, &scan_ssid[2], scan_ssid[1], mgmt->bssid, chan, band);
 }
 
 void slsi_roam_channel_cache_prune(struct net_device *dev, int seconds, char *ssid)
@@ -9184,13 +9192,101 @@ int slsi_send_twt_notification(struct slsi_dev *sdev, struct net_device *dev)
 	return 0;
 }
 
+int slsi_set_mib_obss_pd_enable(struct slsi_dev *sdev, bool enable, int rssi)
+{
+	struct slsi_mib_data mib_data = { 0, NULL };
+	int                  r = 0;
+	u8                   slsi_mib_spatial_reuse_config[21] = {0};
+
+	if (!enable) {
+		SLSI_DBG1(sdev, SLSI_CFG80211, "SR mib config reset\n");
+		goto send_mib;
+	}
+	slsi_mib_spatial_reuse_config[0] = 1;
+	slsi_mib_spatial_reuse_config[0] |= 0x02; /* To enable overwrite bit */
+	slsi_mib_spatial_reuse_config[2] = 82 + rssi;
+
+	SLSI_DBG1(sdev, SLSI_CFG80211, "SR mib config :%d %d\n",
+		  slsi_mib_spatial_reuse_config[0],
+		  slsi_mib_spatial_reuse_config[2]);
+send_mib:
+	r = slsi_mib_encode_octet(&mib_data, SLSI_PSID_UNIFI_SPATIAL_REUSE_CONFIG, 21,
+				  slsi_mib_spatial_reuse_config, 0);
+	if (r != SLSI_MIB_STATUS_SUCCESS) {
+		SLSI_ERR(sdev, "Err encoding MIB failed. error = %d\n", r);
+		return  -ENOMEM;
+	}
+
+	r = slsi_mlme_set(sdev, NULL, mib_data.data, mib_data.dataLength);
+	if (r != SLSI_MIB_STATUS_SUCCESS)
+		SLSI_ERR(sdev, "Err Setting MIB failed. error = %d\n", r);
+
+	kfree(mib_data.data);
+	return r;
+}
+
+int slsi_set_mib_obss_pd_enable_per_obss(struct slsi_dev *sdev, int config_cnt, int *rssi, u8 mac_addr[][ETH_ALEN])
+{
+	struct slsi_mib_data mib_data = { 0, NULL };
+	int                  r = 0;
+	int                  i = 0;
+	int                  mib_length = 0;
+	u8                   slsi_mib_spatial_reuse_per_obss_config[51] = {0};
+
+	if (!config_cnt) {
+		SLSI_DBG1(sdev, SLSI_CFG80211, "SR mib config per obss reset\n");
+		goto send_mib;
+	}
+
+	slsi_mib_spatial_reuse_per_obss_config[0] = 1;
+	for (i = 0; i < config_cnt; i++) {
+		SLSI_ETHER_COPY(&slsi_mib_spatial_reuse_per_obss_config[(i * 7) + 1], mac_addr[i]);
+		slsi_mib_spatial_reuse_per_obss_config[(i * 7) + 7] = 82 + rssi[i];
+
+		SLSI_DBG1(sdev, SLSI_CFG80211, "SR mib config : " MACSTR ", %d\n",
+			  MAC2STR(&slsi_mib_spatial_reuse_per_obss_config[(i * 7) + 1]),
+			  slsi_mib_spatial_reuse_per_obss_config[(i * 7) + 7]);
+		mib_length += 7;
+	}
+send_mib:
+	r = slsi_mib_encode_octet(&mib_data, SLSI_PSID_UNIFI_SPATIAL_REUSE_PEROBSS_CONFIG, mib_length + 1,
+				  slsi_mib_spatial_reuse_per_obss_config, 0);
+	if (r != SLSI_MIB_STATUS_SUCCESS) {
+		SLSI_ERR(sdev, "Err encoding MIB failed. error = %d\n", r);
+		return  -ENOMEM;
+	}
+
+	r = slsi_mlme_set(sdev, NULL, mib_data.data, mib_data.dataLength);
+	if (r != SLSI_MIB_STATUS_SUCCESS)
+		SLSI_ERR(sdev, "Err Setting MIB failed. error = %d\n", r);
+
+	kfree(mib_data.data);
+	return r;
+}
+
+int slsi_set_mib_srp_non_srg_obss_pd_prohibited(struct slsi_dev *sdev, bool enable)
+{
+	struct slsi_mib_data mib_data = { 0, NULL };
+	int error = SLSI_MIB_STATUS_FAILURE;
+
+	if (slsi_mib_encode_bool(&mib_data, SLSI_PSID_UNIFI_PSR_AND_NON_SRG_OBSS_PD_PROHIBITED,
+				 enable, 0) == SLSI_MIB_STATUS_SUCCESS)
+		if (mib_data.dataLength) {
+			error = slsi_mlme_set(sdev, NULL, mib_data.data, mib_data.dataLength);
+			if (error)
+				SLSI_ERR(sdev, "Err Setting MIB failed. error = %d\n", error);
+			kfree(mib_data.data);
+		}
+	return error;
+}
+
 #ifdef CONFIG_SCSC_WLAN_SUPPORT_6G
 int slsi_set_mib_6g_safe_mode(struct slsi_dev *sdev, bool enable)
 {
 	struct slsi_mib_data mib_data = { 0, NULL };
 	int ret;
 
-	ret = slsi_mib_encode_bool(&mib_data, SLSI_PSID_UNIFI6_G_SAFE_MODE, enable, 0);
+	ret = slsi_mib_encode_bool(&mib_data, SLSI_PSID_UNIFI6_GSAFE_MODE, enable, 0);
 	if (ret != SLSI_MIB_STATUS_SUCCESS)
 		return -ENOMEM;
 

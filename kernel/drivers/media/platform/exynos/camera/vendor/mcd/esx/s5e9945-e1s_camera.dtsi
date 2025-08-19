@@ -25,8 +25,8 @@
 
 			is_flash_gpio: is-flash-gpio@0 {
 				compatible = "samsung,sensor-flash-s2mpb02";
-				sensor-module = <&is_sensor_gn3>, <&is_sensor_3k1>;
-				id = <0 2>;
+				sensor-module = <&is_sensor_gn3>, <&is_sensor_3k1>, <&is_sensor_imx564>;
+				id = <0 2 4>;
 				status = "okay";
 
 				torch-gpio = <&gpc1 1 0x1>;
@@ -374,6 +374,8 @@
 		rom_awb_module_addr = <0x2D84>;
 		/* Near Far Mid1 ... Mid7 */
 		rom_af_cal_addr = <0x2D40 0x2D34 0x2D38 0x2D3C>;
+		/* PanDist PanPos MacroDist MacroPos Mid1Dist Mid1Pos ... Mid3Dist Mid3Pos */
+		rom_af_distance_cal_addr = <0x2D4F 0x2D34 0x2D55 0x2D40 0x2D51 0x2D38 0x2D53 0x2D3C>;
 
 		/* rom_xtc_cal_endian_check; */
 		rom_xtc_cal_data_addr_list = <0x3000 0x4499 0x1>;
@@ -462,6 +464,8 @@
 		rom_awb_module_addr = <0x2D84>;
 		/* Near Far Mid1 ... Mid7 */
 		rom_af_cal_addr = <0x2D40 0x2D34 0x2D38 0x2D3C>;
+		/* PanDist PanPos MacroDist MacroPos Mid1Dist Mid1Pos ... Mid3Dist Mid3Pos */
+		rom_af_distance_cal_addr = <0x2D4F 0x2D34 0x2D55 0x2D40 0x2D51 0x2D38 0x2D53 0x2D3C>;
 
 		/* Dual cal slave 0 - Tele */
 		rom_dualcal_slave0_start_addr = <0x2E10>;
@@ -566,6 +570,8 @@
 		rom_awb_module_addr = <0x3348>;
 		/* Near Far Mid1 ... Mid7 */
 		rom_af_cal_addr = <0x331C 0x3310>;
+		/* PanDist PanPos MacroDist MacroPos Mid1Dist Mid1Pos ... Mid3Dist Mid3Pos */
+		rom_af_distance_cal_addr = <0x3328 0x3310 0x332E 0x331C>;
 	};
 };
 
@@ -905,6 +911,13 @@
 			rear_single_video_uhd60_supersteady_int = <6>;
 			rear_single_video_uhd60_supersteady_icpu = <0>;
 
+			rear_single_video_uhd60_psm_cam = <5>;
+			rear_single_video_uhd60_psm_isp = <5>;
+			rear_single_video_uhd60_psm_int_cam = <4>;
+			rear_single_video_uhd60_psm_mif = <5>;
+			rear_single_video_uhd60_psm_int = <6>;
+			rear_single_video_uhd60_psm_icpu = <1>;
+
 			rear_single_capture_cam = <1>;
 			rear_single_capture_isp = <1>;
 			rear_single_capture_int_cam = <1>;
@@ -1005,14 +1018,14 @@
 
 			rear_dual_photo_cam = <5>;
 			rear_dual_photo_isp = <6>;
-			rear_dual_photo_int_cam = <5>;
+			rear_dual_photo_int_cam = <4>;
 			rear_dual_photo_mif = <8>;
 			rear_dual_photo_int = <0>;
 			rear_dual_photo_icpu = <0>;
 
 			rear_dual_video_fhd30_cam = <5>;
 			rear_dual_video_fhd30_isp = <6>;
-			rear_dual_video_fhd30_int_cam = <6>;
+			rear_dual_video_fhd30_int_cam = <4>;
 			rear_dual_video_fhd30_mif = <8>;
 			rear_dual_video_fhd30_int = <0>;
 			rear_dual_video_fhd30_icpu = <0>;
@@ -1047,21 +1060,21 @@
 
 			triple_photo_cam = <5>;
 			triple_photo_isp = <6>;
-			triple_photo_int_cam = <5>;
+			triple_photo_int_cam = <4>;
 			triple_photo_mif = <8>;
 			triple_photo_int = <0>;
 			triple_photo_icpu = <0>;
 
 			triple_video_fhd30_cam = <5>;
 			triple_video_fhd30_isp = <6>;
-			triple_video_fhd30_int_cam = <6>;
+			triple_video_fhd30_int_cam = <4>;
 			triple_video_fhd30_mif = <8>;
 			triple_video_fhd30_int = <0>;
 			triple_video_fhd30_icpu = <0>;
 
 			triple_video_fhd60_cam = <4>;
 			triple_video_fhd60_isp = <6>;
-			triple_video_fhd60_int_cam = <5>;
+			triple_video_fhd60_int_cam = <4>;
 			triple_video_fhd60_mif = <5>;
 			triple_video_fhd60_int = <0>;
 			triple_video_fhd60_icpu = <0>;
@@ -1180,7 +1193,7 @@
 
 			pip_dual_photo_cam = <5>;
 			pip_dual_photo_isp = <6>;
-			pip_dual_photo_int_cam = <5>;
+			pip_dual_photo_int_cam = <4>;
 			pip_dual_photo_mif = <8>;
 			pip_dual_photo_int = <0>;
 			pip_dual_photo_icpu = <0>;
@@ -1194,7 +1207,7 @@
 
 			pip_dual_video_fhd30_cam = <5>;
 			pip_dual_video_fhd30_isp = <6>;
-			pip_dual_video_fhd30_int_cam = <5>;
+			pip_dual_video_fhd30_int_cam = <4>;
 			pip_dual_video_fhd30_mif = <8>;
 			pip_dual_video_fhd30_int = <0>;
 			pip_dual_video_fhd30_icpu = <0>;

@@ -16,6 +16,9 @@
 #include "blk-sec.h"
 #include "../drivers/ufs/host/ufs-sec-feature.h"
 
+#define MIN_ENABLE_MS 100
+#define MAX_ENABLE_MS 5000
+
 struct blk_sec_wb {
 	struct mutex lock;
 
@@ -172,10 +175,10 @@ static ssize_t enable_ms_store(struct kobject *kobj,
 	if (wb_on_duration <= 0)
 		return count;
 
-	if (wb_on_duration < 100)
-		wb_on_duration = 100;
-	if (wb_on_duration > 5000)
-		wb_on_duration = 5000;
+	if (wb_on_duration < MIN_ENABLE_MS)
+		wb_on_duration = MIN_ENABLE_MS;
+	if (wb_on_duration > MAX_ENABLE_MS)
+		wb_on_duration = MAX_ENABLE_MS;
 
 	expire_jiffies = jiffies + msecs_to_jiffies(wb_on_duration);
 	if (time_after(expire_jiffies, wb.user_wb_off_timer.expires))

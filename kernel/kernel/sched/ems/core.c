@@ -258,9 +258,6 @@ static bool is_perf_task(struct task_struct *p)
 
 static bool can_sync_to_this_cpu(struct tp_env *env, int this_cpu, bool recheck)
 {
-	if (uclamp_latency_sensitive(env->p))
-		return false;
-
 	if (is_perf_task(env->p) && is_perf_task(cpu_rq(this_cpu)->curr))
 		return false;
 
@@ -875,7 +872,6 @@ static int find_energy_cpu(struct tp_env *env)
 			max_spare_cap_cpu = cpu;
 		}
 
-		runnable = env->cpu_stat[cpu].runnable;
 		if (nr_running < min_nr_running) {
 			min_nr_running = nr_running;
 			min_nr_running_cpu = cpu;
@@ -1332,6 +1328,11 @@ static int normal_fit_cpus(struct tp_env *env)
 
 		if (cpumask_intersects(fit_cpus, coregroup_cpus)) {
 			cpumask_and(fit_cpus, fit_cpus, coregroup_cpus);
+			if (cpumask_weight(fit_cpus) == 1)
+				goto out;
+
+			/* avoid same cpu when cl_sync */
+			cpumask_clear_cpu(this_cpu, fit_cpus);
 			if (cpumask_weight(fit_cpus) == 1)
 				goto out;
 		}

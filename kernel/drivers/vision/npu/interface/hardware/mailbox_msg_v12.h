@@ -146,6 +146,10 @@ struct cmd_core_on_off {
 	u32				core;
 };
 
+struct cmd_suspend {
+	u32				flags;
+};
+
 enum message_cmd {
 	COMMAND_LOAD,
 	COMMAND_UNLOAD,
@@ -162,6 +166,7 @@ enum message_cmd {
 	COMMAND_IMB_RSP,
 	COMMAND_CORE_ON_OFF_RSP,
 	COMMAND_PROCESS_CANCEL,
+	COMMAND_SUSPEND,
 	COMMAND_H2F_MAX_ID,
 	COMMAND_DONE = 100,
 	COMMAND_NDONE,
@@ -201,6 +206,7 @@ struct command {
 		struct cmd_imb_rsp	imb_rsp;
 		struct cmd_core_on_off	core_on_off_req;
 		struct cmd_core_on_off	core_on_off_rsp;
+		struct cmd_suspend	suspend;
 	} c; /* specific command properties */
 
 	u32             length; /* the size of payload */

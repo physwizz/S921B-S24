@@ -987,7 +987,7 @@ int amdgpu_bo_pin_restricted(struct amdgpu_bo *bo, u32 domain,
 	struct ttm_operation_ctx ctx = { false, false };
 	int r, i;
 
-	if (amdgpu_ttm_tt_get_usermm(bo->tbo.ttm))
+	if (amdgpu_ttm_tt_is_userptr(bo->tbo.ttm))
 		return -EPERM;
 
 	if (WARN_ON_ONCE(min_offset > max_offset))
@@ -1475,6 +1475,9 @@ vm_fault_t amdgpu_bo_fault_reserve_notify(struct ttm_buffer_object *bo)
 
 	/* hurrah the memory is not visible ! */
 	atomic64_inc(&adev->num_vram_cpu_page_faults);
+#if IS_ENABLED(CONFIG_SEC_GPUINFO)
+	sgpu_hqm_log_event(adev, GPU_CPU_PAGE_FAULT);
+#endif
 	amdgpu_bo_placement_from_domain(abo, AMDGPU_GEM_DOMAIN_VRAM |
 					AMDGPU_GEM_DOMAIN_GTT);
 

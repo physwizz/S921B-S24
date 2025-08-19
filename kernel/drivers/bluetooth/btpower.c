@@ -1255,7 +1255,7 @@ static irqreturn_t host_wake_isr(int irq, void *dev)
 	int host_wake;
 
 	host_wake = gpio_get_value(bt_power_pdata->bt_gpio_host_wake);
-	irq_set_irq_type(irq, host_wake ? IRQF_TRIGGER_FALLING : IRQF_TRIGGER_RISING);
+	//irq_set_irq_type(irq, host_wake ? IRQF_TRIGGER_FALLING : IRQF_TRIGGER_RISING);
 
 #ifdef ACTIVE_LOW_WAKE_HOST_GPIO
 	host_wake = host_wake ? 0 : 1;
@@ -1302,11 +1302,7 @@ static int qcomm_bt_lpm_init(struct platform_device *pdev)
 
 
 	bt_power_pdata->irq = gpio_to_irq(bt_power_pdata->bt_gpio_host_wake);
-#ifdef ACTIVE_LOW_WAKE_HOST_GPIO
-	ret = request_irq(bt_power_pdata->irq, host_wake_isr, IRQF_TRIGGER_FALLING, "bt_host_wake", NULL);
-#else
-	ret = request_irq(bt_power_pdata->irq, host_wake_isr, IRQF_TRIGGER_RISING, "bt_host_wake", NULL);
-#endif
+	ret = request_irq(bt_power_pdata->irq, host_wake_isr, IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING, "bt_host_wake", NULL);
 
 	if (ret) {
 		pr_err("[BT] Request_host wake irq failed.\n");

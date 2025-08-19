@@ -838,17 +838,22 @@ int scsc_mx_service_stop(struct scsc_service *service)
 			return -EILSEQ; /* operation rejected due to prior failure */
 		}
 	}
-
-	r = send_sm_msg_stop_blocking(service);
-	if (r) {
-		SCSC_TAG_ERR(MXMAN, "send_sm_msg_stop_blocking() failed: r=%d\n", r);
-		scsc_mx_service_release(SERVICE_STOP);
-#ifdef CONFIG_ANDROID
-		wake_unlock(&srvman->sm_wake_lock);
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	if (!mxman_if_warm_reset_in_progress()){
 #endif
-		mutex_unlock(&srvman->api_access_mutex);
-		return -EIO; /* operation failed */
+		r = send_sm_msg_stop_blocking(service);
+		if (r) {
+			SCSC_TAG_ERR(MXMAN, "send_sm_msg_stop_blocking() failed: r=%d\n", r);
+			scsc_mx_service_release(SERVICE_STOP);
+#ifdef CONFIG_ANDROID
+			wake_unlock(&srvman->sm_wake_lock);
+#endif
+			mutex_unlock(&srvman->api_access_mutex);
+			return -EIO; /* operation failed */
+		}
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
 	}
+#endif
 	mutex_lock(&check_bt_status_mutex);
 	if (service->id == SCSC_SERVICE_ID_BT && check_bt_status_cb)
 		check_bt_status_cb(BT_SERVICE_OFF);
@@ -953,9 +958,7 @@ void srvman_freeze_services(struct srvman *srvman, struct mx_syserr_decode *syse
 void srvman_freeze_sub_system(struct srvman *srvman, struct mx_syserr_decode *syserr)
 {
 	struct scsc_service *service;
-#if !defined(CONFIG_SCSC_INDEPENDENT_SUBSYSTEM)
 	struct mxman        *mxman = scsc_mx_get_mxman(srvman->mx);
-#endif
 
 	SCSC_TAG_INFO(MXMAN, "\n");
 #if defined(CONFIG_SCSC_INDEPENDENT_SUBSYSTEM)
@@ -973,6 +976,11 @@ void srvman_freeze_sub_system(struct srvman *srvman, struct mx_syserr_decode *sy
 				mxman->notify = true;
 #endif
 	}
+#if defined(CONFIG_SCSC_INDEPENDENT_SUBSYSTEM)
+	mxman_if_reinit_completion(mxman);
+#else
+	reinit_completion(&mxman->recovery_completion);
+#endif
 	mutex_unlock(&srvman->service_list_mutex);
 	SCSC_TAG_INFO(MXMAN, "OK\n");
 }
@@ -1300,6 +1308,26 @@ static struct scsc_service *__scsc_mx_service_open(struct scsc_mx *mx, enum scsc
 	struct  __kernel_old_timeval tval = {};
 #else
 	struct timeval tval = {};
+#endif
+
+#ifdef CONFIG_HDM_WLBT_SUPPORT
+	if(id == SCSC_SERVICE_ID_WLAN){
+		if (mxman_if_get_hdm_wlan_support()) {
+				SCSC_TAG_ERR(MXMAN, "hdm wlan support enabled. Reject wlan service\n");
+				return NULL;
+		} else {
+			SCSC_TAG_DEBUG(MXMAN, "hdm wlan support disabled.\n");
+		}
+	}
+
+	if(id == SCSC_SERVICE_ID_BT){
+		if (mxman_if_get_hdm_bt_support()) {
+				SCSC_TAG_ERR(MXMAN, "hdm bt support enabled. Reject bt service\n");
+				return NULL;
+		} else {
+			SCSC_TAG_DEBUG(MXMAN, "hdm bt support disabled.\n");
+		}
+	}
 #endif
 
 #if IS_ENABLED(CONFIG_SCSC_FLASH_SERVICE_ON_BOOT)
@@ -1880,27 +1908,16 @@ EXPORT_SYMBOL(scsc_service_mifintrbit_unregister_tohost);
 
 #if defined(CONFIG_SCSC_INDEPENDENT_SUBSYSTEM)
 #if defined(CONFIG_SCSC_PCIE_CHIP)
-__iomem void *scsc_mx_service_get_scoreboard(struct scsc_service *service)
+__iomem void *scsc_mx_service_get_ramrp_ptr(struct scsc_service *service)
 {
 	struct scsc_mx      *mx = service->mx;
 	struct scsc_mif_abs *mif_abs;
 
 	mif_abs = scsc_mx_get_mif_abs(mx);
 
-	return mif_abs->get_scoreboard(mif_abs);
+	return mif_abs->get_ramrp_ptr(mif_abs);
 }
-EXPORT_SYMBOL(scsc_mx_service_get_scoreboard);
-
-int scsc_mx_service_get_scoreboard_ref(struct scsc_service *service, __iomem void *addr, uintptr_t *addr_ref)
-{
-	struct scsc_mx      *mx = service->mx;
-	struct scsc_mif_abs *mif_abs;
-
-	mif_abs = scsc_mx_get_mif_abs(mx);
-
-	return mif_abs->get_scoreboard_ref(mif_abs, addr, addr_ref);
-}
-EXPORT_SYMBOL(scsc_mx_service_get_scoreboard_ref);
+EXPORT_SYMBOL(scsc_mx_service_get_ramrp_ptr);
 #endif
 #endif
 

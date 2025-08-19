@@ -1303,7 +1303,7 @@ static void pablo_device_sensor_v2_notify_by_dma_end_kunit_test(struct kunit *te
 	struct is_module_enum *module;
 	struct is_cis *cis;
 	int ret;
-	void *arg;
+	struct is_frame *arg;
 	unsigned int notification = CSIS_NOTIFY_DMA_END_VC_EMBEDDED;
 
 	ids = &test_ctx.ids;
@@ -1335,6 +1335,8 @@ static void pablo_device_sensor_v2_notify_by_dma_end_kunit_test(struct kunit *te
 	v4l2_set_subdevdata(ids->subdev_csi, csi);
 	test_ctx.sensor_peri.subdev_cis = &test_ctx.subdev_cis;
 	v4l2_set_subdevdata(test_ctx.sensor_peri.subdev_cis, cis);
+	arg->pb_output = kunit_kzalloc(test, sizeof(struct is_priv_buf), 0);
+	arg->pb_output->ops = kunit_kzalloc(test, sizeof(struct is_priv_buf_ops), 0);
 	ret = fp->notify_by_dma_end(ids, arg, notification);
 	KUNIT_EXPECT_EQ(test, ret, 0);
 #endif
@@ -1343,6 +1345,8 @@ static void pablo_device_sensor_v2_notify_by_dma_end_kunit_test(struct kunit *te
 	notification = CSIS_NOTIFY_DMA_END_VC_MIPISTAT;
 	ret = fp->notify_by_dma_end(ids, arg, notification);
 	KUNIT_EXPECT_EQ(test, ret, 0);
+	kunit_kfree(test, arg->pb_output->ops);
+	kunit_kfree(test, arg->pb_output);
 	kunit_kfree(test, arg);
 }
 

@@ -122,6 +122,11 @@
 			reg = <0x8 0xBDB10000 0x1000>;
 		};
 
+		wdtmsg: wdtmsg {
+			compatible = "wdtmsg";
+			reg = <0x8 0xBDB11000 0x1000>;
+		};
+
 		s2mpu_table: s2mpu_table {
 			compatible = "exynos,s2mpu_table";
 			reg = <0 0xC5000000 0x2C00000>;

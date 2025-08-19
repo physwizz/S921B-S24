@@ -17,29 +17,19 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#include <crypto/internal/hash.h>
-#include <crypto/scatterwalk.h>
-#include <linux/init.h>
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/string.h>
-#include <linux/interrupt.h>
-#include <linux/sched.h>
-#include <linux/netlink.h>
-#include <linux/net.h>
-#include <net/netlink.h>
-#include <net/sock.h>
-#include <net/net_namespace.h>
-#include <linux/types.h>
-#include <linux/wait.h>
-#include <linux/slab.h>
-#include <linux/spinlock.h>
-#include <linux/audit.h>
-#include <linux/jiffies.h>
-
-#include <linux/version.h>
 #include <ddar/fs_handler.h>
 #include <ddar/fs_request.h>
+#include <linux/audit.h>
+#include <linux/init.h>
+#include <linux/module.h>
+#include <linux/net.h>
+#include <linux/netlink.h>
+#include <linux/sched.h>
+#include <linux/types.h>
+#include <linux/version.h>
+#include <net/netlink.h>
+#include <net/net_namespace.h>
+#include <net/sock.h>
 
 #define RESULT_ARRAY_MAX_LEN 100
 

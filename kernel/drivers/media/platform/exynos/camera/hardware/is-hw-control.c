@@ -527,6 +527,7 @@ void is_hardware_fill_frame_info(u32 instance,
 	memcpy(hw_frame->kvaddr_buffer, frame->kvaddr_buffer, sizeof(frame->kvaddr_buffer));
 	memcpy(&hw_frame->stripe_info, &frame->stripe_info, sizeof(frame->stripe_info));
 
+	hw_frame->ldr_hw_slot_id = hw_frame->hw_slot_id[0];
 	if (IS_RNR_2ND(hw_frame->shot_ext))
 		__update_hw_slot_id_2nr(hw_frame, hardware);
 
@@ -690,7 +691,7 @@ static inline void is_hardware_suspend(struct is_hardware *hardware,
 
 			CALL_HWIP_OPS(hw_ip, suspend, instance);
 
-			del_timer(&hw_ip->shot_timer);
+			trace_del_timer(&hw_ip->shot_timer);
 		}
 
 		group = group->child;
@@ -1004,7 +1005,8 @@ static inline int is_hardware_shot(struct is_hardware *hardware, u32 instance,
 		trans_frame(framemgr, frame, FS_HW_CONFIGURE);
 	framemgr_x_barrier_common(framemgr, 0, flags);
 
-	if (test_and_clear_bit(IS_SKIP_CHAIN_SHOT, &sensor->aeb_state)) {
+	if (test_and_clear_bit(IS_SKIP_CHAIN_SHOT, &sensor->aeb_state) &&
+	    test_bit(IS_GROUP_USE_MULTI_CH, &group->state)) {
 		/* Trigger HW be in IDLE state because there will be no more shot */
 		is_hardware_suspend(hardware, group);
 		goto skip_chain_shot;
@@ -1458,7 +1460,7 @@ static int is_hw_otf_grp_stop(struct is_hardware *hardware, u32 instance, u32 mo
 			mserr_hw("disable fail", instance, hw_ip);
 
 		atomic_set(&hw_ip->fcount, 0);
-		del_timer_sync(&hw_ip->shot_timer);
+		trace_del_timer_sync(&hw_ip->shot_timer);
 		msinfo_hw("del timer\n", instance, hw_ip);
 
 		if (mode == 0)
@@ -1586,7 +1588,7 @@ static int is_hardware_config_lock(struct is_hw_ip *hw_ip, u32 instance, u32 fra
 		return -EINVAL;
 	}
 
-	mod_timer(&hw_ip_ldr->shot_timer,
+	trace_mod_timer(&hw_ip_ldr->shot_timer,
 		  jiffies + msecs_to_jiffies(is_get_shot_timeout(&is_get_is_core()->resourcemgr)));
 
 retry_get_frame:
@@ -2160,7 +2162,7 @@ static void is_hardware_close_by_rsccount(struct is_hardware *hardware, u32 inst
 
 		hw_ip->framemgr = &hardware->framemgr[hw_ip->id];
 
-		del_timer_sync(&hw_ip->shot_timer);
+		trace_del_timer_sync(&hw_ip->shot_timer);
 
 		/* Before close hw_ip, flush frames if remained */
 		is_hardware_force_stop(hardware, hw_ip, instance);
@@ -3251,11 +3253,10 @@ u32 is_hardware_dma_cfg(char *name, struct is_hw_ip *hw_ip,
 		if (!src_dva[src_dva_i]) {
 			*cmd = 0; /* COMMAND_DISABLE */
 			level = (src_dva_i == 0) ? 0 : 2;
-#if 0
 			msdbg_hw(level, "[F:%d]%s_src_dva[%d] is zero\n",
 				frame->instance, hw_ip,
 				frame->fcount, name, src_dva_i);
-#endif
+
 			continue;
 		}
 
@@ -3520,3 +3521,63 @@ int clear_gather_crc_status(u32 instance, struct is_hw_ip *hw_ip)
 
 	return crc_flag;
 }
+
+#if IS_ENABLED(CONFIG_TIMER_TRACER)
+void trace_frame_done(struct is_hw_ip *hw_ip, struct is_frame *frame)
+{
+	u32 instance = atomic_read(&hw_ip->instance);
+	u32 fcount = atomic_read(&hw_ip->fcount);
+	struct is_hw_ip *ldr_hw_ip = &hw_ip->hardware->hw_ip[frame->ldr_hw_slot_id];
+
+	if (hw_ip->stm[instance] && hw_ip->stm[instance][7] == 'R')
+		is_memlog_info("[%d:%s][HW:%s][TRACE][F%d:%d]%s: %d, %08lx, %d\n",
+				instance, hw_ip->stm[instance], hw_ip->name,
+				fcount, frame->fcount, __func__,
+				frame->instance, frame->core_flag, frame->ldr_hw_slot_id);
+
+	if (ldr_hw_ip->id != hw_ip->id && timer_pending(&hw_ip->shot_timer))
+		mserr_hw("invalid shot_timer pending, ldr_hw_slot_id:%d, leader hw_ip: %s",
+				instance, hw_ip,
+				frame->ldr_hw_slot_id, ldr_hw_ip->name);
+}
+
+int trace_del_timer(struct timer_list *timer)
+{
+	struct is_hw_ip *hw_ip = from_timer(hw_ip, (struct timer_list *)timer, shot_timer);
+	u32 instance = atomic_read(&hw_ip->instance);
+	u32 fcount = atomic_read(&hw_ip->fcount);
+
+	if (hw_ip->stm[instance] && hw_ip->stm[instance][7] == 'R')
+		is_memlog_info("[%d:%s][HW:%s][TRACE][F%d]%s:\n", instance,
+				hw_ip->stm[instance], hw_ip->name, fcount,  __func__);
+
+
+	return del_timer(timer);
+}
+
+int trace_mod_timer(struct timer_list *timer, unsigned long expires)
+{
+	struct is_hw_ip *hw_ip = from_timer(hw_ip, (struct timer_list *)timer, shot_timer);
+	u32 instance = atomic_read(&hw_ip->instance);
+	u32 fcount = atomic_read(&hw_ip->fcount);
+
+	if (hw_ip->stm[instance] && hw_ip->stm[instance][7] == 'R')
+		is_memlog_info("[%d:%s][HW:%s][TRACE][F%d]%s:\n", instance,
+				hw_ip->stm[instance], hw_ip->name, fcount, __func__);
+
+	return mod_timer(timer, expires);
+}
+
+int trace_del_timer_sync(struct timer_list *timer)
+{
+	struct is_hw_ip *hw_ip = from_timer(hw_ip, (struct timer_list *)timer, shot_timer);
+	u32 instance = atomic_read(&hw_ip->instance);
+	u32 fcount = atomic_read(&hw_ip->fcount);
+
+	if (hw_ip->stm[instance] && hw_ip->stm[instance][7] == 'R')
+		is_memlog_info("[%d:%s][HW:%s][TRACE][F%d]%s:\n", instance,
+				hw_ip->stm[instance], hw_ip->name, fcount, __func__);
+
+	return del_timer_sync(timer);
+}
+#endif

@@ -43,6 +43,7 @@ struct dbg_snapshot_log_item dss_log_items[] = {
 	[DSS_LOG_REGULATOR_ID]	= {DSS_LOG_REGULATOR,	{0, 0, 0, false}, 0, false},
 	[DSS_LOG_THERMAL_ID]	= {DSS_LOG_THERMAL,	{0, 0, 0, false}, 0, false},
 	[DSS_LOG_ACPM_ID]	= {DSS_LOG_ACPM,	{0, 0, 0, false}, 0, false},
+	[DSS_LOG_PMIC_ID]	= {DSS_LOG_PMIC,	{0, 0, 0, false}, 0, false},
 	[DSS_LOG_PRINTK_ID]	= {DSS_LOG_PRINTK,	{0, 0, 0, false}, 0, false},
 };
 
@@ -254,6 +255,7 @@ dss_get_log(pmu);
 dss_get_log(dm);
 dss_get_log(regulator);
 dss_get_log(acpm);
+dss_get_log(pmic);
 dss_get_log(print);
 #endif
 dss_get_log(thermal);
@@ -789,6 +791,27 @@ void dbg_snapshot_acpm(unsigned long long timestamp, const char *log,
 EXPORT_SYMBOL_GPL(dbg_snapshot_acpm);
 #endif
 
+void dbg_snapshot_pmic(int irq, const char *str, int data1, int data2)
+{
+	unsigned long idx;
+	struct dbg_snapshot_log_item *log_item = &dss_log_items[DSS_LOG_PMIC_ID];
+	struct pmic_log *entry = (struct pmic_log *)log_item->entry.vaddr;
+	int cpu = raw_smp_processor_id();
+
+	if (!dbg_snapshot_is_log_item_enabled(DSS_LOG_PMIC_ID))
+		return;
+
+	idx = atomic_fetch_inc(&dss_log_misc.pmic_log_idx) % log_item->log_num;
+
+	entry[idx].time = cpu_clock(cpu);
+	entry[idx].cpu = cpu;
+	entry[idx].irq = irq;
+	entry[idx].data1 = data1;
+	entry[idx].data2 = data2;
+	strncpy(entry[idx].str, str, sizeof(entry[idx].str) - 1);
+}
+EXPORT_SYMBOL_GPL(dbg_snapshot_pmic);
+
 void dbg_snapshot_printk(const char *fmt, ...)
 {
 	va_list args;
@@ -1061,6 +1084,7 @@ static void dbg_snapshot_set_log_item_field(void)
 		log_item_set_field(struct dbg_snapshot_log, REGULATOR, regulator);
 		log_item_set_field(struct dbg_snapshot_log, THERMAL, thermal);
 		log_item_set_field(struct dbg_snapshot_log, ACPM, acpm);
+		log_item_set_field(struct dbg_snapshot_log, PMIC, pmic);
 		log_item_set_field(struct dbg_snapshot_log, PRINTK, print);
 		break;
 	case eDSS_LOG_TYPE_MINIMIZED:
@@ -1069,6 +1093,7 @@ static void dbg_snapshot_set_log_item_field(void)
 		log_item_set_array_field(struct dbg_snapshot_log_minimized, CPUIDLE, cpuidle);
 		log_item_set_array_field(struct dbg_snapshot_log_minimized, IRQ, irq);
 		log_item_set_array_field(struct dbg_snapshot_log_minimized, FREQ, freq);
+		log_item_set_field(struct dbg_snapshot_log_minimized, PMIC, pmic);
 		break;
 	default:
 		break;

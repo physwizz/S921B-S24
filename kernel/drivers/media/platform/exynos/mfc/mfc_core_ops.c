@@ -843,7 +843,6 @@ static void __mfc_core_cancel_drc(struct mfc_core *core, struct mfc_core_ctx *co
 	mfc_info("[DRC] DRC is running yet (state: %d) cancel DRC\n", core_ctx->state);
 
 	mutex_lock(&ctx->drc_wait_mutex);
-	mfc_change_state(core_ctx, MFCINST_RES_CHANGE_END);
 
 	ctx->wait_state &= ~(WAIT_STOP);
 	mfc_debug(2, "clear WAIT_STOP %d\n", ctx->wait_state);
@@ -878,7 +877,8 @@ void mfc_core_instance_dpb_flush(struct mfc_core *core, struct mfc_ctx *ctx)
 	}
 
 	if (core_ctx->state == MFCINST_RES_CHANGE_INIT ||
-			core_ctx->state == MFCINST_RES_CHANGE_FLUSH)
+			core_ctx->state == MFCINST_RES_CHANGE_FLUSH ||
+			core_ctx->state == MFCINST_RES_CHANGE_FLUSH_FINISHED)
 		__mfc_core_cancel_drc(core, core_ctx);
 
 	mfc_cleanup_queue(&ctx->buf_queue_lock, &ctx->dst_buf_queue);
@@ -989,7 +989,8 @@ void mfc_core_instance_csd_parsing(struct mfc_core *core, struct mfc_ctx *ctx)
 	}
 
 	if (core_ctx->state == MFCINST_RES_CHANGE_INIT ||
-			core_ctx->state == MFCINST_RES_CHANGE_FLUSH)
+			core_ctx->state == MFCINST_RES_CHANGE_FLUSH ||
+			core_ctx->state == MFCINST_RES_CHANGE_FLUSH_FINISHED)
 		__mfc_core_cancel_drc(core, core_ctx);
 
 	/* Header parsed buffer is in src_buf_ready_queue */

@@ -223,7 +223,7 @@ bool wlan_mlme_get_wlm_multi_client_ll_caps(struct wlan_objmgr_psoc *psoc)
 #endif
 
 #ifdef FEATURE_WLAN_CH_AVOID_EXT
-bool wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(
+uint32_t wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(
 		struct wlan_objmgr_psoc *psoc)
 {
 	struct wlan_mlme_psoc_ext_obj *mlme_obj;
@@ -233,7 +233,22 @@ bool wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(
 		mlme_legacy_err("Failed to get MLME Obj");
 		return cfg_default(CFG_COEX_UNSAFE_CHAN_NB_USER_PREFER);
 	}
+
 	return mlme_obj->cfg.reg.coex_unsafe_chan_nb_user_prefer;
+}
+
+bool wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_sap(
+		struct wlan_objmgr_psoc *psoc)
+{
+	return !!(wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(psoc) &
+					IGNORE_FW_COEX_INFO_ON_SAP_MODE);
+}
+
+bool wlan_mlme_get_coex_unsafe_chan_nb_user_prefer_for_p2p_go(
+		struct wlan_objmgr_psoc *psoc)
+{
+	return !!(wlan_mlme_get_coex_unsafe_chan_nb_user_prefer(psoc) &
+					IGNORE_FW_COEX_INFO_ON_P2P_GO_MODE);
 }
 #endif
 
@@ -1113,7 +1128,15 @@ QDF_STATUS mlme_update_tgt_he_caps_in_cfg(struct wlan_objmgr_psoc *psoc,
 		mlme_obj->cfg.he_caps.dot11_he_cap.bfee_sts_lt_80 = 0;
 		mlme_obj->cfg.he_caps.dot11_he_cap.bfee_sts_gt_80 = 0;
 	}
-	mlme_obj->cfg.he_caps.dot11_he_cap.ul_mu = he_cap->ul_mu;
+
+	if (!mlme_obj->cfg.he_caps.enable_ul_mimo) {
+		mlme_debug("UL MIMO feature is disabled via ini, fw caps :%d",
+			   he_cap->ul_mu);
+		mlme_obj->cfg.he_caps.dot11_he_cap.ul_mu = 0;
+	} else {
+		mlme_obj->cfg.he_caps.dot11_he_cap.ul_mu = he_cap->ul_mu;
+	}
+
 	mlme_obj->cfg.he_caps.dot11_he_cap.su_feedback_tone16 =
 					he_cap->su_feedback_tone16;
 	mlme_obj->cfg.he_caps.dot11_he_cap.mu_feedback_tone16 =
@@ -1564,18 +1587,26 @@ QDF_STATUS wlan_mlme_set_sta_mlo_conn_max_num(struct wlan_objmgr_psoc *psoc,
 					      uint8_t value)
 {
 	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+	struct target_psoc_info *tgt_hdl;
 
 	mlme_obj = mlme_get_psoc_ext_obj(psoc);
 	if (!mlme_obj)
 		return QDF_STATUS_E_FAILURE;
 
+	tgt_hdl = wlan_psoc_get_tgt_if_handle(psoc);
+	if (!tgt_hdl) {
+		mlme_err("target psoc info is NULL");
+		return QDF_STATUS_E_FAILURE;
+	}
+
 	if (!value)
 		mlme_obj->cfg.sta.mlo_support_link_num =
-					  cfg_default(CFG_MLO_SUPPORT_LINK_NUM);
+				target_if_res_cfg_get_num_max_mlo_link(tgt_hdl);
 	else
 		mlme_obj->cfg.sta.mlo_support_link_num = value;
 
-	mlme_legacy_debug("mlo_support_link_num %d", value);
+	mlme_legacy_debug("mlo_support_link_num user input %d intersected value :%d",
+			  value, mlme_obj->cfg.sta.mlo_support_link_num);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -1713,6 +1744,16 @@ QDF_STATUS wlan_mlme_set_sta_mlo_conn_band_bmp(struct wlan_objmgr_psoc *psoc,
 	mlme_legacy_debug("mlo_support_link_conn band %d", value);
 
 	return QDF_STATUS_SUCCESS;
+}
+
+bool wlan_mlme_is_5gl_5gh_mlsr_supported(struct wlan_objmgr_psoc *psoc)
+{
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj)
+		return 0;
+	return mlme_obj->cfg.sta.mlo_5gl_5gh_mlsr;
 }
 
 void
@@ -5210,7 +5251,8 @@ void wlan_mlme_update_sae_single_pmk(struct wlan_objmgr_vdev *vdev,
 		return;
 	}
 
-	if (keymgmt & (1 << WLAN_CRYPTO_KEY_MGMT_SAE))
+	if (QDF_HAS_PARAM(keymgmt, WLAN_CRYPTO_KEY_MGMT_SAE) ||
+	    QDF_HAS_PARAM(keymgmt, WLAN_CRYPTO_KEY_MGMT_SAE_EXT_KEY))
 		is_sae_connection = true;
 
 	mlme_legacy_debug("SAE_SPMK: single_pmk_ap:%d, is_sae_connection:%d, pmk_len:%d",
@@ -6127,6 +6169,22 @@ wlan_mlme_get_bss_load_threshold(struct wlan_objmgr_psoc *psoc, uint32_t *val)
 	}
 
 	*val = mlme_obj->cfg.lfr.bss_load_trig.threshold;
+
+	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS
+wlan_mlme_get_bss_load_alpha(struct wlan_objmgr_psoc *psoc, uint32_t *val)
+{
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj) {
+		*val = cfg_default(CFG_BSS_LOAD_ALPHA);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	*val = mlme_obj->cfg.lfr.bss_load_trig.bss_load_alpha;
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -7276,7 +7334,8 @@ wlan_mlme_get_adaptive11r_enabled(struct wlan_objmgr_psoc *psoc, bool *val)
 }
 #endif
 
-#ifdef WLAN_FEATURE_P2P_P2P_STA
+#if defined(WLAN_FEATURE_P2P_P2P_STA) && \
+	!defined(WLAN_FEATURE_NO_P2P_CONCURRENCY)
 static bool
 wlan_mlme_get_p2p_p2p_host_conc_support(void)
 {
@@ -7289,6 +7348,167 @@ wlan_mlme_get_p2p_p2p_host_conc_support(void)
 	return false;
 }
 #endif
+
+#ifndef WLAN_FEATURE_NO_STA_SAP_CONCURRENCY
+static bool
+wlan_mlme_get_sta_sap_host_conc_support(void)
+{
+	return true;
+}
+#else
+static bool
+wlan_mlme_get_sta_sap_host_conc_support(void)
+{
+	return false;
+}
+#endif
+
+#ifndef WLAN_FEATURE_NO_STA_NAN_CONCURRENCY
+static bool
+wlan_mlme_get_sta_nan_host_conc_support(void)
+{
+	return true;
+}
+#else
+static bool
+wlan_mlme_get_sta_nan_host_conc_support(void)
+{
+	return false;
+}
+#endif
+
+#ifdef FEATURE_WLAN_TDLS
+static bool
+wlan_mlme_get_sta_tdls_host_conc_support(void)
+{
+	return true;
+}
+#else
+static bool
+wlan_mlme_get_sta_tdls_host_conc_support(void)
+{
+	return false;
+}
+#endif
+
+#if !defined(WLAN_FEATURE_NO_STA_SAP_CONCURRENCY) && \
+	(!defined(WLAN_FEATURE_NO_P2P_CONCURRENCY) || \
+	 defined(WLAN_FEATURE_STA_SAP_P2P_CONCURRENCY))
+static bool
+wlan_mlme_get_sta_sap_p2p_host_conc_support(void)
+{
+	return true;
+}
+#else
+static bool
+wlan_mlme_get_sta_sap_p2p_host_conc_support(void)
+{
+	return false;
+}
+#endif
+
+#if defined(FEATURE_WLAN_TDLS)
+static bool
+wlan_mlme_get_sta_p2p_tdls_host_conc_support(void)
+{
+	return true;
+}
+#else
+static bool
+wlan_mlme_get_sta_p2p_tdls_host_conc_support(void)
+{
+	return false;
+}
+#endif
+
+#if defined(FEATURE_WLAN_TDLS) && !defined(WLAN_FEATURE_NO_STA_SAP_CONCURRENCY)
+static bool
+wlan_mlme_get_sta_sap_tdls_host_conc_support(void)
+{
+	return true;
+}
+#else
+static bool
+wlan_mlme_get_sta_sap_tdls_host_conc_support(void)
+{
+	return false;
+}
+#endif
+
+#if defined(FEATURE_WLAN_TDLS) && \
+	!defined(WLAN_FEATURE_NO_STA_SAP_CONCURRENCY) && \
+	(!defined(WLAN_FEATURE_NO_P2P_CONCURRENCY) || \
+	 defined(WLAN_FEATURE_STA_SAP_P2P_CONCURRENCY))
+
+static bool
+wlan_mlme_get_sta_sap_p2p_tdls_host_conc_support(void)
+{
+	return true;
+}
+#else
+static bool
+wlan_mlme_get_sta_sap_p2p_tdls_host_conc_support(void)
+{
+	return false;
+}
+#endif
+
+#if defined(FEATURE_WLAN_TDLS) && defined(WLAN_FEATURE_P2P_P2P_STA) && \
+	!defined(WLAN_FEATURE_NO_P2P_CONCURRENCY)
+static bool
+wlan_mlme_get_sta_p2p_p2p_tdls_host_conc_support(void)
+{
+	return true;
+}
+#else
+static bool
+wlan_mlme_get_sta_p2p_p2p_tdls_host_conc_support(void)
+{
+	return false;
+}
+#endif
+
+/**
+ * wlan_mlme_set_iface_combinations() - Set interface combinations
+ * @mlme_feature_set: Pointer to wlan_mlme_features
+ *
+ * Return: None
+ */
+static void
+wlan_mlme_set_iface_combinations(struct wlan_mlme_features *mlme_feature_set)
+{
+	mlme_feature_set->iface_combinations = 0;
+	mlme_feature_set->iface_combinations |= MLME_IFACE_STA_P2P_SUPPORT;
+	if (wlan_mlme_get_sta_sap_host_conc_support())
+		mlme_feature_set->iface_combinations |=
+					MLME_IFACE_STA_SAP_SUPPORT;
+	if (wlan_mlme_get_sta_nan_host_conc_support())
+		mlme_feature_set->iface_combinations |=
+					MLME_IFACE_STA_NAN_SUPPORT;
+	if (wlan_mlme_get_sta_tdls_host_conc_support())
+		mlme_feature_set->iface_combinations |=
+					MLME_IFACE_STA_TDLS_SUPPORT;
+	if (wlan_mlme_get_p2p_p2p_host_conc_support())
+		mlme_feature_set->iface_combinations |=
+					MLME_IFACE_STA_DUAL_P2P_SUPPORT;
+	if (wlan_mlme_get_sta_sap_p2p_host_conc_support())
+		mlme_feature_set->iface_combinations |=
+					MLME_IFACE_STA_SAP_P2P_SUPPORT;
+	if (wlan_mlme_get_sta_p2p_tdls_host_conc_support())
+		mlme_feature_set->iface_combinations |=
+					MLME_IFACE_STA_P2P_TDLS_SUPPORT;
+	if (wlan_mlme_get_sta_sap_tdls_host_conc_support())
+		mlme_feature_set->iface_combinations |=
+					MLME_IFACE_STA_SAP_TDLS_SUPPORT;
+	if (wlan_mlme_get_sta_sap_p2p_tdls_host_conc_support())
+		mlme_feature_set->iface_combinations |=
+					MLME_IFACE_STA_SAP_P2P_TDLS_SUPPORT;
+	if (wlan_mlme_get_sta_p2p_p2p_tdls_host_conc_support())
+		mlme_feature_set->iface_combinations |=
+					MLME_IFACE_STA_P2P_P2P_TDLS_SUPPORT;
+	mlme_debug("iface combinations = %x",
+		   mlme_feature_set->iface_combinations);
+}
 
 void wlan_mlme_get_feature_info(struct wlan_objmgr_psoc *psoc,
 				struct wlan_mlme_features *mlme_feature_set)
@@ -7336,8 +7556,7 @@ void wlan_mlme_get_feature_info(struct wlan_objmgr_psoc *psoc,
 
 	mlme_feature_set->vendor_req_2_version =
 					WMI_HOST_VENDOR1_REQ2_VERSION_3_50;
-	mlme_feature_set->sta_dual_p2p_support =
-				wlan_mlme_get_p2p_p2p_host_conc_support();
+	wlan_mlme_set_iface_combinations(mlme_feature_set);
 	wlan_mlme_get_vht_enable2x2(psoc, &mlme_feature_set->enable2x2);
 }
 #endif
@@ -8147,3 +8366,88 @@ rel_pdev:
 	return status;
 }
 #endif
+
+QDF_STATUS
+wlan_mlme_is_hs_20_btm_offload_disabled(struct wlan_objmgr_psoc *psoc,
+					bool *val)
+{
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj) {
+		*val = cfg_default(CFG_HS_20_BTM_OFFLOAD_DISABLE);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	*val = mlme_obj->cfg.lfr.hs20_btm_offload_disable;
+
+	return QDF_STATUS_SUCCESS;
+}
+
+void wlan_mlme_set_keepalive_period(struct wlan_objmgr_vdev *vdev,
+				    uint16_t keep_alive_period)
+{
+	struct mlme_legacy_priv *mlme_priv;
+
+	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
+	if (!mlme_priv) {
+		mlme_err("vdev legacy private object is NULL");
+		return;
+	}
+
+	mlme_priv->keep_alive_period = keep_alive_period;
+}
+
+uint16_t wlan_mlme_get_keepalive_period(struct wlan_objmgr_vdev *vdev)
+{
+	struct mlme_legacy_priv *mlme_priv;
+
+	mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
+	if (!mlme_priv) {
+		mlme_err("vdev legacy private object is NULL");
+		return 0;
+	}
+
+	return mlme_priv->keep_alive_period;
+}
+
+void wlan_mlme_reset_sta_keepalive_period(struct wlan_objmgr_psoc *psoc,
+					  struct wlan_objmgr_vdev *vdev)
+{
+       struct mlme_legacy_priv *mlme_priv;
+       struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+       mlme_obj = mlme_get_psoc_ext_obj(psoc);
+       if (!mlme_obj) {
+	       mlme_err("invalid mlem object");
+	       return;
+       }
+       mlme_obj->cfg.sta.sta_keep_alive_period =
+		cfg_default(CFG_INFRA_STA_KEEP_ALIVE_PERIOD);
+       mlme_priv = wlan_vdev_mlme_get_ext_hdl(vdev);
+       if (!mlme_priv) {
+               mlme_err("vdev legacy private object is NULL");
+               return;
+       }
+
+       mlme_priv->keep_alive_period =
+                       cfg_default(CFG_INFRA_STA_KEEP_ALIVE_PERIOD);
+}
+
+QDF_STATUS
+wlan_mlme_get_sta_keep_alive_period(struct wlan_objmgr_psoc *psoc,
+                                    uint32_t *keep_alive_period)
+{
+	struct wlan_mlme_psoc_ext_obj *mlme_obj;
+
+	mlme_obj = mlme_get_psoc_ext_obj(psoc);
+	if (!mlme_obj) {
+		*keep_alive_period =
+				cfg_default(CFG_INFRA_STA_KEEP_ALIVE_PERIOD);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	*keep_alive_period = mlme_obj->cfg.sta.sta_keep_alive_period;
+
+        return QDF_STATUS_SUCCESS;
+}

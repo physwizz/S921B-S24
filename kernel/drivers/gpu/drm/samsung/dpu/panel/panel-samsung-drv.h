@@ -138,6 +138,8 @@ enum exynos_panel_cmd {
 	PANEL_VREF_CMDS,
 	PANEL_TECTRL_CMDS,
 	PANEL_LP_CMDS,
+	PANEL_CLOSE_CMDS,
+	PANEL_OPEN_CMDS,
 	NUM_OF_CMDS,
 };
 
@@ -213,6 +215,7 @@ struct exynos_panel_funcs {
 	 */
 	void (*mode_set)(struct exynos_panel *exynos_panel,
 		const struct exynos_panel_mode *mode, unsigned int modeset_flags);
+	int (*lastclose)(struct exynos_panel *exynos_panel, bool close);
 
 #if IS_ENABLED(CONFIG_DRM_PANEL_MCD_COMMON)
 	/*
@@ -328,6 +331,7 @@ struct exynos_panel {
 	 * This is protected by mode_lock.
 	 */
 	unsigned int adjusted_fps;
+	bool lastclosed;
 
 #if IS_ENABLED(CONFIG_DRM_PANEL_MCD_COMMON)
 	bool enabled;

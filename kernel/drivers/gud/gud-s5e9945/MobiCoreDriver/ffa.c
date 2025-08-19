@@ -34,15 +34,19 @@
 
 static struct {
 	struct ffa_device *dev;
+#ifndef TRUSTONIC_USES_FFA_1_1
 	const struct ffa_dev_ops *ops;
-	struct ffa_device_id device_id;
+#else
+	const struct ffa_ops *ops;
+#endif
 	irq_handler_t global_irq_handler;
+	struct ffa_device_id device_id[];
 } l_ffa_ctx = {
 	.dev = NULL,
 	.ops = NULL,
-	.device_id = {
+	.device_id = {{
 		UUID_INIT(0x8bf0ccc3, 0x42a3, 0x5271,
-			  0x86, 0x0d, 0x66, 0x58, 0x04, 0x69, 0x47, 0x9f) },
+			  0x86, 0x0d, 0x66, 0x58, 0x04, 0x69, 0x47, 0x9f) }, {}}
 };
 
 int ffa_module_probe(void)
@@ -56,11 +60,20 @@ int ffa_module_probe(void)
 static int ffa_probe(struct ffa_device *ffa_dev)
 {
 	int ret = 0;
+#ifndef TRUSTONIC_USES_FFA_1_1
 	const struct ffa_dev_ops *ffa_ops;
+#else
+	const struct ffa_ops *ffa_ops;
+#endif
 
 	mc_dev_info("init FFA protocol");
 
+#ifndef TRUSTONIC_USES_FFA_1_1
 	ffa_ops = ffa_dev_ops_get(ffa_dev);
+#else
+	ffa_ops = ffa_dev->ops;
+#endif
+
 	if (IS_ERR_OR_NULL(ffa_ops)) {
 		ret = PTR_ERR(ffa_ops);
 		mc_dev_err(ret, "failed to obtain FFA ops");
@@ -69,8 +82,9 @@ static int ffa_probe(struct ffa_device *ffa_dev)
 
 	l_ffa_ctx.dev = ffa_dev;
 	l_ffa_ctx.ops = ffa_ops;
-
+#ifndef TRUSTONIC_USES_FFA_1_1
 	l_ffa_ctx.ops->mode_32bit_set(ffa_dev);
+#endif
 
 	return 0;
 }
@@ -81,9 +95,7 @@ static void ffa_remove(struct ffa_device *ffa_dev)
 }
 
 #ifdef MC_FFA_NOTIFICATION
-static void ffa_notif_callback(ffa_partition_id_t partition_id,
-			       ffa_notification_id_t notification_id,
-			       void *dev_data)
+static void ffa_notif_callback(int notification_id, void *dev_data)
 {
 	if (l_ffa_ctx.global_irq_handler)
 		l_ffa_ctx.global_irq_handler(notification_id, dev_data);
@@ -116,9 +128,17 @@ static inline int ffa_shm_register(struct page **pages, size_t num_pages,
 
 	args.sg = sgt.sgl;
 	if (lend)
+#ifndef TRUSTONIC_USES_FFA_1_1
 		rc = l_ffa_ctx.ops->memory_lend(l_ffa_ctx.dev, &args);
+#else
+		rc = l_ffa_ctx.ops->mem_ops->memory_lend(&args);
+#endif
 	else
+#ifndef TRUSTONIC_USES_FFA_1_1
 		rc = l_ffa_ctx.ops->memory_share(l_ffa_ctx.dev, &args);
+#else
+		rc = l_ffa_ctx.ops->mem_ops->memory_share(&args);
+#endif
 
 	sg_free_table(&sgt);
 	if (rc)
@@ -175,13 +195,15 @@ end:
 #ifdef MC_FFA_NOTIFICATION
 int ffa_register_notif_handler(irq_handler_t handler)
 {
-	int id = 0;
+	u16 id = MC_FFA_NOTIFICATION;
 
 	/* Setup global notification */
-	id = l_ffa_ctx.ops->request_notification(l_ffa_ctx.dev, false,
-						  ffa_notif_callback, NULL);
-	if (id < 0) {
-		mc_dev_err(ret, "requesting FFA notification");
+	int rc = l_ffa_ctx.ops->notifier_ops->notify_request(l_ffa_ctx.dev,
+							     false,
+							     ffa_notif_callback,
+							     NULL, id);
+	if (rc < 0) {
+		mc_dev_err(rc, "requesting FFA notification");
 		return id;
 	}
 
@@ -213,8 +235,13 @@ int ffa_register_buffer(struct page **pages, struct tee_mmu *mmu, u64 tag)
 
 int ffa_reclaim_buffer(struct tee_mmu *mmu)
 {
+#ifndef TRUSTONIC_USES_FFA_1_1
 	return l_ffa_ctx.ops->memory_reclaim(mmu->handle,
 					     FFA_MEMORY_RECLAIM_KEEP_MEMORY);
+#else
+	return l_ffa_ctx.ops->mem_ops->memory_reclaim(mmu->handle,
+					     FFA_MEMORY_RECLAIM_KEEP_MEMORY);
+#endif
 }
 
 /* Wrapper around FFA_MSG_SEND_DIRECT_REQ */
@@ -228,8 +255,13 @@ inline int ffa_fastcall(union fc_common *fc)
 		.data3 = fc->in.param[2],
 	};
 
+#ifndef TRUSTONIC_USES_FFA_1_1
 	ret = l_ffa_ctx.ops->sync_send_receive(l_ffa_ctx.dev,
 					       &data);
+#else
+	ret = l_ffa_ctx.ops->msg_ops->sync_send_receive(l_ffa_ctx.dev,
+					       &data);
+#endif
 	if (ret)
 		return ret;
 
@@ -246,7 +278,7 @@ static struct ffa_driver kinibi_ffa_driver = {
 	.name = "kinibi",
 	.probe = ffa_probe,
 	.remove = ffa_remove,
-	.id_table = &l_ffa_ctx.device_id,
+	.id_table = l_ffa_ctx.device_id,
 };
 
 int ffa_register_module(void)
@@ -280,7 +312,11 @@ int tt_ffa_memory_lend(struct ffa_mem_ops_args *args)
 	// Only overwrite the first attribute vm id with Kinibi's one
 	args->attrs[0].receiver = l_ffa_ctx.dev->vm_id;
 
+#ifndef TRUSTONIC_USES_FFA_1_1
 	return l_ffa_ctx.ops->memory_lend(l_ffa_ctx.dev, args);
+#else
+	return l_ffa_ctx.ops->mem_ops->memory_lend(args);
+#endif
 }
 EXPORT_SYMBOL(tt_ffa_memory_lend);
 
@@ -288,8 +324,11 @@ int tt_ffa_memory_reclaim(u64 handle, u64 tag)
 {
 	if (!l_ffa_ctx.dev)
 		return -ENODEV;
-
+#ifndef TRUSTONIC_USES_FFA_1_1
 	return l_ffa_ctx.ops->memory_reclaim(handle, tag);
+#else
+	return l_ffa_ctx.ops->mem_ops->memory_reclaim(handle, tag);
+#endif
 }
 EXPORT_SYMBOL(tt_ffa_memory_reclaim);
 

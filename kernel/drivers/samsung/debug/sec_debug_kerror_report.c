@@ -28,6 +28,7 @@
 #define CALLSTACK_ADDRS_COUNT 64
 
 struct kerror_item {
+	int id;
 	int type;
 	u64 time;
 	void *address;
@@ -40,7 +41,6 @@ struct kerror_item {
 static struct kerror_item kerror_records[MAX_RECORD_NUM];
 
 static atomic_t kerr_count;
-static bool kerr_overflow;
 
 static const char *get_kerror_name(int type)
 {
@@ -58,38 +58,38 @@ static const char *get_kerror_name(int type)
 	return kerror_type_names[type];
 }
 
-static void secdbg_kerror_record_error(int type, void *address)
+static void secdbg_kerror_rec_one(struct kerror_item *item,
+				int id, int type, void *address)
 {
-	int index;
 	int cpu = raw_smp_processor_id();
 	unsigned int nr_entries;
 
-	if (atomic_read(&kerr_count) >= MAX_RECORD_NUM) {
-		kerr_overflow = true;
-		return;
-	}
+	item->id = id;
+	item->type = type;
+	item->time = cpu_clock(cpu);
+	item->address = address;
+	item->cpu = cpu;
+	item->pid = task_pid_nr(current);
 
-	index = atomic_fetch_inc(&kerr_count);
-	if (index >= MAX_RECORD_NUM) {
-		atomic_dec(&kerr_count);
-		kerr_overflow = true;
-		return;
-	}
-
-	pr_warn("secdbg: recorded: [%s] %pS\n",
-			get_kerror_name(type), address);
-
-	kerror_records[index].type = type;
-	kerror_records[index].time = cpu_clock(cpu);
-	kerror_records[index].address = address;
-	kerror_records[index].cpu = cpu;
-	kerror_records[index].pid = task_pid_nr(current);
-
-	nr_entries = stack_trace_save(kerror_records[index].callstack,
+	nr_entries = stack_trace_save(item->callstack,
 				      CALLSTACK_ADDRS_COUNT, 2);
 	if (nr_entries < CALLSTACK_ADDRS_COUNT)
-		kerror_records[index].callstack[nr_entries] = 0;
-	kerror_records[index].nr_stack = nr_entries;
+		item->callstack[nr_entries] = 0;
+	item->nr_stack = nr_entries;
+}
+
+static void secdbg_kerror_record_error(int type, void *address)
+{
+	int id;
+	unsigned long index;
+
+	id = atomic_fetch_inc(&kerr_count);
+	index = id & (MAX_RECORD_NUM - 1);
+
+	pr_warn("secdbg: recorded: #%d %s %pS\n",
+			id, get_kerror_name(type), address);
+
+	secdbg_kerror_rec_one(&kerror_records[index], id, type, address);
 }
 
 static void secdbg_kerror_error_report_end(void *data,
@@ -104,7 +104,7 @@ static void secdbg_kerror_print_one_record(int i, struct kerror_item *item)
 	unsigned long rem_nsec = do_div(time, 1000000000);
 
 	pr_info("%s #%d [%5lu.%06lu c%d:t%-5d]: at %pS\n",
-		       get_kerror_name(item->type), i + 1,
+		       get_kerror_name(item->type), item->id,
 		       (unsigned long)time, rem_nsec / 1000, item->cpu, item->pid,
 		       item->address);
 	stack_trace_print(item->callstack, item->nr_stack, 0);

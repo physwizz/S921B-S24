@@ -19,6 +19,9 @@
 #include <linux/suspend.h>
 #include <soc/samsung/cal-if.h>
 #include <soc/samsung/exynos/debug-snapshot.h>
+#if IS_ENABLED(CONFIG_EXYNOS_CPUPM)
+#include <soc/samsung/exynos-cpupm.h>
+#endif
 #include "exynos-ped.h"
 
 static struct ped_dev *g_ped;
@@ -58,7 +61,7 @@ struct lh_nodegroup *find_group_by_name(struct ped_dev *ped, const char* name)
 	return group;
 }
 
-static int ped_init_by_group(struct lh_nodegroup *group)
+static int ped_init_by_group(struct lh_nodegroup *group, bool was_sicd)
 {
 	u32 val;
 
@@ -73,6 +76,7 @@ static int ped_init_by_group(struct lh_nodegroup *group)
 	else
 		val = (1 << group->num_group0) - 1;
 	val ^= group->group0_mask;
+	dev_dbg(g_ped->dev, "%s: sicd status:%d block %s grp0 val=%x\n", __func__, was_sicd, &group->name[0], val);
 	if (ped_pd_is_power_up(group) > 0)
 		writel(val, group->regs + INTC0_IEN_SET);
 
@@ -84,12 +88,13 @@ group1:
 	else
 		val = (1 << group->num_group1) - 1;
 	val ^= group->group1_mask;
+	dev_dbg(g_ped->dev, "%s: sicd status:%d block %s grp1 val=%x\n", __func__, was_sicd, &group->name[0], val);
 	if (ped_pd_is_power_up(group) > 0)
 		writel(val, group->regs + INTC1_IEN_SET);
 	return 0;
 }
 
-static int ped_clear_by_group(struct lh_nodegroup *group)
+static int ped_clear_by_group(struct lh_nodegroup *group, bool is_sicd)
 {
 	u32 val;
 
@@ -103,7 +108,8 @@ static int ped_clear_by_group(struct lh_nodegroup *group)
 		val = UINT_MAX;
 	else
 		val = (1 << group->num_group0) - 1;
-	val ^= group->group0_mask;
+	val ^= (is_sicd)?group->group0_sicd_mask:group->group0_mask;
+	dev_dbg(g_ped->dev, "%s: sicd status:%d block %s grp0 val=%x\n", __func__, is_sicd, &group->name[0], val);
 	if (ped_pd_is_power_up(group) > 0)
 		writel(val, group->regs + INTC0_IEN_CLR);
 
@@ -114,7 +120,8 @@ group1:
 		val = UINT_MAX;
 	else
 		val = (1 << group->num_group1) - 1;
-	val ^= group->group1_mask;
+	val ^= (is_sicd)?group->group1_sicd_mask:group->group1_mask;
+	dev_dbg(g_ped->dev, "%s: sicd status:%d block %s grp1 val=%x\n", __func__, is_sicd, &group->name[0], val);
 	if (ped_pd_is_power_up(group) > 0)
 		writel(val, group->regs + INTC1_IEN_CLR);
 	return 0;
@@ -134,7 +141,7 @@ static int ped_int_clear(struct lh_nodegroup *group, bool en)
 	return 0;
 }
 
-static int ped_init_all(struct ped_dev *ped)
+static int ped_init_all(struct ped_dev *ped, bool was_sicd)
 {
 	struct ped_platdata *pdata;
 	struct lh_nodegroup *group;
@@ -147,14 +154,17 @@ static int ped_init_all(struct ped_dev *ped)
 		group = &pdata->lh_group[i];
 		if (group->pd_support && !group->pd_status)
 			continue;
+		if (was_sicd && !(group->group0_sicd_mask | group->group1_sicd_mask))
+			continue;
+
 		ped_int_clear(group, true);
-		ped_init_by_group(group);
+		ped_init_by_group(group, was_sicd);
 		ped_int_clear(group, false);
 	}
 	return 0;
 }
 
-static int ped_clear_all(struct ped_dev *ped)
+static int ped_clear_all(struct ped_dev *ped, bool is_sicd)
 {
 	struct ped_platdata *pdata;
 	struct lh_nodegroup *group;
@@ -167,9 +177,14 @@ static int ped_clear_all(struct ped_dev *ped)
 		group = &pdata->lh_group[i];
 		if (group->pd_support && !group->pd_status)
 			continue;
-		ped_int_clear(group, true);
-		ped_clear_by_group(group);
-		ped_int_clear(group, false);
+		if (is_sicd && !(group->group0_sicd_mask | group->group1_sicd_mask))
+			continue;
+
+		if (!is_sicd)
+			ped_int_clear(group, true);
+		ped_clear_by_group(group, is_sicd);
+		if (!is_sicd)
+			ped_int_clear(group, false);
 	}
 	return 0;
 }
@@ -283,7 +298,7 @@ static ssize_t enable_int_store(struct device *dev,
 	if (!group) {
 		dev_err(dev, "%s: group  %s not found\n", __func__, name);
 	} else
-		ped_init_by_group(group);
+		ped_init_by_group(group, false);
 
 	return count;
 }
@@ -300,6 +315,35 @@ static const struct of_device_id ped_dt_match[] = {
 };
 MODULE_DEVICE_TABLE(of, ped_dt_match);
 
+#if IS_ENABLED(CONFIG_EXYNOS_CPUPM)
+static int ped_cpupm_notifier(struct notifier_block *self,
+				unsigned long cmd, void *v)
+{
+	if(g_ped->suspend_state)
+		goto out;
+	switch (cmd) {
+	case DSUPD_ENTER:
+	case SICD_ENTER:
+		ped_clear_all(g_ped, true);
+		break;
+
+	case DSUPD_EXIT:
+	case SICD_EXIT:
+		ped_init_all(g_ped, true);
+		break;
+
+	default:
+		break;
+	}
+out:
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block ped_cpupm_notifier_block = {
+	.notifier_call = ped_cpupm_notifier,
+};
+#endif
+
 static int ped_pm_notifier(struct notifier_block *notifier, unsigned long pm_event, void *v)
 {
 	struct irq_desc *desc = irq_to_desc(g_ped->irq);
@@ -307,9 +351,10 @@ static int ped_pm_notifier(struct notifier_block *notifier, unsigned long pm_eve
 	switch (pm_event) {
 	case PM_POST_SUSPEND:
 		dev_dbg(g_ped->dev, "resume...\n");
-		ped_init_all(g_ped);
+		ped_init_all(g_ped, false);
 		if (desc && desc->depth > 0)
 			enable_irq(g_ped->irq);
+		g_ped->suspend_state = false;
 		break;
 	default:
 		break;
@@ -381,13 +426,18 @@ static int ped_probe(struct platform_device *pdev)
 	}
 
 	platform_set_drvdata(pdev, ped);
+	ped->suspend_state = false;
 	g_ped = ped;
-	ret = ped_init_all(g_ped);
+	ret = ped_init_all(g_ped, false);
 	if (ret  < 0) {
 		dev_err(&pdev->dev, "failed to LH_COMB_INT initialization\n");
 		return ret;
 	}
 	pm_notifier(ped_pm_notifier, INT_MAX);
+
+#if IS_ENABLED(CONFIG_EXYNOS_CPUPM)
+	exynos_cpupm_notifier_register(&ped_cpupm_notifier_block);
+#endif
 
 	pdata->probed = true;
 	dev_info(&pdev->dev, "success to probe Exynos PED driver\n");
@@ -414,8 +464,9 @@ static int ped_suspend(struct device *dev)
 {
 	dev_dbg(dev, "%s\n", __func__);
 
+	g_ped->suspend_state = true;
 	disable_irq(g_ped->irq);
-	return ped_clear_all(g_ped);
+	return ped_clear_all(g_ped, false);
 }
 
 static int ped_resume(struct device *dev)

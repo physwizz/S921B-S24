@@ -68,6 +68,10 @@
 #include <wmi_unified_vdev_tlv.h>
 #include <wmi_unified_11be_tlv.h>
 
+#ifdef FEATURE_SET
+#include "wlan_mlme_public_struct.h"
+#endif
+
 /*
  * If FW supports WMI_SERVICE_SCAN_CONFIG_PER_CHANNEL,
  * then channel_list may fill the upper 12 bits with channel flags,
@@ -1160,26 +1164,34 @@ send_vdev_nss_chain_params_cmd_tlv(wmi_unified_t wmi_handle,
 /**
  * send_vdev_stop_cmd_tlv() - send vdev stop command to fw
  * @wmi: wmi handle
- * @vdev_id: vdev id
+ * @params: VDEV stop params
  *
  * Return: QDF_STATUS_SUCCESS for success or error code
  */
 static QDF_STATUS send_vdev_stop_cmd_tlv(wmi_unified_t wmi,
-					uint8_t vdev_id)
+					 struct vdev_stop_params *params)
 {
 	wmi_vdev_stop_cmd_fixed_param *cmd;
 	wmi_buf_t buf;
 	int32_t len = sizeof(*cmd);
+	uint8_t *buf_ptr;
+	uint32_t vdev_id = params->vdev_id;
+
+	len += vdev_stop_mlo_params_size(params);
 
 	buf = wmi_buf_alloc(wmi, len);
 	if (!buf)
 		return QDF_STATUS_E_NOMEM;
 
-	cmd = (wmi_vdev_stop_cmd_fixed_param *) wmi_buf_data(buf);
+	buf_ptr = wmi_buf_data(buf);
+	cmd = (wmi_vdev_stop_cmd_fixed_param *)buf_ptr;
 	WMITLV_SET_HDR(&cmd->tlv_header,
 		       WMITLV_TAG_STRUC_wmi_vdev_stop_cmd_fixed_param,
 		       WMITLV_GET_STRUCT_TLVLEN(wmi_vdev_stop_cmd_fixed_param));
-	cmd->vdev_id = vdev_id;
+	cmd->vdev_id = params->vdev_id;
+	buf_ptr += sizeof(wmi_vdev_stop_cmd_fixed_param);
+	buf_ptr = vdev_stop_add_mlo_params(buf_ptr, params);
+
 	wmi_mtrace(WMI_VDEV_STOP_CMDID, cmd->vdev_id, 0);
 	if (wmi_unified_cmd_send(wmi, buf, len, WMI_VDEV_STOP_CMDID)) {
 		wmi_err("Failed to send vdev stop command");
@@ -10000,7 +10012,50 @@ static inline void copy_feature_set_info(uint32_t *feature_set_bitmap,
 	WMI_SET_MAX_TDLS_PEERS_SUPPORT(feature_set_bitmap,
 				       feature_set->max_tdls_peers);
 	WMI_SET_STA_DUAL_P2P_SUPPORT(feature_set_bitmap,
-				     feature_set->sta_dual_p2p_support);
+				     (feature_set->iface_combinations &
+				      MLME_IFACE_STA_DUAL_P2P_SUPPORT) > 0);
+	WMI_SET_STA_P2P_SUPPORT(feature_set_bitmap,
+				(feature_set->iface_combinations &
+				 MLME_IFACE_STA_P2P_SUPPORT) > 0);
+	WMI_SET_STA_SAP_SUPPORT(feature_set_bitmap,
+				(feature_set->iface_combinations &
+				 MLME_IFACE_STA_SAP_SUPPORT) > 0);
+	WMI_SET_STA_NAN_SUPPORT(feature_set_bitmap,
+				(feature_set->iface_combinations &
+				 MLME_IFACE_STA_NAN_SUPPORT) > 0);
+	WMI_SET_STA_TDLS_SUPPORT(feature_set_bitmap,
+				 (feature_set->iface_combinations &
+				  MLME_IFACE_STA_TDLS_SUPPORT) > 0);
+	WMI_SET_STA_SAP_P2P_SUPPORT(feature_set_bitmap,
+				    (feature_set->iface_combinations &
+				     MLME_IFACE_STA_SAP_P2P_SUPPORT) > 0);
+	WMI_SET_STA_SAP_NAN_SUPPORT(feature_set_bitmap,
+				    (feature_set->iface_combinations &
+				     MLME_IFACE_STA_SAP_NAN_SUPPORT) > 0);
+	WMI_SET_STA_P2P_NAN_SUPPORT(feature_set_bitmap,
+				    (feature_set->iface_combinations &
+				     MLME_IFACE_STA_P2P_NAN_SUPPORT) > 0);
+	WMI_SET_STA_P2P_TDLS_SUPPORT(feature_set_bitmap,
+				     (feature_set->iface_combinations &
+				      MLME_IFACE_STA_P2P_TDLS_SUPPORT) > 0);
+	WMI_SET_STA_SAP_TDLS_SUPPORT(feature_set_bitmap,
+				     (feature_set->iface_combinations &
+				      MLME_IFACE_STA_SAP_TDLS_SUPPORT) > 0);
+	WMI_SET_STA_NAN_TDLS_SUPPORT(feature_set_bitmap,
+				     (feature_set->iface_combinations &
+				      MLME_IFACE_STA_NAN_TDLS_SUPPORT) > 0);
+	WMI_SET_STA_SAP_P2P_TDLS_SUPPORT(feature_set_bitmap,
+				(feature_set->iface_combinations &
+				 MLME_IFACE_STA_SAP_P2P_TDLS_SUPPORT) > 0);
+	WMI_SET_STA_SAP_NAN_TDLS_SUPPORT(feature_set_bitmap,
+				(feature_set->iface_combinations &
+				 MLME_IFACE_STA_SAP_NAN_TDLS_SUPPORT) > 0);
+	WMI_SET_STA_P2P_P2P_TDLS_SUPPORT(feature_set_bitmap,
+				(feature_set->iface_combinations &
+				 MLME_IFACE_STA_P2P_P2P_TDLS_SUPPORT) > 0);
+	WMI_SET_STA_P2P_NAN_TDLS_SUPPORT(feature_set_bitmap,
+				(feature_set->iface_combinations &
+				 MLME_IFACE_STA_P2P_NAN_TDLS_SUPPORT) > 0);
 	WMI_SET_PEER_BIGDATA_GETBSSINFO_API_SUPPORT(
 				feature_set_bitmap,
 				feature_set->peer_bigdata_getbssinfo_support);
@@ -19361,6 +19416,8 @@ wlan_roam_fail_reason_code(uint16_t wmi_roam_fail_reason)
 		return ROAM_FAIL_REASON_NO_CAND_AP_FOUND_AND_FINAL_BMISS_SENT;
 	case WMI_ROAM_FAIL_REASON_CURR_AP_STILL_OK:
 		return ROAM_FAIL_REASON_CURR_AP_STILL_OK;
+	case WMI_ROAM_FAIL_REASON_SCAN_CANCEL:
+		return ROAM_FAIL_REASON_SCAN_CANCEL;
 	default:
 		return ROAM_FAIL_REASON_UNKNOWN;
 	}
@@ -20011,6 +20068,7 @@ extract_roam_result_stats_tlv(wmi_unified_t wmi_handle, void *evt_buf,
 	dst->present = true;
 	dst->status = src_data->roam_status;
 	dst->timestamp = src_data->timestamp;
+	dst->roam_abort_reason = src_data->roam_abort_reason;
 	if (src_data->roam_fail_reason != ROAM_SUCCESS)
 		dst->fail_reason =
 			wlan_roam_fail_reason_code(src_data->roam_fail_reason);

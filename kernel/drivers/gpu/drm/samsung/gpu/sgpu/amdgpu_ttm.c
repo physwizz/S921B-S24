@@ -738,28 +738,10 @@ static int amdgpu_ttm_tt_pin_userptr(struct ttm_device *bdev,
 {
 	struct amdgpu_device *adev = amdgpu_ttm_adev(bdev);
 	struct amdgpu_ttm_tt *gtt = (void *)ttm;
-	unsigned int gup_flags = FOLL_LONGTERM;
-	int r;
-	int pinned = 0;
-
 	int write = !(gtt->userflags & AMDGPU_GEM_USERPTR_READONLY);
 	enum dma_data_direction direction = write ?
 		DMA_BIDIRECTIONAL : DMA_TO_DEVICE;
-
-	if (write)
-		gup_flags |= FOLL_WRITE;
-
-	while (pinned < ttm->num_pages) {
-		uint64_t userptr = gtt->userptr + pinned * PAGE_SIZE;
-		unsigned num_pages = ttm->num_pages - pinned;
-		struct page **pages = ttm->pages + pinned;
-
-		r = pin_user_pages_fast(userptr, num_pages, gup_flags, pages);
-		if (r < 0)
-			goto unpin_pages;
-
-		pinned += r;
-	}
+	int r;
 
 	/* Allocate an SG array and squash pages into it */
 	r = sg_alloc_table_from_pages(ttm->sg, ttm->pages, ttm->num_pages, 0,
@@ -784,11 +766,6 @@ release_map:
 release_sg:
 	kfree(ttm->sg);
 	ttm->sg = NULL;
-unpin_pages:
-	if (ttm->pages) {
-		while (pinned--)
-			unpin_user_page(ttm->pages[pinned]);
-	}
 	return r;
 }
 
@@ -812,14 +789,6 @@ static void amdgpu_ttm_tt_unpin_userptr(struct ttm_device *bdev,
 	/* unmap the pages mapped to the device */
 	dma_unmap_sgtable(adev->dev, ttm->sg, direction, 0);
 	sg_free_table(ttm->sg);
-
-	if (ttm->pages) {
-		int i;
-
-		for (i = 0; i < ttm->num_pages; i++)
-			unpin_user_page(ttm->pages[i]);
-	}
-
 }
 
 static int amdgpu_ttm_gart_bind(struct ttm_buffer_object *tbo)
@@ -1024,6 +993,8 @@ static void amdgpu_ttm_backend_destroy(struct ttm_device *bdev,
 	if (gtt->usertask)
 		put_task_struct(gtt->usertask);
 
+	sgpu_tt_destroy_notify(ttm);
+
 	ttm_tt_fini(&gtt->ttm);
 	kfree(gtt);
 }
@@ -1188,6 +1159,14 @@ int amdgpu_ttm_tt_set_userptr(struct ttm_buffer_object *bo,
 			      uint64_t addr, uint32_t flags)
 {
 	struct amdgpu_ttm_tt *gtt;
+	struct ttm_tt *ttm;
+	int pinned = 0, r = 0;
+	unsigned int gup_flags = FOLL_LONGTERM;
+
+	if (unlikely(!addr)) {
+		/* bail out early if addr == 0 */
+		return -EINVAL;
+	}
 
 	if (!bo->ttm) {
 		/* TODO: We want a separate TTM object type for userptrs */
@@ -1200,6 +1179,29 @@ int amdgpu_ttm_tt_set_userptr(struct ttm_buffer_object *bo,
 	gtt->userptr = addr;
 	gtt->userflags = flags;
 
+	ttm = bo->ttm;
+
+	if (WARN_ON(!ttm->pages)) /* flag the dmabuf case */
+		goto out;
+
+	if (!(gtt->userflags & AMDGPU_GEM_USERPTR_READONLY))
+		gup_flags |= FOLL_WRITE;
+
+	while (pinned < ttm->num_pages) {
+		uint64_t userptr = gtt->userptr + pinned * PAGE_SIZE;
+		unsigned num_pages = ttm->num_pages - pinned;
+		struct page **pages = ttm->pages + pinned;
+
+		r = pin_user_pages_fast(userptr, num_pages, gup_flags, pages);
+		if (r < 0) {
+			while (pinned--)
+				unpin_user_page(ttm->pages[pinned]);
+			gtt->userptr = 0;
+			return r;
+		}
+		pinned += r;
+	}
+out:
 	if (gtt->usertask)
 		put_task_struct(gtt->usertask);
 	gtt->usertask = current->group_leader;
@@ -1432,6 +1434,15 @@ static int amdgpu_ttm_access_memory(struct ttm_buffer_object *bo,
 static void
 amdgpu_bo_delete_mem_notify(struct ttm_buffer_object *bo)
 {
+	struct ttm_tt *ttm = bo->ttm;
+	struct amdgpu_ttm_tt *gtt = (void *)ttm;
+
+	if (gtt && gtt->userptr && ttm->pages) {
+		unsigned long num_pages = ttm->num_pages;
+		while(num_pages--)
+			unpin_user_page(ttm->pages[num_pages]);
+	}
+
 	amdgpu_bo_move_notify(bo, false, NULL);
 }
 

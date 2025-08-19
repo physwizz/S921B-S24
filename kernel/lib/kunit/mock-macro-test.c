@@ -21,21 +21,21 @@ struct mock_macro_dummy_struct {
 
 DECLARE_STRUCT_CLASS_MOCK_PREREQS(mock_macro_dummy_struct);
 
-DEFINE_STRUCT_CLASS_MOCK(METHOD(one_param), CLASS(mock_macro_dummy_struct),
+DEFINE_STRUCT_CLASS_MOCK(METHOD(one_param), CLASS_NAME(mock_macro_dummy_struct),
 			 RETURNS(int),
 			 PARAMS(struct mock_macro_dummy_struct *));
 
-DEFINE_STRUCT_CLASS_MOCK(METHOD(two_param), CLASS(mock_macro_dummy_struct),
+DEFINE_STRUCT_CLASS_MOCK(METHOD(two_param), CLASS_NAME(mock_macro_dummy_struct),
 			 RETURNS(int),
 			 PARAMS(struct mock_macro_dummy_struct *, int));
 
 DEFINE_STRUCT_CLASS_MOCK_HANDLE_INDEX(METHOD(non_first_slot_param),
-			 CLASS(mock_macro_dummy_struct), HANDLE_INDEX(1),
+			 CLASS_NAME(mock_macro_dummy_struct), HANDLE_INDEX(1),
 			 RETURNS(int),
 			 PARAMS(int, struct mock_macro_dummy_struct *));
 
 DEFINE_STRUCT_CLASS_MOCK(METHOD(void_ptr_return),
-			 CLASS(mock_macro_dummy_struct),
+			 CLASS_NAME(mock_macro_dummy_struct),
 			 RETURNS(void *),
 			 PARAMS(struct mock_macro_dummy_struct *));
 

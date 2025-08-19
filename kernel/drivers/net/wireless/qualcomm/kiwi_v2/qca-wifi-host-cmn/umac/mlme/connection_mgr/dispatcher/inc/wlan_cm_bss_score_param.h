@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -369,6 +369,20 @@ static inline bool wlan_cm_is_eht_allowed_for_current_security(
 }
 #endif
 
+#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
+/**
+ * cm_print_candidate_list() - print candidate list
+ * @candidate_list: candidate list
+ *
+ * Return: None
+ */
+void cm_print_candidate_list(qdf_list_t *candidate_list);
+#else
+static inline void cm_print_candidate_list(qdf_list_t *candidate_list)
+{
+}
+#endif
+
 /**
  * wlan_cm_init_score_config() - Init score INI and config
  * @psoc: pointer to psoc object
@@ -560,6 +574,13 @@ void wlan_cm_get_check_assoc_disallowed(struct wlan_objmgr_psoc *psoc,
 					bool *value);
 #endif
 
+/**
+ * cm_get_entry() - Get bss scan entry by link mac address
+ * @scan_list: Scan entry list of bss candidates after filtering
+ * @link_addr: link mac address
+ *
+ * Return: Pointer to bss scan entry
+ */
 struct scan_cache_entry *cm_get_entry(qdf_list_t *scan_list,
-					struct qdf_mac_addr *link_addr);
+				      struct qdf_mac_addr *link_addr);
 #endif

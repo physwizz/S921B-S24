@@ -87,7 +87,7 @@
 	};
 */
 	chosen: chosen {
-		bootargs = "console=ram arm64.nopauth arm64.nomte nokaslr kasan=off printk.devkmsg=on clocksource=arch_sys_counter clk_ignore_unused firmware_class.path=/vendor/firmware rcupdate.rcu_expedited=1 allow_mismatched_32bit_el0 swiotlb=noforce loop.max_part=7 ttm.pages_limit=4194304 cpufreq.default_governor=energy_aware sgpu.mcbp=0";
+		bootargs = "console=ram arm64.nopauth arm64.nomte nokaslr kasan=off printk.devkmsg=on clocksource=arch_sys_counter clk_ignore_unused firmware_class.path=/vendor/firmware rcupdate.rcu_expedited=1 allow_mismatched_32bit_el0 swiotlb=noforce loop.max_part=7 ttm.pages_limit=4194304 cpufreq.default_governor=energy_aware sgpu.mcbp=0 pm_debug_messages sgpu.devfreq_polling_ms=32";
 		linux,initrd-start = <0x84000000>;
 		linux,initrd-end = <0x84FFFFFF>;
 	};

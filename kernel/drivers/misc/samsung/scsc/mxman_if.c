@@ -137,3 +137,25 @@ bool mxman_if_users_active(struct mxman *mxman)
 	return mxman_users_active(mxman);
 }
 EXPORT_SYMBOL(mxman_if_users_active);
+
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+bool mxman_if_warm_reset_in_progress(void)
+{
+	return mxman_warm_reset_in_progress();
+}
+EXPORT_SYMBOL(mxman_if_warm_reset_in_progress);
+#endif
+
+#ifdef CONFIG_HDM_WLBT_SUPPORT
+int mxman_if_get_hdm_wlan_support(void)
+{
+	return mxman_get_hdm_wlan_support();
+}
+EXPORT_SYMBOL(mxman_if_get_hdm_wlan_support);
+
+int mxman_if_get_hdm_bt_support(void)
+{
+	return mxman_get_hdm_bt_support();
+}
+EXPORT_SYMBOL(mxman_if_get_hdm_bt_support);
+#endif

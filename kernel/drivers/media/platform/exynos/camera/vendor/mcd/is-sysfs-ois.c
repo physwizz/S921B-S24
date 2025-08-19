@@ -145,7 +145,145 @@ bool read_ois_version(void)
 
 	return ret;
 }
+#if defined(OIS_MGLESS)
+ssize_t write_ois_mgless(char *buf)
+{
+	char mgless_buffer[90] = {0, };
+	int mgless_y = 0, mgless_x = 0;
+	int module_num = 1;
+	int buf_offset = 0, i = 0;
+	struct is_ois_info *ois_pinfo = NULL;
 
+	is_ois_get_phone_version(&ois_pinfo);
+
+#ifdef CAMERA_2ND_OIS
+	module_num = 2;
+#endif
+#ifdef CAMERA_3RD_OIS
+	module_num = 3;
+#endif
+
+	for (i = 0; i < module_num; i++) {
+		if (buf_offset > 0)
+			buf_offset += sprintf(mgless_buffer + buf_offset, ", ");
+
+		mgless_x = ois_pinfo->mgless[i * 2];
+		mgless_y = ois_pinfo->mgless[i * 2 + 1];
+
+		buf_offset += sprintf(mgless_buffer + buf_offset, "%d, %d", mgless_x, mgless_y);
+	}
+	info("%s result =  %s\n", __func__, mgless_buffer);
+
+	return sprintf(buf, "%s\n", mgless_buffer);
+}
+
+static ssize_t ois_mgless_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+
+{
+	struct is_core *core = is_get_is_core();
+	struct is_ois_info *ois_pinfo = NULL;
+
+	is_ois_get_phone_version(&ois_pinfo);
+	memset(ois_pinfo->mgless, 0, sizeof(ois_pinfo->mgless));
+
+	if (check_ois_power == false)
+		return write_ois_mgless(buf);
+
+	is_ois_mgless(core);
+
+	return write_ois_mgless(buf);
+}
+static DEVICE_ATTR_RO(ois_mgless);
+
+inline char *autotest_result_passfail(bool result)
+{
+	if (result)
+		return "pass";
+	else
+		return "fail";
+}
+
+inline int autotest_sin_val(bool result, int val)
+{
+	if (result)
+		return 0;
+	else
+		return val;
+}
+
+static ssize_t autotest_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+
+{
+	struct is_core *core = is_get_is_core();
+	bool x_result[3] = {false, };
+	bool y_result[3] = {false, };
+	bool xy2_result[3] = {false, };
+	int sin_x[3] = {0, };
+	int sin_y[3] = {0, };
+	int sin_xy2[3] = {0, };
+	int module_num = 1, i = 0;
+	int buf_offset = 0;
+	char tmp_buffer[90] = {0, };
+	bool mgless_x = false, mgless_y = false;
+	struct is_ois_info *ois_pinfo = NULL;
+
+	is_ois_get_phone_version(&ois_pinfo);
+#ifdef CAMERA_2ND_OIS
+	module_num = 2;
+#endif
+#ifdef CAMERA_3RD_OIS
+	module_num = 3;
+#endif
+
+	if (check_ois_power == false) {
+		err("%s OIS power is not enabled.", __func__);
+		for (i = 0; i < module_num; i++) {
+			if (buf_offset > 0)
+				buf_offset += sprintf(tmp_buffer + buf_offset, ",");
+			buf_offset += sprintf(tmp_buffer + buf_offset, "%s,%d,%s,%d", "fail", -1, "fail", -1);
+		}
+		info("%s result =  %s\n", __func__, tmp_buffer);
+		return sprintf(buf, "%s\n", tmp_buffer);
+	}
+
+	is_ois_auto_test(core, ois_threshold, x_result, y_result, sin_x, sin_y,
+		xy2_result, sin_xy2);
+
+	buf_offset = 0;
+	for (i = 0; i < module_num; i++) {
+		if (buf_offset > 0)
+			buf_offset += sprintf(tmp_buffer + buf_offset, ",");
+
+		buf_offset += sprintf(tmp_buffer + buf_offset, "%s,%d",
+				autotest_result_passfail(x_result[i]), autotest_sin_val(x_result[i], sin_x[i]));
+
+		mgless_x = ois_pinfo->mgless[i * 2];
+		mgless_y = ois_pinfo->mgless[i * 2 + 1];
+		if (mgless_x || mgless_y) {
+			if (mgless_x)
+				buf_offset += sprintf(tmp_buffer + buf_offset, ",%s,%d",
+					autotest_result_passfail(xy2_result[i]), autotest_sin_val(xy2_result[i], sin_xy2[i]));
+			else
+				buf_offset += sprintf(tmp_buffer + buf_offset, ",pass,N");
+		}
+
+		buf_offset += sprintf(tmp_buffer + buf_offset, ",%s,%d",
+				autotest_result_passfail(y_result[i]), autotest_sin_val(y_result[i], sin_y[i]));
+		if (mgless_x || mgless_y) {
+			if (mgless_y)
+				buf_offset += sprintf(tmp_buffer + buf_offset, ",%s,%d",
+					autotest_result_passfail(xy2_result[i]), autotest_sin_val(xy2_result[i], sin_xy2[i]));
+			else
+				buf_offset += sprintf(tmp_buffer + buf_offset, ",pass,N");
+		}
+	}
+	info("%s result =  %s\n", __func__, tmp_buffer);
+
+	return sprintf(buf, "%s\n", tmp_buffer);
+}
+#else
 static ssize_t autotest_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 
@@ -221,6 +359,7 @@ static ssize_t autotest_show(struct device *dev,
 
 	return sprintf(buf, "%s\n", wide_buffer);
 }
+#endif
 static ssize_t autotest_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 
@@ -1008,6 +1147,9 @@ static ssize_t selftest_show(struct device *dev,
 static DEVICE_ATTR_RO(selftest);
 
 static struct attribute *is_sysfs_attr_entries_ois[] = {
+#if defined(OIS_MGLESS)
+	&dev_attr_ois_mgless.attr,
+#endif
 	&dev_attr_autotest.attr,
 	&dev_attr_calibrationtest.attr,
 	&dev_attr_check_cross_talk.attr,

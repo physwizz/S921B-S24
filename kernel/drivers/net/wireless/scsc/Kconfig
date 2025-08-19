@@ -32,15 +32,6 @@ config SCSC_WLAN_SG
 	help
 	  This option enables scatter-gather and GSO feature
 
-config SCSC_WLAN_TX_ZERO_COPY
-	bool "Enable zero copy in Tx"
-        depends on SOC_S5E9925
-        depends on SCSC_WLAN
-        depends on SCSC_WLAN_HIP5
-	default n
-	help
-	  This option enables the driver to send kernel SKBs to Firmware
-
 config SCSC_WLAN_RX_NAPI
 	bool "Enable use of net device napi rx polling api"
 	default y
@@ -348,7 +339,7 @@ config SCSC_WLAN_DEBUG_MLME_WORK_STRUCT
 config SCSC_WLAN_TX_API
         bool "Enable Tx APIs"
         default y
-        depends on SOC_S5E9925 || SOC_S5E9935 || SOC_S5E9945 || SOC_S5E5515 || SOC_S5E8535 || SOC_S5E8835 || SOC_S5E8845
+        depends on SOC_S5E9925 || SOC_S5E9935 || SOC_S5E9945 || SOC_S5E5515 || SOC_S5E8535 || SOC_S5E8835 || SOC_S5E8845 || SOC_S5E5535
         select SCSC_WLAN_LOAD_BALANCE_MANAGER
         help
         This option enables Tx APIs.

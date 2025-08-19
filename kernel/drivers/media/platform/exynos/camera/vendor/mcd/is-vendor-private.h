@@ -39,6 +39,8 @@ struct is_vendor_private {
 	u32 supported_camera_ids[SUPPORTED_CAMERA_IDS_MAX];
 	u32 max_supported_camera;
 
+	const char *supported_camera_ids_ext;
+
 	u32 is_vendor_sensor_count;
 	u32 ois_sensor_index;
 	u32 mcu_sensor_index;

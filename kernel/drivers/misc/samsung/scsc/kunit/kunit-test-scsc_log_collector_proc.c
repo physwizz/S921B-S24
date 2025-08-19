@@ -1,6 +1,6 @@
 #include <kunit/test.h>
 
-#include "../scsc_log_collector_proc.h"
+#include "../logs/scsc_log_collector_proc.h"
 
 extern int (*fp_log_collect_procfs_open_file_generic)(struct inode *inode, struct file *file);
 extern ssize_t (*fp_log_collect_procfs_trigger_collection_read)(struct file *file, char __user *user_buf, size_t count, loff_t *ppos);

@@ -32,9 +32,10 @@ void dp_hex_dump(void __iomem *base_addr, int size)
 	}
 }
 
+static void __iomem *pwr_regs;
+
 int dp_hsi0_domain_power_check(void)
 {
-	static void __iomem *pwr_regs = NULL;
 	int ret = 1;
 
 	if (pwr_regs == NULL) {
@@ -57,12 +58,23 @@ int dp_hsi0_domain_power_check(void)
 	return ret;
 }
 
+void dp_print_hsi0_domain_power(void)
+{
+	if (pwr_regs) {
+		pr_info("HSI0_CONFIGURATION[0x1286_2000](0x%08x)\n", readl(pwr_regs));
+		pr_info("HSI0_STATUS	   [0x1286_2004](0x%08x)\n", readl(pwr_regs + 0x4));
+		pr_info("HSI0_STATES       [0x1286_2008](0x%08x)\n", readl(pwr_regs + 0x8));
+		pr_info("HSI0_CTRL         [0x1286_2010](0x%08x)\n", readl(pwr_regs + 0x10));
+		pr_info("HSI0_OUT          [0x1286_2020](0x%08x)\n", readl(pwr_regs + 0x20));
+	} else
+		pr_info("HSI0_PWR SFR is not remapped\n");
+}
+
+static void __iomem *clk_regs1;
+static void __iomem *clk_regs2;
+static void __iomem *clk_regs3;
 void dp_hsi0_clk_check(void)
 {
-	static void __iomem *clk_regs1 = NULL;
-	static void __iomem *clk_regs2 = NULL;
-	static void __iomem *clk_regs3 = NULL;
-
 	if (clk_regs1 == NULL) {
 		clk_regs1 = ioremap((phys_addr_t)0x17800000 + 0x0620, 0x10);
 		if (!clk_regs1) {
@@ -97,6 +109,26 @@ void dp_hsi0_clk_check(void)
 
 	pr_info("CLK_CON_DIV_CLKCMU_HSI0_DPOSC[0x22b2_18a0](0x%08x)\n", readl(clk_regs3));
 }
+
+void dp_print_hsi0_clk(void)
+{
+	if (clk_regs1) {
+		pr_info("PLL_CON0_MUX_CLKCMU_HSI0_DPOSC_USER[0x1780_0620](0x%08x)\n", readl(clk_regs1));
+		pr_info("PLL_CON1_MUX_CLKCMU_HSI0_DPOSC_USER[0x1780_0624](0x%08x)\n", readl(clk_regs1 + 0x4));
+	} else
+		pr_info("PLL_CON0_MUX_CLKCMU_HSI0_DPOSC_USER[0x1780_0620] is not remapped\n");
+
+	if (clk_regs2)
+		pr_info("CLK_CON_MUX_CLKCMU_HSI0_DPOSC[0x22b2_10c0](0x%08x)\n", readl(clk_regs2));
+	else
+		pr_info("CLK_CON_MUX_CLKCMU_HSI0_DPOSC[0x22b2_10c0] is not remapped\n");
+
+	if (clk_regs3)
+		pr_info("CLK_CON_DIV_CLKCMU_HSI0_DPOSC[0x22b2_18a0](0x%08x)\n", readl(clk_regs3));
+	else
+		pr_info("CLK_CON_DIV_CLKCMU_HSI0_DPOSC[0x22b2_18a0] is not remapped\n");
+}
+
 
 static u32 phy_eq_hbr0_1[4][4][5] = {
 	/* {eq main, eq pre, eq post, eq vswing lvl, rboost en} */

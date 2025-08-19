@@ -794,6 +794,16 @@ static int _is_queue_buffer_tag(dma_addr_t saddr[], dma_addr_t taddr[],
 		}
 		*hw_planes = planes * 2;
 		break;
+#if PKV_VER_GE(6, 0, 0)
+	case V4L2_PIX_FMT_P010:
+		for (i = 0; i < planes; i++) {
+			j = i * 2;
+			taddr[j] = saddr[i];
+			taddr[j + 1] = taddr[j] + (width * 2) * height;
+		}
+		*hw_planes = planes * 2;
+		break;
+#endif
 	case V4L2_PIX_FMT_YVU420M:
 		for (i = 0; i < planes; i += 3) {
 			taddr[i] = saddr[i];

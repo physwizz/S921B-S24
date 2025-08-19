@@ -24,17 +24,20 @@
 #include "debug.h"
 #include "mgt.h"
 
+#ifdef CONFIG_SCSC_WLAN_TX_API
+#include "tx_api.h"
+#endif
 #ifdef CONFIG_SCSC_WLAN_HOST_DPD
 #include "dpd_mmap.h"
 #endif
 
-#ifdef CONFIG_SCSC_WLAN_TX_ZERO_COPY
 struct hip5_tx_dma_desc {
 	u16           len;
 	u16           offset;
 	dma_addr_t    skb_dma_addr;
+	mbulk_colour  colour;
+	struct sk_buff *skb;
 };
-#endif
 
 #if defined(CONFIG_SCSC_PCIE_PAEAN_X86) || defined(CONFIG_SOC_S5E9925)
 static bool hip5_scoreboard_in_ramrp = false;
@@ -43,6 +46,18 @@ static bool hip5_scoreboard_in_ramrp = false;
 #endif
 module_param(hip5_scoreboard_in_ramrp, bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(hip5_scoreboard_in_ramrp, "scoreboard location (default: Y in RAMRP, N: in DRAM)");
+
+#if defined(CONFIG_SCSC_BB_REDWOOD)
+static bool hip5_tx_zero_copy = true;
+#else
+static bool hip5_tx_zero_copy = false;
+#endif
+module_param(hip5_tx_zero_copy, bool, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(hip5_tx_zero_copy, "Tx zero copy (default: enable)");
+
+static uint hip5_tx_zero_copy_tx_slots = 2048;
+module_param(hip5_tx_zero_copy_tx_slots, int, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(hip5_tx_zero_copy_tx_slots, "num of TX buffers in zero copy mode (max: 2048)");
 
 #if IS_ENABLED(CONFIG_SCSC_LOGRING)
 static bool hip4_dynamic_logging = true;
@@ -139,6 +154,20 @@ static enum hip5_hip_q_conf slsi_hip_vif_to_q_mapping(u8 vif_index)
 	default:
 		return HIP5_MIF_Q_FH_DAT1;
 	}
+}
+
+static bool is_fw_config_a55(void)
+{
+	char fw_build_id[SCSC_LOG_FW_VERSION_SIZE] = {0};
+	char *p;
+
+	mxman_get_fw_version(fw_build_id, SCSC_LOG_FW_VERSION_SIZE);
+	p = strstr(fw_build_id, "a55");
+	if (p) {
+		/* using a55 config Firmware */
+		return true;
+	}
+	return false;
 }
 
 /* Update scoreboard index */
@@ -920,11 +949,7 @@ static int hip5_q_add_bd_entry(struct slsi_hip *hip, enum hip5_hip_q_conf conf, 
 	struct hip_priv         *hip_priv = hip->hip_priv;
 	u16                      idx_w;
 	u16                      idx_r;
-#ifdef CONFIG_SCSC_WLAN_TX_ZERO_COPY
-	struct hip5_tx_dma_desc *tx_desc = m_ptr;
-#else
 	struct mbulk            *m = m_ptr;
-#endif
 	struct hip5_hip_entry *hip5_q_entry = NULL;
 
 	/* Read the current q write pointer */
@@ -956,18 +981,6 @@ static int hip5_q_add_bd_entry(struct slsi_hip *hip, enum hip5_hip_q_conf conf, 
 	hip5_q_entry->flag = 0;	 								/* Bit0: Chain HEAD, Bit1: Chain continue, Bit2: End of chain; No chaining in from-host */
 	hip5_q_entry->sig_len = fapi_sig_size(ma_unitdata_req);	/* 0 or signal length defined in FAPI, 0: signal omitted */
 
-#ifdef CONFIG_SCSC_WLAN_TX_ZERO_COPY
-	hip5_q_entry->data_len = tx_desc->len;
-
-	/* bulk descriptor	*/
-	hip5_q_entry->bd[0].buf_addr = ((tx_desc->skb_dma_addr >> 8));
-	hip5_q_entry->bd[0].buf_sz = HIP5_DAT_MBULK_SIZE;
-	hip5_q_entry->bd[0].extra = 0;
-	hip5_q_entry->bd[0].flag = 0;
-	hip5_q_entry->bd[0].extra = (1 << 1) | (1 << 3); /* addr_format: 1, Owned by Host: 1 */
-	hip5_q_entry->bd[0].len = tx_desc->len;
-	hip5_q_entry->bd[0].offset = tx_desc->offset;
-#else
 	hip5_q_entry->data_len = m->len;
 
 	/* bulk descriptor	*/
@@ -977,7 +990,6 @@ static int hip5_q_add_bd_entry(struct slsi_hip *hip, enum hip5_hip_q_conf conf, 
 	hip5_q_entry->bd[0].flag = m->flag;
 	hip5_q_entry->bd[0].len = m->len;
 	hip5_q_entry->bd[0].offset = m->head + 20;
-#endif
 
 	/* FAPI signal */
 	/* the size of MA-unitdata.request signal is 34 bytes.
@@ -1309,6 +1321,31 @@ int hip5_fb_mx_claim_complete_cb(void *service, void *data)
 }
 #endif
 
+static mbulk_colour hip5_opt_zero_copy_free_buffer(struct hip_priv *hip_priv, u32 addr)
+{
+	u16 i;
+
+	if (!addr) {
+		SLSI_ERR_NODEV("addr is NULL\n");
+		return 0;
+	}
+
+	/* find the entry in SKB look-up table */
+	for (i = 0; i < MAX_NUM; i++)
+		if (hip_priv->tx_skb_table[i].in_use &&
+			hip_priv->tx_skb_table[i].skb_dma_addr == addr)
+			break;
+
+	if (i < MAX_NUM) {
+		consume_skb(hip_priv->tx_skb_table[i].skb);
+		hip_priv->tx_skb_table[i].in_use = false;
+		hip_priv->tx_skb_free_cnt++;
+		SCSC_HIP4_SAMPLER_MBULK(hip_priv->minor, (hip_priv->tx_skb_free_cnt & 0xFF00) >> 8, (hip_priv->tx_skb_free_cnt & 0xFF), MBULK_POOL_ID_DATA, hip5_tx_zero_copy_tx_slots);
+		return hip_priv->tx_skb_table[i].colour;
+	}
+	return 0;
+}
+
 static void hip5_tl_fb(unsigned long data)
 {
 	struct slsi_hip		*hip = (void *)data;
@@ -1319,14 +1356,9 @@ static void hip5_tl_fb(unsigned long data)
 	u16						idx_r;
 	u16						idx_w;
 	mbulk_colour            colour = 0;
-#ifdef CONFIG_SCSC_WLAN_TX_ZERO_COPY
-	u16                     i;
-	u32 					skb_dma_addr;
-#else
 	struct mbulk            *m;
 	scsc_mifram_ref			ref;
 	void                    *mem;
-#endif
 
 	if (!hip_priv || !hip_priv->hip) {
 		SLSI_ERR_NODEV("hip_priv or hip_priv->hip is Null\n");
@@ -1347,12 +1379,13 @@ static void hip5_tl_fb(unsigned long data)
 		return;
 	}
 
-	spin_lock_bh(&hip_priv->rx_lock);
+	/* synchronize with TX as it shares resources e.g tx_skb_table */
+	spin_lock_bh(&hip_priv->tx_lock);
 	service = sdev->service;
 #if defined(CONFIG_SCSC_PCIE_CHIP)
 	if (!hip_priv->mx_pci_claim_fb) {
 		if (scsc_mx_service_claim_deferred(sdev->service, hip5_fb_mx_claim_complete_cb, (void *)hip_priv, WLAN_RB)) {
-			spin_unlock_bh(&hip_priv->rx_lock);
+			spin_unlock_bh(&hip_priv->tx_lock);
 			return;
 		}
 		hip_priv->mx_pci_claim_fb = true;}
@@ -1372,7 +1405,7 @@ static void hip5_tl_fb(unsigned long data)
 		}
 #endif
 		bh_end_fb = ktime_get();
-		spin_unlock_bh(&hip_priv->rx_lock);
+		spin_unlock_bh(&hip_priv->tx_lock);
 		return;
 	}
 
@@ -1381,44 +1414,27 @@ static void hip5_tl_fb(unsigned long data)
 		SCSC_HIP4_SAMPLER_Q(hip_priv->minor, HIP5_MIF_Q_FH_RFBC, widx, idx_w, 1);
 	}
 	while (idx_r != idx_w) {
-#ifdef CONFIG_SCSC_WLAN_TX_ZERO_COPY
-		skb_dma_addr = ctrl->q[HIP5_MIF_Q_FH_RFBC].array[idx_r];
-
-		if (!skb_dma_addr) {
-			SLSI_ERR_NODEV("FB: skb is NULL\n");
-			goto consume_fb_mbulk;
-		}
-
-		/* find the entry in SKB look-up table */
-		for (i = 0; i < MAX_NUM; i++)
-			if (hip_priv->tx_skb_table[i].in_use &&
-				hip_priv->tx_skb_table[i].skb_dma_addr == skb_dma_addr)
-				break;
-
-		if (i < MAX_NUM) {
-			/* get to index from SKB address */
-			colour = hip_priv->tx_skb_table[i].colour;
-			slsi_hip_tx_done(sdev, colour, (idx_r + 1 & (MAX_NUM - 1)) != idx_w);
-			consume_skb(hip_priv->tx_skb_table[i].skb);
-			hip_priv->tx_skb_table[i].in_use = false;
-		}
-#else
 		ref = ctrl->q[HIP5_MIF_Q_FH_RFBC].array[idx_r];
 #ifdef CONFIG_SCSC_WLAN_HIP5_PROFILING
 		SCSC_HIP4_SAMPLER_QREF(hip_priv->minor, ref, HIP5_MIF_Q_FH_RFBC);
 #endif
-		mem = scsc_mx_service_mif_addr_to_ptr(service, ref);
-		m = (struct mbulk *)mem;
+		if (ref & 0x1) {
+			colour = hip5_opt_zero_copy_free_buffer(hip_priv, ref);
+		} else {
+			mem = scsc_mx_service_mif_addr_to_ptr(service, ref);
+			m = (struct mbulk *)mem;
 
-		if (!m) {
-			SLSI_ERR_NODEV("FB: Mbulk is NULL\n");
-			goto consume_fb_mbulk;
+			if (!m) {
+				SLSI_ERR_NODEV("FB: Mbulk is NULL\n");
+				goto consume_fb_mbulk;
+			}
+
+			/* Account ONLY for data RFB
+			 * If the returned mbulk is for control pool, the call below returns 0
+			 */
+			colour = mbulk_get_colour(MBULK_POOL_ID_DATA, m);
+			mbulk_free_virt_host(m);
 		}
-
-		/* Account ONLY for data RFB
-		 * If the returned mbulk is for control pool, the call below returns 0
-		 */
-		colour = mbulk_get_colour(MBULK_POOL_ID_DATA, m);
 
 		/* Ignore return value */
 #ifdef CONFIG_SCSC_WLAN_TX_API
@@ -1429,8 +1445,6 @@ static void hip5_tl_fb(unsigned long data)
 					 SLSI_MBULK_COLOUR_GET_VIF(colour),
 					 SLSI_MBULK_COLOUR_GET_PEER_IDX(colour),
 					 SLSI_MBULK_COLOUR_GET_AC(colour));
-#endif
-		mbulk_free_virt_host(m);
 #endif
 consume_fb_mbulk:
 		/* Increase index */
@@ -1450,7 +1464,7 @@ consume_fb_mbulk:
 		scsc_mx_service_release(WLAN_RB);}
 #endif
 	bh_end_fb = ktime_get();
-	spin_unlock_bh(&hip_priv->rx_lock);
+	spin_unlock_bh(&hip_priv->tx_lock);
 }
 
 static void hip5_irq_handler_fb(int irq, void *data)
@@ -1860,7 +1874,7 @@ static int slsi_hip_init_control_table(struct slsi_dev *sdev, struct slsi_hip *h
 #if defined(CONFIG_SCSC_PCIE_PAEAN_X86) || defined(CONFIG_SOC_S5E9925)
 	/* Initialize scoreboard */
 	if (hip5_scoreboard_in_ramrp) {
-		hip->hip_priv->scbrd_ramrp_base = scsc_mx_service_get_scoreboard(sdev->service);
+		hip->hip_priv->scbrd_ramrp_base = scsc_mx_service_get_ramrp_ptr(sdev->service);
 
 		/* let firmware know scoreboard is in RAMRP, by setting the LSB of scoreboard location field */
 		scrb_ref = scrb_ref | 0x1;
@@ -1980,9 +1994,15 @@ static int slsi_hip_init_control_table(struct slsi_dev *sdev, struct slsi_hip *h
 	hip_control->config_v5.config_len = sizeof(struct hip5_hip_config_version_2);
 	hip_control->config_v5.host_cache_line = 64;
 	hip_control->config_v5.host_buf_loc = hip->hip_ref + HIP5_WLAN_TX_OFFSET;
-	hip_control->config_v5.host_buf_sz	= HIP5_WLAN_TX_SIZE;
-	hip_control->config_v5.fw_buf_loc	= hip->hip_ref + HIP5_WLAN_RX_OFFSET;
-	hip_control->config_v5.fw_buf_sz	= HIP5_WLAN_RX_SIZE;
+	if (hip5_tx_zero_copy) {
+		hip_control->config_v5.host_buf_sz	= HIP5_WLAN_ZERO_COPY_TX_SIZE;
+		hip_control->config_v5.fw_buf_loc	= hip->hip_ref + HIP5_WLAN_ZERO_COPY_RX_OFFSET;
+		hip_control->config_v5.fw_buf_sz	= HIP5_WLAN_ZERO_COPY_RX_SIZE;
+	} else {
+		hip_control->config_v5.host_buf_sz	= HIP5_WLAN_TX_SIZE;
+		hip_control->config_v5.fw_buf_loc	= hip->hip_ref + HIP5_WLAN_RX_OFFSET;
+		hip_control->config_v5.fw_buf_sz	= HIP5_WLAN_RX_SIZE;
+	}
 	hip_control->config_v5.log_config_loc = 0;
 
 	if (hip5_scoreboard_in_ramrp) {
@@ -2127,18 +2147,41 @@ int slsi_hip_init(struct slsi_hip *hip)
 	 */
 	atomic_set(&hip->hip_priv->closing, 1);
 
-	SLSI_INFO_NODEV("HIP5_WLAN_CONFIG_SIZE (%d)\n", HIP5_WLAN_CONFIG_SIZE);
+	/* check if TX zero copy can be supported? */
+	if (hip5_tx_zero_copy) {
+		hip->hip_priv->tx_skb_free_cnt = hip5_tx_zero_copy_tx_slots;
+		if (dma_set_mask_and_coherent(sdev->dev, DMA_BIT_MASK(64)) != 0) {
+			SLSI_ERR(sdev, "failed to set DMA for dev; default to non-zero copy\n");
+			hip5_tx_zero_copy = false;
+		} else {
+			/* Setting of device for DMA is successful. Now check if the Firmware
+			 * variant supports TX zero copy?
+			 * For now only A55 variant of firmware supports zero copy.
+			 * Enable only if A55 is found in build string of Firmware
+			 */
+			if (!is_fw_config_a55())
+				hip5_tx_zero_copy = false;
+		}
+	}
+
+	SLSI_INFO_NODEV("HIP5_WLAN_CONFIG_SIZE (%d/%d)\n", sizeof(struct hip5_hip_control), HIP5_WLAN_CONFIG_SIZE);
 	SLSI_INFO_NODEV("HIP5_WLAN_MIB_SIZE (%d)\n", HIP5_WLAN_MIB_SIZE);
-	SLSI_INFO_NODEV("HIP5_WLAN_TX_DAT_SIZE (%d)\n", HIP5_WLAN_TX_DAT_SIZE);
-	SLSI_INFO_NODEV("HIP5_WLAN_TX_CTL_SIZE (%d)\n", HIP5_WLAN_TX_CTL_SIZE);
-	SLSI_INFO_NODEV("HIP5_WLAN_RX_SIZE (%d)\n", HIP5_WLAN_RX_SIZE);
 #ifdef CONFIG_SCSC_WLAN_HOST_DPD
 	SLSI_INFO_NODEV("HIP5_WLAN_DPD_BUF_SIZE (%d)\n", HIP5_WLAN_DPD_BUF_SIZE);
 #endif
-	SLSI_INFO_NODEV("HIP5_WLAN_TOTAL_MEM (%d)\n", HIP5_WLAN_TOTAL_MEM);
-	SLSI_INFO_NODEV("HIP5_TX_DAT_SLOTS (%d)\n", HIP5_DAT_SLOTS);
-	SLSI_INFO_NODEV("HIP5_TX_CTL_SLOTS (%d)\n", HIP5_CTL_SLOTS);
-	SLSI_INFO_NODEV("HIP5: size of HIP config area %d\n", sizeof(struct hip5_hip_control));
+	SLSI_INFO_NODEV("HIP5_WLAN_TX_CTL_SIZE (%d)\n", HIP5_WLAN_TX_CTRL_SIZE);
+	SLSI_INFO_NODEV("HIP5_WLAN_TX_CTL_SLOTS (%d)\n", HIP5_CTL_SLOTS);
+	if (hip5_tx_zero_copy) {
+		SLSI_INFO_NODEV("HIP5_WLAN_ZERO_COPY_TX_DAT_SIZE (%d)\n", HIP5_WLAN_ZERO_COPY_TX_DATA_SIZE);
+		SLSI_INFO_NODEV("HIP5_WLAN_ZERO_COPY_TX_DAT_SLOTS (%d)\n", hip5_tx_zero_copy_tx_slots);
+		SLSI_INFO_NODEV("HIP5_WLAN_ZERO_COPY_RX_SIZE (%d)\n", HIP5_WLAN_ZERO_COPY_RX_SIZE);
+		SLSI_INFO_NODEV("HIP5_WLAN_ZERO_COPY_TOTAL_MEM (%d)\n", HIP5_WLAN_ZERO_COPY_TOTAL_MEM);
+	} else {
+		SLSI_INFO_NODEV("HIP5_WLAN_TX_DAT_SIZE (%d)\n", HIP5_WLAN_TX_DATA_SIZE);
+		SLSI_INFO_NODEV("HIP5_WLAN_RX_SIZE (%d)\n", HIP5_WLAN_RX_SIZE);
+		SLSI_INFO_NODEV("HIP5_WLAN_TOTAL_MEM (%d)\n", HIP5_WLAN_TOTAL_MEM);
+		SLSI_INFO_NODEV("HIP5_TX_DAT_SLOTS (%d)\n", HIP5_DAT_SLOTS);
+	}
 
 	hip->hip_priv->minor = hip4_sampler_register_hip(sdev->maxwell_core);
 	if (hip->hip_priv->minor < SCSC_HIP4_INTERFACES) {
@@ -2161,33 +2204,49 @@ int slsi_hip_init(struct slsi_hip *hip)
 	hip_ptr = scsc_mx_service_mif_addr_to_ptr(service, hip->hip_ref);
 
 #ifdef CONFIG_SCSC_WLAN_DEBUG
-	/* Configure mbulk allocator - Data QUEUES */
-	ret = mbulk_pool_add(MBULK_POOL_ID_DATA, hip_ptr + HIP5_WLAN_TX_DAT_OFFSET,
-			     hip_ptr + HIP5_WLAN_TX_DAT_OFFSET + HIP5_WLAN_TX_DAT_SIZE,
-			     (HIP5_WLAN_TX_DAT_SIZE / HIP5_DAT_SLOTS) - sizeof(struct mbulk), 5,
-			     hip->hip_priv->minor);
+	if (hip5_tx_zero_copy) {
+		/* Configure mbulk allocator - Data QUEUES */
+		ret = mbulk_pool_add(MBULK_POOL_ID_DATA, hip_ptr + HIP5_WLAN_TX_DATA_OFFSET,
+				     hip_ptr + HIP5_WLAN_TX_DATA_OFFSET + HIP5_WLAN_ZERO_COPY_TX_DATA_SIZE,
+				     (HIP5_DAT_MBULK_SIZE - sizeof(struct mbulk), 5,
+				     hip->hip_priv->minor);
+	} else {
+		/* Configure mbulk allocator - Data QUEUES */
+		ret = mbulk_pool_add(MBULK_POOL_ID_DATA, hip_ptr + HIP5_WLAN_TX_DATA_OFFSET,
+				     hip_ptr + HIP5_WLAN_TX_DATA_OFFSET + HIP5_WLAN_TX_DATA_SIZE,
+				     (HIP5_WLAN_TX_DATA_SIZE / HIP5_DAT_SLOTS) - sizeof(struct mbulk), 5,
+				     hip->hip_priv->minor);
+	}
+
 	if (ret)
 		return ret;
 
 	/* Configure mbulk allocator - Control QUEUES */
-	ret = mbulk_pool_add(MBULK_POOL_ID_CTRL, hip_ptr + HIP5_WLAN_TX_CTL_OFFSET,
-			     hip_ptr + HIP5_WLAN_TX_CTL_OFFSET + HIP5_WLAN_TX_CTL_SIZE,
-			     (HIP5_WLAN_TX_CTL_SIZE / HIP5_CTL_SLOTS) - sizeof(struct mbulk), 0,
+	ret = mbulk_pool_add(MBULK_POOL_ID_CTRL, hip_ptr + HIP5_WLAN_TX_CTRL_OFFSET,
+			     hip_ptr + HIP5_WLAN_TX_CTRL_OFFSET + HIP5_WLAN_TX_CTRL_SIZE,
+			     (HIP5_WLAN_TX_CTRL_SIZE / HIP5_CTL_SLOTS) - sizeof(struct mbulk), 0,
 			     hip->hip_priv->minor);
 	if (ret)
 		return ret;
 #else
-	/* Configure mbulk allocator - Data QUEUES */
-	ret = mbulk_pool_add(MBULK_POOL_ID_DATA, hip_ptr + HIP5_WLAN_TX_DAT_OFFSET,
-			     hip_ptr + HIP5_WLAN_TX_DAT_OFFSET + HIP5_WLAN_TX_DAT_SIZE,
-			     (HIP5_WLAN_TX_DAT_SIZE / HIP5_DAT_SLOTS) - sizeof(struct mbulk), 5);
+	if (hip5_tx_zero_copy) {
+		/* Configure mbulk allocator - Data QUEUES */
+		ret = mbulk_pool_add(MBULK_POOL_ID_DATA, hip_ptr + HIP5_WLAN_TX_DATA_OFFSET,
+				     hip_ptr + HIP5_WLAN_TX_DATA_OFFSET + HIP5_WLAN_ZERO_COPY_TX_DATA_SIZE,
+				     HIP5_DAT_MBULK_SIZE - sizeof(struct mbulk), 5);
+	} else {
+		/* Configure mbulk allocator - Data QUEUES */
+		ret = mbulk_pool_add(MBULK_POOL_ID_DATA, hip_ptr + HIP5_WLAN_TX_DATA_OFFSET,
+				     hip_ptr + HIP5_WLAN_TX_DATA_OFFSET + HIP5_WLAN_TX_DATA_SIZE,
+				     (HIP5_WLAN_TX_DATA_SIZE / HIP5_DAT_SLOTS) - sizeof(struct mbulk), 5);
+	}
 	if (ret)
 		return ret;
 
 	/* Configure mbulk allocator - Control QUEUES */
-	ret = mbulk_pool_add(MBULK_POOL_ID_CTRL, hip_ptr + HIP5_WLAN_TX_CTL_OFFSET,
-			     hip_ptr + HIP5_WLAN_TX_CTL_OFFSET + HIP5_WLAN_TX_CTL_SIZE,
-			    (HIP5_WLAN_TX_CTL_SIZE / HIP5_CTL_SLOTS) - sizeof(struct mbulk), 0);
+	ret = mbulk_pool_add(MBULK_POOL_ID_CTRL, hip_ptr + HIP5_WLAN_TX_CTRL_OFFSET,
+			     hip_ptr + HIP5_WLAN_TX_CTRL_OFFSET + HIP5_WLAN_TX_CTRL_SIZE,
+			    (HIP5_WLAN_TX_CTRL_SIZE / HIP5_CTL_SLOTS) - sizeof(struct mbulk), 0);
 	if (ret)
 		return ret;
 #endif
@@ -2415,98 +2474,18 @@ int slsi_hip_free_control_slots_count(struct slsi_hip *hip)
 	return mbulk_pool_get_free_count(MBULK_POOL_ID_CTRL);
 }
 
-#ifdef CONFIG_SCSC_WLAN_TX_ZERO_COPY
-static int hip5_transmit_frame_zero_copy(struct slsi_hip *hip, struct sk_buff *skb, u8 vif_index, u8 peer_index, u8 priority)
-{
-	struct hip_priv           *hip_priv;
-	struct scsc_service       *service;
-	mbulk_colour              colour = 0;
-	struct slsi_dev           *sdev = container_of(hip, struct slsi_dev, hip);
-	struct sk_buff            *skb_fapi;
-	struct sk_buff            *skb_udi;
-	struct hip5_tx_dma_desc   tx_desc;
-	int                       ret = 0;
-	u16                       i = 0;
-
-	hip_priv = hip->hip_priv;
-	service = sdev->service;
-
-	spin_lock_bh(&hip_priv->tx_lock);
-	atomic_set(&hip_priv->in_tx, 1);
-
-	/* clone the skb for logging */
-	skb_udi = skb_clone(skb, GFP_ATOMIC);
-
-	if (fapi_is_ma(skb))
-#ifndef CONFIG_SCSC_WLAN_TX_API
-		SLSI_MBULK_COLOUR_SET(colour, vif_index, peer_index, priority);
-#else
-		SLSI_MBULK_COLOUR_SET(colour, vif_index, priority);
-#endif
-
-	skb_fapi = skb_clone(skb, GFP_ATOMIC);
-	if (!skb_fapi) {
-		SLSI_WARN(sdev, "fail to clone SKB for skb_fapi\n");
-		ret = -ENOMEM;
-		goto error;
-	}
-	skb_trim(skb_fapi, fapi_sig_size(ma_unitdata_req));
-	skb_pull(skb, fapi_sig_size(ma_unitdata_req));
-
-	tx_desc.len = skb->len;
-	tx_desc.offset = skb_headroom(skb);
-	tx_desc.skb_dma_addr = dma_map_single(sdev->dev, skb->head, skb_headroom(skb) + skb_headlen(skb), DMA_TO_DEVICE);
-
-	if (dma_mapping_error(sdev->dev, tx_desc.skb_dma_addr)) {
-		consume_skb(skb_fapi);
-		ret = -EFAULT;
-		SLSI_ERR_NODEV("DMA mapping error\n");
-		goto error;
-	}
-
-	if (hip5_q_add_bd_entry(hip, slsi_hip_vif_to_q_mapping(vif_index), 0, service, &tx_desc, skb_fapi->data)) {
-		memcpy(skb_push(skb, fapi_sig_size(ma_unitdata_req)), skb_fapi->data, fapi_sig_size(ma_unitdata_req));
-		consume_skb(skb_fapi);
-		ret = -ENOSPC;
-		SLSI_ERR_NODEV("No space\n");
-		goto error;
-	}
-	consume_skb(skb_fapi);
-
-	/* find an index in look up table */
-	for (i = 0; i < MAX_NUM; i++)
-		if (!hip_priv->tx_skb_table[i].in_use)
-			break;
-
-	/* store the Tx SKB */
-	hip_priv->tx_skb_table[i].skb_dma_addr = (tx_desc.skb_dma_addr >> 8);
-	hip_priv->tx_skb_table[i].colour = colour;
-	hip_priv->tx_skb_table[i].skb = skb;
-	hip_priv->tx_skb_table[i].in_use = true;
-
-	SCSC_BIN_TAG_DEBUG(BIN_WIFI_DATA_TX, skb_udi->data, skb_headlen(skb));
-	/* slsi_log_clients_log_signal_fast: skb is copied to all the log clients */
-	slsi_log_clients_log_signal_fast(sdev, &sdev->log_clients, skb_udi, SLSI_LOG_DIRECTION_FROM_HOST);
-
-	consume_skb(skb_udi);
-	atomic_set(&hip->hip_priv->in_tx, 0);
-	spin_unlock_bh(&hip->hip_priv->tx_lock);
-	return 0;
-error:
-	consume_skb(skb_udi);
-	atomic_set(&hip->hip_priv->in_tx, 0);
-	spin_unlock_bh(&hip->hip_priv->tx_lock);
-	return ret;
-
-}
-#endif
-
 bool hip5_opt_aggr_check(struct slsi_hip *hip, struct sk_buff *skb)
 {
 	struct hip_priv     *hip_priv = hip->hip_priv;
 	u8 i = 0;
 
 	spin_lock_bh(&hip_priv->tx_lock);
+
+	if (skb_headroom(skb) >= SLSI_HIP_HIP5_OPT_INVALID_OFFSET) {
+		SLSI_DBG1_NODEV(SLSI_HIP, "large Headroom (%d), send in no-aggregation mode\n", skb_headroom(skb));
+		spin_unlock_bh(&hip->hip_priv->tx_lock);
+		return false;
+	}
 
 	for (i = 0; i < SLSI_HIP_HIP5_OPT_TX_Q_MAX; i++) {
 		/* find a match */
@@ -2528,8 +2507,9 @@ bool hip5_opt_aggr_check(struct slsi_hip *hip, struct sk_buff *skb)
 			hip_priv->hip5_opt_tx_q[i].configuration_option = fapi_get_u16(skb, u.ma_unitdata_req.configuration_option);
 			memcpy(hip_priv->hip5_opt_tx_q[i].addr3, fapi_get_buff(skb, u.ma_unitdata_req.address), ETH_ALEN);
 			SLSI_DBG1_NODEV(SLSI_HIP, "added %d, %pM, %d\n", i, hip_priv->hip5_opt_tx_q[i].addr3, hip_priv->hip5_opt_tx_q[i].flow_id);
+			skb_queue_tail(&hip_priv->hip5_opt_tx_q[i].tx_q, skb);
 			spin_unlock_bh(&hip->hip_priv->tx_lock);
-			return false;
+			return true;
 		} else {
 			/* is it stale, if so delete */
 			if (ktime_to_ms(ktime_sub(ktime_get(), hip_priv->hip5_opt_tx_q[i].last_sent)) > 1 * 1000) {
@@ -2694,10 +2674,6 @@ int slsi_hip_transmit_frame(struct slsi_hip *hip, struct sk_buff *skb, bool ctrl
 		return hip5_opt_tx_frame(hip, skb, ctrl_packet, vif_index, peer_index, priority);
 	}
 
-#ifdef CONFIG_SCSC_WLAN_TX_ZERO_COPY
-	if (!ctrl_packet)
-		return hip5_transmit_frame_zero_copy(hip, skb, vif_index, peer_index, priority);
-#endif
 	spin_lock_bh(&hip->hip_priv->tx_lock);
 	atomic_set(&hip->hip_priv->in_tx, 1);
 
@@ -2800,13 +2776,47 @@ error:
 	return ret;
 }
 
+static int hip5_opt_zero_copy_dma_desc_to_bd(struct hip_priv *hip_priv, struct hip5_tx_dma_desc * dma_desc, struct hip5_opt_bulk_desc  *bulk_desc)
+{
+	u16 i = 0;
+
+	/* find an index in look up table */
+	for (i = 0; i < MAX_NUM; i++)
+		if (!hip_priv->tx_skb_table[i].in_use)
+			break;
+
+	if(i >= MAX_NUM) {
+		SLSI_ERR_NODEV("no space in SKB look-up table\n");
+		return -ENOMEM;
+	}
+
+	hip_priv->tx_skb_free_cnt--;
+	SCSC_HIP4_SAMPLER_MBULK(hip_priv->minor, (hip_priv->tx_skb_free_cnt & 0xFF00) >> 8, (hip_priv->tx_skb_free_cnt & 0xFF), MBULK_POOL_ID_DATA, hip5_tx_zero_copy_tx_slots);
+
+	/* store the Tx SKB */
+	hip_priv->tx_skb_table[i].skb_dma_addr = ((dma_desc->skb_dma_addr >> 4) | 0x1);
+	hip_priv->tx_skb_table[i].colour = dma_desc->colour;
+	hip_priv->tx_skb_table[i].skb = dma_desc->skb;
+	hip_priv->tx_skb_table[i].in_use = true;
+
+	bulk_desc->buf_addr = (((dma_desc->skb_dma_addr >> 4) | 0x1));
+	bulk_desc->buf_sz = 2; /* 512 * (1 << buf_sz) */
+	bulk_desc->data_len = dma_desc->len;
+	bulk_desc->flag = 0;
+	bulk_desc->offset = dma_desc->offset;
+	return 0;
+}
+
+
 void hip5_opt_aggr_tx_frame(struct scsc_service *service, struct slsi_hip *hip)
 {
 	struct hip_priv           *hip_priv = hip->hip_priv;
 	struct slsi_dev           *sdev = container_of(hip, struct slsi_dev, hip);
 	struct hip5_hip_control   *ctrl = hip->hip_control;
 	struct sk_buff            *skb_fapi = NULL;
+	struct sk_buff            *skb_udi = NULL;
 	struct mbulk			  *m = NULL;
+	struct hip5_tx_dma_desc	  tx_desc_list[HIP5_OPT_NUM_BD_PER_SIGNAL_MAX];
 	scsc_mifram_ref 		  offset;
 	struct mbulk			  *m_arr[HIP5_OPT_NUM_BD_PER_SIGNAL_MAX];
 	mbulk_colour			  colour = 0;
@@ -2823,7 +2833,8 @@ void hip5_opt_aggr_tx_frame(struct scsc_service *service, struct slsi_hip *hip)
 	if (!slsi_wake_lock_active(&hip->hip_priv->wake_lock_tx))
 		slsi_wake_lock_timeout(&hip->hip_priv->wake_lock_tx, msecs_to_jiffies(SLSI_HIP_WAKELOCK_TIME_OUT_IN_MS));
 
-	memset(m_arr, 0, 512);
+	memset(m_arr, 0, sizeof(m_arr));
+	memset(tx_desc_list, 0, HIP5_OPT_NUM_BD_PER_SIGNAL_MAX * sizeof(struct hip5_tx_dma_desc));
 	for (i = 0; i < SLSI_HIP_HIP5_OPT_TX_Q_MAX; i++) {
 		/* check if q is full before dequeing SKB */
 		idx_w = hip5_read_index(hip, HIP5_MIF_Q_FH_DAT0, widx);
@@ -2870,6 +2881,9 @@ void hip5_opt_aggr_tx_frame(struct scsc_service *service, struct slsi_hip *hip)
 				goto send_signal;
 			}
 
+			/* clone the skb for logging */
+			skb_udi = skb_clone(skb, GFP_ATOMIC);
+
 			vif_index_colour = fapi_get_vif(skb);
 			if (skb->dev) {
 				struct netdev_vif *ndev_vif = netdev_priv(skb->dev);
@@ -2877,6 +2891,7 @@ void hip5_opt_aggr_tx_frame(struct scsc_service *service, struct slsi_hip *hip)
 				if (ndev_vif->iftype != NL80211_IFTYPE_AP_VLAN)
 					vif_index_colour = ndev_vif->ifnum;
 			}
+
 #ifndef CONFIG_SCSC_WLAN_TX_API
 			SLSI_MBULK_COLOUR_SET(colour,
 			vif_index_colour,
@@ -2885,26 +2900,43 @@ void hip5_opt_aggr_tx_frame(struct scsc_service *service, struct slsi_hip *hip)
 #else
 			SLSI_MBULK_COLOUR_SET(colour, vif_index_colour, slsi_frame_priority_to_ac_queue(skb->priority));
 #endif
-			/* create a Mbulk only if the Signal has a payload (bulk data) */
-			m = hip5_skb_to_mbulk(hip->hip_priv, skb, false, colour);
-			if (!m) {
-				SLSI_ERR_NODEV("mbulk is NULL\n");
-				consume_skb(skb);
-				goto send_signal;
-			}
-			m_arr[idx++] = m;
-
 			if (!skb_fapi) {
 				skb_fapi = skb_clone(skb, GFP_ATOMIC);
 				if (!skb_fapi) {
-					SLSI_WARN(sdev, "fail to allocate memory for FAPI SKB\n");
+					SLSI_WARN(sdev, "fail to clone SKB for skb_fapi\n");
 					consume_skb(skb);
 					goto tx_done;
 				}
 				skb_trim(skb_fapi, slsi_skb_cb_get(skb)->sig_length);
 			}
+			if (hip5_tx_zero_copy) {
+				skb_pull(skb, fapi_sig_size(ma_unitdata_req));
+				tx_desc_list[idx].len = skb->len;
+				tx_desc_list[idx].offset = skb_headroom(skb);
+				tx_desc_list[idx].colour = colour;
+				tx_desc_list[idx].skb = skb;
+				tx_desc_list[idx].skb_dma_addr = dma_map_single(sdev->dev, skb->head, skb_headroom(skb) + skb_headlen(skb), DMA_TO_DEVICE);
+
+				if (dma_mapping_error(sdev->dev, tx_desc_list[idx].skb_dma_addr)) {
+					SLSI_ERR_NODEV("DMA mapping error\n");
+					consume_skb(skb);
+					goto send_signal;
+				}
+				m_arr[idx] = (struct mbulk *)&tx_desc_list[idx];
+				idx++;
+			} else {
+				/* create a Mbulk only if the Signal has a payload (bulk data) */
+				m = hip5_skb_to_mbulk(hip->hip_priv, skb, false, colour);
+				if (!m) {
+					SLSI_ERR_NODEV("mbulk is NULL\n");
+					consume_skb(skb);
+					goto send_signal;
+				}
+				m_arr[idx++] = m;
+				consume_skb(skb);
+			}
 			slsi_log_clients_log_signal_fast(sdev, &sdev->log_clients, skb, SLSI_LOG_DIRECTION_FROM_HOST);
-			consume_skb(skb);
+			consume_skb(skb_udi);
 		}
 send_signal:
 		if (skb_fapi) {
@@ -2944,25 +2976,32 @@ send_signal:
 			for (j = 0; j < HIP5_OPT_NUM_BD_PER_SIGNAL_MAX; j++) {
 				/* bulk descriptor(s) */
 				if (m_arr[j]) {
-					if (scsc_mx_service_mif_ptr_to_addr(service, m_arr[j], &offset) < 0) {
-						mbulk_free_virt_host(m_arr[j]);
-						SLSI_ERR_NODEV("Incorrect reference memory\n");
-						goto tx_done;
-					}
+					if (hip5_tx_zero_copy) {
+						if (hip5_opt_zero_copy_dma_desc_to_bd(hip_priv, (struct hip5_tx_dma_desc *)m_arr[j], bulk_desc)) {
+							SLSI_ERR_NODEV("invalid Tx descriptor\n");
+							goto tx_done;
+						}
+					} else {
+						if (scsc_mx_service_mif_ptr_to_addr(service, m_arr[j], &offset) < 0) {
+							mbulk_free_virt_host(m_arr[j]);
+							SLSI_ERR_NODEV("Incorrect reference memory\n");
+							goto tx_done;
+						}
 
-					bulk_desc->buf_addr = offset;
-					bulk_desc->buf_sz = 2; /* 512 * (1<<buf_sz) */
-					bulk_desc->data_len = m_arr[j]->len;
-					bulk_desc->flag = m_arr[j]->flag;
-					bulk_desc->offset = m_arr[j]->head + 20;
-					hip5_q_entry->num_bd++;
-					SLSI_DBG4(sdev, SLSI_HIP, "idx:%d, buf_addr:0x%X data_len:%d, flag:0x%X, offset:%d\n",
+						bulk_desc->buf_addr = offset;
+						bulk_desc->buf_sz = 2; /* 512 * (1<<buf_sz) */
+						bulk_desc->data_len = m_arr[j]->len;
+						bulk_desc->flag = m_arr[j]->flag;
+						bulk_desc->offset = m_arr[j]->head + 20;
+					}
+					SLSI_DBG4(sdev, SLSI_HIP, "idx:%d, buf_addr:0x%lX data_len:%d, flag:0x%X, offset:%d\n",
 						j,
 						bulk_desc->buf_addr,
 						bulk_desc->data_len,
 						bulk_desc->flag,
 						bulk_desc->offset);
 
+					hip5_q_entry->num_bd++;
 					bulk_desc++;
 					if((void *) bulk_desc == ((void *)&ctrl->q_tlv[0].array[MAX_NUM - 1] + 64)) {
 						bulk_desc = (struct hip5_opt_bulk_desc *)&ctrl->q_tlv[0].array[0];
@@ -2999,7 +3038,7 @@ send_signal:
 		hip_priv->hip5_opt_tx_q[i].last_sent = ktime_get();
 		skb_fapi = NULL;
 		idx = 0;
-		memset(m_arr, 0, 512);
+		memset(m_arr, 0, sizeof(m_arr));
 	}
 tx_done:
 	if (slsi_wake_lock_active(&hip->hip_priv->wake_lock_tx))
@@ -3063,6 +3102,12 @@ int slsi_hip_setup(struct slsi_hip *hip)
 			hip->hip_priv->scbrd_ramrp_base = hip->hip_priv->scbrd_ramrp_base + (scsc_wifi_get_hip_config_u32(&hip->hip_control, scbrd_loc, 5) & ~1);
 		}
 	}
+
+#ifdef CONFIG_SCSC_WLAN_TX_API
+	if (hip5_tx_zero_copy) {
+		slsi_hip_setup_post(sdev, hip5_tx_zero_copy_tx_slots);
+	}
+#endif
 	/* Unmask interrupts - now host should handle them */
 	atomic_set(&sdev->debug_inds, 0);
 	atomic_set(&hip->hip_priv->closing, 0);

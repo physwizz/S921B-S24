@@ -56,6 +56,7 @@
 #endif
 #include <linux/cma.h>
 #include <linux/genalloc.h>
+#include <linux/pm_qos.h>
 
 #include <media/v4l2-device.h>
 #include <media/v4l2-ioctl.h>
@@ -82,6 +83,8 @@
 #define MFC_MAX_MB_TABLE		30
 /* the number of priority is 2N(num of OPP) + 2 */
 #define MFC_MAX_PRIO			12
+/* The number of display DRC max frames that can occur continuously in NAL_Q */
+#define MFC_MAX_DRC_FRAME		MFC_MAX_BUFFERS
 
 /* The last number of the standard(MFC_REG_CODEC_BPG_ENC) supported by MFC + 1 */
 #define MFC_MAX_CODEC_TYPE		(33 + 1)
@@ -196,6 +199,7 @@ enum mfc_inst_state {
 	MFCINST_ABORT,
 	MFCINST_RES_CHANGE_INIT,
 	MFCINST_RES_CHANGE_FLUSH,
+	MFCINST_RES_CHANGE_FLUSH_FINISHED,
 	MFCINST_RES_CHANGE_END,
 	MFCINST_FINISHED,
 	MFCINST_ABORT_INST,
@@ -890,6 +894,7 @@ struct mfc_qos {
 
 struct mfc_qos_boost {
 	unsigned int num_cluster;
+	unsigned int num_cpu[MAX_NUM_CLUSTER];
 	unsigned int freq_mfc;
 	unsigned int freq_int;
 	unsigned int freq_mif;
@@ -1715,7 +1720,7 @@ struct mfc_core {
 	struct exynos_pm_qos_request qos_req_mfc;
 	struct exynos_pm_qos_request qos_req_int;
 	struct exynos_pm_qos_request qos_req_mif;
-	struct exynos_pm_qos_request qos_req_cluster[MAX_NUM_CLUSTER];
+	struct freq_qos_request qos_req_cluster[MAX_NUM_CLUSTER];
 #endif
 	struct mutex qos_mutex;
 	int mfc_freq_by_bps;
@@ -1726,6 +1731,7 @@ struct mfc_core {
 	unsigned int prev_bts_scen_idx;
 #endif
 	unsigned long total_mb;
+	unsigned int cpu_boost_enable;
 
 	/* QoS control depending on MFC H/W run */
 	struct workqueue_struct *qos_ctrl_wq;
@@ -2336,7 +2342,6 @@ struct mfc_mb_control {
 	struct list_head list;
 	unsigned long mb_per_sec;
 	unsigned int fps;
-	unsigned long not_coded;
 };
 
 struct dpb_table {
@@ -2351,6 +2356,14 @@ struct dpb_table {
 	struct dma_buf *dmabufs[MFC_MAX_PLANES];
 	struct dma_buf_attachment *attach[MFC_MAX_PLANES];
 	struct sg_table *sgt[MFC_MAX_PLANES];
+};
+
+struct disp_drc_info {
+	int disp_res_change;
+	int push_idx;
+	int pop_idx;
+	int width[MFC_MAX_DRC_FRAME];
+	int height[MFC_MAX_DRC_FRAME];
 };
 
 struct mfc_dec {
@@ -2368,7 +2381,7 @@ struct mfc_dec {
 	int is_mbaff;
 	int is_dts_mode;
 	int inter_res_change;
-	int disp_res_change;
+	struct disp_drc_info disp_drc;
 
 	int crc_enable;
 	unsigned int *crc;
@@ -2608,6 +2621,8 @@ struct mfc_ctx {
 	/* for AV1 Annex B */
 	int is_av1_annex_b;
 
+	int is_heif_mode;
+
 	int is_dpb_realloc;
 	enum mfc_dec_wait_state wait_state;
 	struct mutex drc_wait_mutex;
@@ -2697,6 +2712,9 @@ struct mfc_ctx {
 	spinlock_t		meminfo_queue_lock;
 	struct mfc_meminfo	meminfo[MFC_MEMINFO_MAX_NUM];
 	size_t			meminfo_size[MFC_MEMINFO_CTX_MAX + 1];
+
+	/* DRC (Display Resolution Change) */
+	u32 handle_drc_multi_mode;
 };
 
 struct mfc_core_ctx {
@@ -2721,6 +2739,7 @@ struct mfc_core_ctx {
 	unsigned long dynamic_set;
 
 	enum mfc_inst_state state;
+	enum mfc_inst_state prev_state;
 
 	/* QoS */
 	struct list_head qos_list;
@@ -2731,8 +2750,13 @@ struct mfc_core_ctx {
 	int mb_index;
 	int mb_is_full;
 	long dynamic_weight_mb;
+	unsigned int dynamic_weight_started;
 	int mb_update_time;
 	unsigned int avg_runtime;
+	unsigned long mb_not_coded_time;
+	u64 mb_not_coded_mode1_time;
+	ktime_t mb_begin;
+	ktime_t mb_end;
 
 	/* Extra Buffers */
 	int codec_buffer_allocated;

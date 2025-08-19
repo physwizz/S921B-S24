@@ -48,20 +48,20 @@ struct sec_opmode_data {
 
 /*
  * samsung regulator operation mode
- * SEC_OPMODE_OFF	Regulator always OFF
- * SEC_OPMODE_ON	Regulator always ON
- * SEC_OPMODE_LOWPOWER  Regulator is on in low-power mode
- * SEC_OPMODE_SUSPEND   Regulator is changed by PWREN pin
- *			If PWREN is high, regulator is on
- *			If PWREN is low, regulator is off
+ * PMIC_OPMODE_OFF	Regulator always OFF
+ * PMIC_OPMODE_ON	Regulator always ON
+ * PMIC_OPMODE_LPM	Regulator is on in low-power mode
+ * PMIC_OPMODE_VGPIO	Regulator is changed by vGPIO pin
+ *			If vGPIO is high, regulator is on
+ *			If vGPIO is low, regulator is off
  */
 enum sec_opmode {
-	SEC_OPMODE_OFF,
-	SEC_OPMODE_SUSPEND,
-	SEC_OPMODE_LOWPOWER,
-	SEC_OPMODE_ON,
-	SEC_OPMODE_TCXO = 0x2,
-	SEC_OPMODE_MIF = 0x2,
+	PMIC_OPMODE_OFF,
+	PMIC_OPMODE_VGPIO,
+	PMIC_OPMODE_LPM,
+	PMIC_OPMODE_ON,
+	PMIC_OPMODE_AUTO = 0x4,
+	PMIC_OPMODE_FCCM = 0x8,
 };
 
 struct s2mpu16_platform_data {

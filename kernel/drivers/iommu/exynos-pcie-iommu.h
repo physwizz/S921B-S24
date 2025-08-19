@@ -20,6 +20,7 @@
 #include <linux/iommu.h>
 #include <linux/irq.h>
 #include <linux/clk.h>
+#include <soc/samsung/exynos/memlogger.h>
 
 typedef u64 sysmmu_iova_t;
 typedef u32 sysmmu_pte_t;
@@ -321,20 +322,20 @@ typedef u32 sysmmu_pte_t;
 #define REG_MMU_STLB_INFO(n)			(0x3800 + ((n) * 0x4))
 #define REG_MMU_S1L1TLB_INFO			0x3C00
 
-#define REG_MMU_READ_PTLB			0x5000
-#define REG_MMU_READ_PTLB_TPN			0x5004
-#define REG_MMU_READ_PTLB_PPN			0x5008
-#define REG_MMU_READ_PTLB_ATTRIBUTE		0x500C
+#define REG_MMU_READ_PTLB			0x9800
+#define REG_MMU_READ_PTLB_TPN			0x9804
+#define REG_MMU_READ_PTLB_PPN			0x9808
+#define REG_MMU_READ_PTLB_ATTRIBUTE		0x980C
 
-#define REG_MMU_READ_STLB			0x5010
-#define REG_MMU_READ_STLB_TPN			0x5014
-#define REG_MMU_READ_STLB_PPN			0x5018
-#define REG_MMU_READ_STLB_ATTRIBUTE		0x501C
+#define REG_MMU_READ_STLB			0x9810
+#define REG_MMU_READ_STLB_TPN			0x9814
+#define REG_MMU_READ_STLB_PPN			0x9818
+#define REG_MMU_READ_STLB_ATTRIBUTE		0x981C
 
-#define REG_MMU_READ_S1L1TLB			0x5020
-#define REG_MMU_READ_S1L1TLB_VPN		0x5024
-#define REG_MMU_READ_S1L1TLB_SLPT_OR_PPN	0x5028
-#define REG_MMU_READ_S1L1TLB_ATTRIBUTE		0x502C
+#define REG_MMU_READ_S1L1TLB			0x9820
+#define REG_MMU_READ_S1L1TLB_VPN		0x9824
+#define REG_MMU_READ_S1L1TLB_SLPT_OR_PPN	0x9828
+#define REG_MMU_READ_S1L1TLB_ATTRIBUTE		0x982C
 
 #define REG_MMU_FAULT_STATUS_VM			0x8060
 #define REG_MMU_FAULT_CLEAR_VM			0x8064
@@ -384,6 +385,11 @@ typedef u32 sysmmu_pte_t;
 
 #define SLPT_BASE_FLAG		0x6
 
+#define sysmmu_dump(fmt, args...)				\
+	exynos_sysmmu_memlog_print(g_sysmmu_drvdata,		\
+			MEMLOG_LEVEL_ERR,			\
+			fmt, ##args);				\
+
 static char *pmmu_default_stream[PMMU_MAX_NUM] = {
 	"pmmu0,default_stream",
 	"pmmu1,default_stream",
@@ -426,17 +432,20 @@ struct dram_region {
 	phys_addr_t end;
 };
 
-#if IS_ENABLED(CONFIG_PCIE_IOMMU_HISTORY_LOG)
-#define MAX_HISTROY_BUFF		(2048)
+#define MAX_HISTORY_BUFF		(10240)
 
 struct history_buff {
-	u32 index;
-	u32 save_addr[MAX_HISTROY_BUFF];
-	u32 orig_addr[MAX_HISTROY_BUFF];
-	u32 size[MAX_HISTROY_BUFF];
-	u32 orig_size[MAX_HISTROY_BUFF];
+	unsigned long tv_kernel[MAX_HISTORY_BUFF];
+	unsigned long rem_nsec[MAX_HISTORY_BUFF];
+	unsigned long save_addr[MAX_HISTORY_BUFF];
+	unsigned long paddr[MAX_HISTORY_BUFF];
+	unsigned long orig_addr[MAX_HISTORY_BUFF];
+	u32 size[MAX_HISTORY_BUFF];
+	u32 orig_size[MAX_HISTORY_BUFF];
+	u32 refcnt[MAX_HISTORY_BUFF];
+	u8 mu[MAX_HISTORY_BUFF]; // 0: unmap, 1: map
+	u16 index;
 };
-#endif
 
 /*
  * This structure exynos specific generalization of struct iommu_domain.
@@ -544,6 +553,8 @@ struct sysmmu_drvdata {
 	int num_pmmu;
 
 	struct stream_props *props;
+	struct memlog *log_desc;
+	struct memlog_obj *log_obj;
 };
 
 struct exynos_vm_region {

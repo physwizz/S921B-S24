@@ -15,15 +15,6 @@
 
 #include <dt-bindings/interrupt-controller/s5e9945.h>
 
-&pinctrl_1 {
-	pm_wrstbi: pm-wrstbi {
-		samsung,pins = "gpm21-0";
-		samsung,pin-con-pdn = <3>;
-		samsung,pin-pud-pdn = <0>;
-	};
-
-};
-
 &pinctrl_7 {
 	smpl_warn: smpl-warn {
 		samsung,pins = "gpg3-0";
@@ -48,7 +39,7 @@
 		interrupts = <GIC_SPI INTREQ__COMB_NONSECURE_INTCOMB_VGPIO2AP IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-parent = <&gic>;
 		pinctrl-names = "default";
-		pinctrl-0 = <&pm_wrstbi &smpl_warn>;
+		pinctrl-0 = <&smpl_warn>;
 		gpios = <&gpg3 0 0>;
 		/* RTC: wtsr/smpl */
 		wtsr_en = "enabled"; /* enable */
@@ -373,16 +364,14 @@
 				regulator-initial-mode = <3>;
 				regulator-always-on;
 			};
-			// NOT ASSIGNED
+*/
 			s1_l5_reg: LDO5 {
 				regulator-name = "vdd_ldo5s";
 				regulator-min-microvolt = <400000>;
 				regulator-max-microvolt = <1300000>;
 				regulator-ramp-delay = <12000>;
 				regulator-initial-mode = <3>;
-				regulator-always-on;
 			};
-*/
 		}; /* end of regulators */
 	}; /* end of s2mps28mfd@2f */
 }; /* end of acpm_mfd_bus1 */
@@ -635,16 +624,14 @@
 				regulator-initial-mode = <3>;
 				regulator-always-on;
 			};
-			// NOT ASSIGNED
+*/
 			s3_l5_reg: LDO5 {
 				regulator-name = "vdd_ldo5s3";
 				regulator-min-microvolt = <400000>;
 				regulator-max-microvolt = <1300000>;
 				regulator-ramp-delay = <12000>;
 				regulator-initial-mode = <3>;
-				regulator-always-on;
 			};
-*/
 		}; /* end of regulators */
 	}; /* end of s2mps28_3_mfd@4f */
 }; /* end of acpm_mfd_bus3 */
@@ -740,16 +727,15 @@
 				regulator-initial-mode = <3>;
 				regulator-always-on;
 			};
-/*			// NOT ASSIGNED
+
 			s4_l3_reg: LDO3 {
 				regulator-name = "vdd_ldo3s4";
 				regulator-min-microvolt = <400000>;
 				regulator-max-microvolt = <1300000>;
 				regulator-ramp-delay = <12000>;
 				regulator-initial-mode = <3>;
-				regulator-always-on;
 			};
-*/
+
 			s4_l4_reg: LDO4 {
 				regulator-name = "vdd12_usb";
 				regulator-min-microvolt = <400000>;
@@ -970,16 +956,15 @@
 				regulator-ramp-delay = <12000>;
 				regulator-initial-mode = <3>;
 			};
-/*
+
 			e_l4_reg: LDO4 {
 				regulator-name = "vdd_ldo4e";
 				regulator-min-microvolt = <400000>;
 				regulator-max-microvolt = <1300000>;
 				regulator-ramp-delay = <12000>;
 				regulator-initial-mode = <3>;
-				regulator-always-on;
 			};
-*/
+
 		}; /* end of regulators */
 	}; /* end of s2mpa05mfd@4f */
 }; /* end of acpm_mfd_bus7 */

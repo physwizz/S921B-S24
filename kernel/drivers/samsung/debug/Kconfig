@@ -70,6 +70,7 @@ config SEC_DEBUG_RESET_REASON
 
 config SEC_DEBUG_MEMTAB
 	bool "Enable member offset table"
+	depends on !SEC_KUNIT
 	default y
 	help
 	  This option enables sec_debug member offset table.
@@ -119,6 +120,15 @@ config SEC_DEBUG_EXCEPTION_STACK
 	  If this is set, kernel can preserve the specific size of stack data
 	  when an exception occurs from EL1. This can help to fiqure out the
 	  stack data before the exception happened.
+
+config SEC_DEBUG_EXCEPTION_SCS
+	bool "Preserve shadow call stack data when the exception happened"
+	depends on SHADOW_CALL_STACK && SEC_DEBUG_EXCEPTION_STACK
+	default n
+	help
+	  If this is set, kernel can preserve the specific size of shadow
+	  call stack data when an exception occurs from EL1. This can help
+	  to fiqure out the stack data before the exception happened.
 
 config SEC_DEBUG_ATOMIC_SLEEP_PANIC
 	bool "Panic (Reboot) On Atomic Sleep"
@@ -338,5 +348,34 @@ config SEC_DEBUG_KERN_ERR_REPORT
 	help
 	  This option enables to report kernel error like kfence/warn.
 
-endif
+config SEC_DEBUG_RESUME_PROFILE
+    tristate "Enable the latest resume information profile feature"
+	depends on SEC_DEBUG
+	default n
+	help
+	  This option enables to display profile information of the latest resume action
 
+config SEC_DEBUG_SLAB_INFO
+	tristate "Enable slab info for debugging"
+	default m
+	help
+	  This option enables slab info for debugging.
+	  Select the option to show slab info in case of data abort
+ 
+config SEC_DEBUG_SCHED_INFO_TEST_FOR_ONLY_UML
+	tristate "KUnit test for sec_debug_sched_info_test"
+	depends on SEC_KUNIT
+	depends on SEC_DEBUG_SCHED_INFO
+	help
+	  TODO: Describe config fully.
+	  This CONFIG is recommended to set to y.
+
+config SEC_DUMP_SINK_TEST_FOR_ONLY_UML
+	tristate "KUnit test for sec_dump_sink_test"
+	depends on SEC_KUNIT
+	depends on SEC_DUMP_SINK
+	help
+	  TODO: Describe config fully.
+	  This CONFIG is recommended to set to y.
+
+endif

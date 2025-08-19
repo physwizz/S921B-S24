@@ -80,4 +80,5 @@ exynos_drm_encoder_create(struct drm_device *drm_dev,
 void exynos_drm_encoder_activate(struct drm_encoder *encoder,
 				 struct drm_atomic_state *state);
 void exynos_drm_encoder_set_possible_mask(struct drm_device *dev);
+void exynos_drm_encoder_lastclose(struct drm_device *dev);
 #endif

@@ -269,7 +269,7 @@ static int get_vs4l_format_bundle(struct vs4l_format_bundle *kp,
 
 	for (i = 0; i < 2; i++) {
 		if (unlikely(chk_compat))
-			MASK_COMPAT_UPTR(kp->m[i].flist);
+			MASK_COMPAT_UPTR(cf.m[i].flist);
 		ret = get_vs4l_format64(kp->m[i].flist, cf.m[i].flist, chk_compat);
 		if (ret)
 			break;
@@ -614,7 +614,7 @@ static int get_vs4l_container_bundle(struct vs4l_container_bundle *kp,
 
 	for (i = 0; i < 2; i++) {
 		if (unlikely(chk_compat))
-			MASK_COMPAT_UPTR(kp->m[i].clist);
+			MASK_COMPAT_UPTR(cb.m[i].clist);
 		ret = get_vs4l_container64(kp->m[i].clist, cb.m[i].clist, chk_compat);
 		if (ret)
 			break;

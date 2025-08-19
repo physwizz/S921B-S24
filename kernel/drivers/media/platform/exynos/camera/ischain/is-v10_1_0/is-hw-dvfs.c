@@ -1148,3 +1148,8 @@ void is_hw_dvfs_get_qos_throughput(u32 *qos_thput)
 	qos_thput[IS_DVFS_CAM] = PM_QOS_CAM_THROUGHPUT;
 	qos_thput[IS_DVFS_M2M] = 0;
 }
+
+bool is_hw_dvfs_get_fast_launch(struct is_dvfs_ctrl *dvfs_ctrl)
+{
+	return true;
+}

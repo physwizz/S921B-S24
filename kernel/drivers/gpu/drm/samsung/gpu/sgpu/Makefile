@@ -164,10 +164,16 @@ endif
 # add IFPO functions
 sgpu-$(CONFIG_DRM_SGPU_EXYNOS) += sgpu_ifpo.o
 
+# add pm monitor functions
+sgpu-$(CONFIG_DRM_SGPU_EXYNOS) += sgpu_pm_monitor.o
+
 # add SGPU Debug messages
 sgpu-y += sgpu_dmsg.o
 
 # add gpu_work_period tracepoint
 sgpu-$(CONFIG_DRM_SGPU_WORKTIME) += sgpu_worktime.o
+
+# add sgpu_power_tracepoint
+sgpu-y += sgpu_power_trace_points.o
 
 obj-$(CONFIG_DRM_SGPU)+= sgpu.o

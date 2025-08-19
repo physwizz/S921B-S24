@@ -200,7 +200,8 @@ int is_dvfs_sel_static(struct is_dvfs_ctrl *dvfs_ctrl, int scenario_id)
 }
 EXPORT_SYMBOL_GPL(is_dvfs_sel_static);
 
-static bool _is_dvfs_dynamic(struct is_dvfs_rnr_mode *rnr_mode, int vendor, bool reprocessing_mode)
+static bool _is_dvfs_dynamic(struct is_dvfs_rnr_mode *rnr_mode,
+	struct is_dvfs_psm_mode *psm_mode, int vendor, bool reprocessing_mode)
 {
 	if (vendor == IS_DVFS_SCENARIO_VENDOR_SSM)
 		return false;
@@ -214,6 +215,12 @@ static bool _is_dvfs_dynamic(struct is_dvfs_rnr_mode *rnr_mode, int vendor, bool
 		return true;
 	}
 
+	if (vendor == IS_DVFS_SCENARIO_VENDOR_PSM && psm_mode->changed) {
+		dbg_dvfs(1, "[DVFS] psm on\n");
+		psm_mode->changed = 0;
+		return true;
+	}
+
 	return false;
 }
 
@@ -221,12 +228,14 @@ int is_dvfs_sel_dynamic(struct is_dvfs_ctrl *dvfs_ctrl, bool reprocessing_mode)
 {
 	struct is_dvfs_scenario_ctrl *dynamic_ctrl;
 	struct is_dvfs_rnr_mode *rnr_mode;
+	struct is_dvfs_psm_mode *psm_mode;
 	int vendor;
 
 	FIMC_BUG(!dvfs_ctrl);
 
 	dynamic_ctrl = dvfs_ctrl->dynamic_ctrl;
 	rnr_mode = &dvfs_ctrl->rnr_mode;
+	psm_mode = &dvfs_ctrl->psm_mode;
 	FIMC_BUG(!dynamic_ctrl);
 
 	if (dynamic_ctrl->cur_frame_tick >= 0) {
@@ -242,7 +251,7 @@ int is_dvfs_sel_dynamic(struct is_dvfs_ctrl *dvfs_ctrl, bool reprocessing_mode)
 
 	vendor = (dvfs_ctrl->dvfs_scenario >> IS_DVFS_SCENARIO_VENDOR_SHIFT) &
 		 IS_DVFS_SCENARIO_VENDOR_MASK;
-	if (!_is_dvfs_dynamic(rnr_mode, vendor, reprocessing_mode))
+	if (!_is_dvfs_dynamic(rnr_mode, psm_mode, vendor, reprocessing_mode))
 		return -EAGAIN;
 
 	return 0;
@@ -633,7 +642,8 @@ static int _is_set_dvfs_fast_launch(struct is_dvfs_ctrl *dvfs_ctrl, int scenario
 	return scn;
 }
 
-int is_set_static_dvfs(struct is_dvfs_ctrl *dvfs_ctrl, int scenario_id, bool stream_on)
+int is_set_static_dvfs(
+	struct is_dvfs_ctrl *dvfs_ctrl, int scenario_id, bool stream_on, bool fast_launch)
 {
 	int scn;
 
@@ -641,10 +651,15 @@ int is_set_static_dvfs(struct is_dvfs_ctrl *dvfs_ctrl, int scenario_id, bool str
 	    (scenario_id > 0 && scenario_id >= dvfs_ctrl->dvfs_info.scenario_count))
 		scenario_id = IS_SCENARIO_DEFAULT;
 
-	if (stream_on)
-		scn = _is_set_dvfs_fast_launch(dvfs_ctrl, scenario_id);
-	else
+	if (stream_on) {
+		if (fast_launch)
+			scn = _is_set_dvfs_fast_launch(dvfs_ctrl, scenario_id);
+		else
+			scn = pablo_set_static_dvfs(
+				dvfs_ctrl, "", scenario_id, IS_DVFS_PATH_M2M, false);
+	} else {
 		scn = pablo_set_static_dvfs(dvfs_ctrl, "", scenario_id, IS_DVFS_PATH_OTF, false);
+	}
 
 	return scn;
 }

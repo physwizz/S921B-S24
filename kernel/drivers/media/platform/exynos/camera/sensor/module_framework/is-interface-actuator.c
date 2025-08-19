@@ -232,6 +232,7 @@ int set_position(struct is_sensor_interface *itf, u32 position, int domain_offse
 
 	position_w_offset = (int)position + domain_offset;
 	position = (u32)MIN(MAX(position_w_offset, 0), MAX_ACT_POSITION);
+	cur_frame_cnt = get_frame_count(itf);
 
 	/*
 	 *  If OTF path this function direct working
@@ -247,7 +248,6 @@ int set_position(struct is_sensor_interface *itf, u32 position, int domain_offse
 			index = sensor_peri->actuator->actuator_index = 9;
 		}
 
-		cur_frame_cnt = get_frame_count(itf);
 		sensor_peri->actuator->pre_position[index] = position;
 		sensor_peri->actuator->pre_frame_cnt[index] = cur_frame_cnt;
 
@@ -259,6 +259,11 @@ int set_position(struct is_sensor_interface *itf, u32 position, int domain_offse
 			is_fpsimd_put_func();
 			flag = 1;
 		}
+
+		dbg_actuator("[%s][%d][%s] position(%d) domain_offset(%d)\n",
+			__func__, cur_frame_cnt, sensor_peri->module->sensor_name,
+			position, domain_offset);
+
 		ret = is_actuator_ctl_set_position(device, position);
 		if (flag)
 			is_fpsimd_get_func();

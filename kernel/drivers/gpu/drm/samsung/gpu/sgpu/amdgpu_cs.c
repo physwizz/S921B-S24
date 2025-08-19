@@ -71,7 +71,7 @@ static int amdgpu_cs_user_fence_chunk(struct amdgpu_cs_parser *p,
 		goto error_unref;
 	}
 
-	if (amdgpu_ttm_tt_get_usermm(bo->tbo.ttm)) {
+	if (amdgpu_ttm_tt_is_userptr(bo->tbo.ttm)) {
 		r = -EINVAL;
 		goto error_unref;
 	}
@@ -82,6 +82,7 @@ static int amdgpu_cs_user_fence_chunk(struct amdgpu_cs_parser *p,
 
 error_unref:
 	amdgpu_bo_unref(&bo);
+	p->uf_entry.tv.bo = NULL;
 	return r;
 }
 
@@ -128,13 +129,6 @@ static void amdgpu_cs_update_ctx_mem_total(struct amdgpu_cs_parser *parser,
 	ctx->mem_size = chunk_data->mem_size;
 }
 
-static void amdgpu_cs_chunk_min_freq_lock(struct amdgpu_cs_parser *parser,
-				struct drm_amdgpu_cs_chunk_min_freq_lock *data)
-{
-	parser->min_freq_lock_clock = data->clock;
-	parser->min_freq_lock_duration = data->duration_ms;
-}
-
 static int amdgpu_cs_parser_init(struct amdgpu_cs_parser *p, union drm_amdgpu_cs *cs)
 {
 	struct amdgpu_fpriv *fpriv = p->filp->driver_priv;
@@ -147,7 +141,7 @@ static int amdgpu_cs_parser_init(struct amdgpu_cs_parser *p, union drm_amdgpu_cs
 	int ret;
 
 	if (cs->in.num_chunks == 0)
-		return 0;
+		return -EINVAL;
 
 	chunk_array = kmalloc_array(cs->in.num_chunks, sizeof(uint64_t), GFP_KERNEL);
 	if (!chunk_array)
@@ -176,7 +170,6 @@ static int amdgpu_cs_parser_init(struct amdgpu_cs_parser *p, union drm_amdgpu_cs
 	p->nchunks = cs->in.num_chunks;
 	p->chunks = kmalloc_array(p->nchunks, sizeof(struct amdgpu_cs_chunk),
 			    GFP_KERNEL);
-	p->min_freq_lock_clock = 0;
 
 	if (!p->chunks) {
 		ret = -ENOMEM;
@@ -256,10 +249,6 @@ static int amdgpu_cs_parser_init(struct amdgpu_cs_parser *p, union drm_amdgpu_cs
 
 		case AMDGPU_CHUNK_ID_MEMTRACK_HTILE_WA:
 			amdgpu_cs_update_ctx_mem_total(p, p->ctx, i);
-			break;
-
-		case AMDGPU_CHUNK_ID_MIN_FREQ_LOCK:
-			amdgpu_cs_chunk_min_freq_lock(p, p->chunks[i].kdata);
 			break;
 
 		default:
@@ -519,11 +508,6 @@ static int amdgpu_cs_list_validate(struct amdgpu_cs_parser *p,
 
 	list_for_each_entry(lobj, validated, tv.head) {
 		struct amdgpu_bo *bo = ttm_to_amdgpu_bo(lobj->tv.bo);
-		struct mm_struct *usermm;
-
-		usermm = amdgpu_ttm_tt_get_usermm(bo->tbo.ttm);
-		if (usermm && usermm != current->mm)
-			return -EPERM;
 
 		if (amdgpu_ttm_tt_is_userptr(bo->tbo.ttm) &&
 		    lobj->user_invalidated && lobj->user_pages) {
@@ -631,7 +615,7 @@ static int amdgpu_cs_parser_bos(struct amdgpu_cs_parser *p,
 			  pinned, bo->tbo.ttm->num_pages);
 		if (pinned != bo->tbo.ttm->num_pages) {
 			for (i = 0; i < pinned; i++)
-				put_page(bo->tbo.ttm->pages[i]);
+				unpin_user_page(e->user_pages[i]);
 			DRM_DEBUG("pin_user_pages_fast failed :%ld %d\n",
 				  pinned, bo->tbo.ttm->num_pages);
 			kvfree(e->user_pages);
@@ -1391,7 +1375,6 @@ static int amdgpu_cs_submit(struct amdgpu_cs_parser *p,
 	struct drm_sched_entity *entity = p->entity;
 	struct amdgpu_bo_list_entry *e;
 	struct amdgpu_job *job;
-	struct amdgpu_ring *ring;
 	uint64_t seq;
 	int r;
 
@@ -1445,21 +1428,9 @@ static int amdgpu_cs_submit(struct amdgpu_cs_parser *p,
 	if (trace_sgpu_job_dependency_enabled())
 		sgpu_sync_trace_fence(&job->sync);
 
-	ring = to_amdgpu_ring(p->entity->rq->sched);
-	if (ring->funcs->type == AMDGPU_RING_TYPE_COMPUTE)
-		ttm_eu_fence_buffer_objects(&p->ticket, &p->validated, p->fence);
-	else
-		amdgpu_backoff_reservation(&p->ticket, &p->validated);
+	amdgpu_backoff_reservation(&p->ticket, &p->validated);
 
 	mutex_unlock(&p->adev->notifier_lock);
-
-	/* minlock set request to PM QoS */
-	if (p->min_freq_lock_clock != 0) {
-#ifdef CONFIG_DRM_SGPU_DVFS
-		gpu_umd_min_clock_set(p->min_freq_lock_clock,
-					p->min_freq_lock_duration);
-#endif /* CONFIG_DRM_SGPU_DVFS */
-	}
 
 	return 0;
 

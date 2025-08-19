@@ -111,7 +111,7 @@ static irqreturn_t s2mps27_keys_press_irq_handler(int irq, void *dev_id)
 			if (bdata->button->wakeup) {
 				const struct pmic_keys_button *button = bdata->button;
 
-				pm_stay_awake(bdata->input->dev.parent);
+				__pm_stay_awake(ddata->dev->power.wakeup);
 				if (bdata->suspended  &&
 				    (button->type == 0 || button->type == EV_KEY)) {
 					/*
@@ -226,6 +226,8 @@ s2mps27_keys_get_devtree_pdata(struct s2mps27_dev *iodev)
 
 	pdata->buttons = (struct pmic_keys_button *)(pdata + 1);
 	pdata->nbuttons = nbuttons;
+
+	of_property_read_string(key_np, "label", &pdata->name);
 
 	i = 0;
 	for_each_child_of_node(key_np, pp) {
@@ -443,11 +445,7 @@ static int s2mps27_keys_probe(struct platform_device *pdev)
 	} else
 		count = ret;
 
-	ret = device_init_wakeup(dev, wakeup);
-	if (ret < 0) {
-		pr_err("%s: device_init_wakeup fail(%d)\n", __func__, ret);
-		goto fail1;
-	}
+	dev->power.wakeup = wakeup_source_register(NULL, "power-key");
 
 	ret = s2mps27_keys_set_interrupt(ddata, iodev->pdata->irq_base);
 	if (ret < 0) {
@@ -491,7 +489,7 @@ static int s2mps27_keys_remove(struct platform_device *pdev)
 	struct input_dev *input = ddata->input;
 	int i;
 
-	device_init_wakeup(&pdev->dev, false);
+	wakeup_source_unregister(pdev->dev.power.wakeup);
 
 	for (i = 0; i < ddata->pdata->nbuttons; i++) {
 		struct pmic_button_data *bdata = &ddata->button_data[i];
@@ -513,12 +511,10 @@ static int s2mps27_keys_suspend(struct device *dev)
 	struct s2mps27_keys_drvdata *ddata = dev_get_drvdata(dev);
 	int i;
 
-	if (device_may_wakeup(dev)) {
-		for (i = 0; i < ddata->pdata->nbuttons; i++) {
-			struct pmic_button_data *bdata = &ddata->button_data[i];
+	for (i = 0; i < ddata->pdata->nbuttons; i++) {
+		struct pmic_button_data *bdata = &ddata->button_data[i];
 
-			bdata->suspended = true;
-		}
+		bdata->suspended = true;
 	}
 
 	return 0;
@@ -529,12 +525,10 @@ static int s2mps27_keys_resume(struct device *dev)
 	struct s2mps27_keys_drvdata *ddata = dev_get_drvdata(dev);
 	int i;
 
-	if (device_may_wakeup(dev)) {
-		for (i = 0; i < ddata->pdata->nbuttons; i++) {
-			struct pmic_button_data *bdata = &ddata->button_data[i];
+	for (i = 0; i < ddata->pdata->nbuttons; i++) {
+		struct pmic_button_data *bdata = &ddata->button_data[i];
 
-			bdata->suspended = false;
-		}
+		bdata->suspended = false;
 	}
 
 	return 0;

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2015, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -55,6 +55,7 @@
  * @partner_info: Partner link information for an ML connection
  * @assoc_link_id: Assoc link ID of an ML connection
  * @owe_trans_ssid: owe trans ssid to be used when scan entry ssid is wildcard
+ * @req_fail_status_code: Connection request fail status code
  */
 struct cm_vdev_join_req {
 	uint8_t vdev_id;
@@ -72,6 +73,7 @@ struct cm_vdev_join_req {
 	uint8_t assoc_link_id;
 #endif
 	struct wlan_ssid owe_trans_ssid;
+	enum wlan_status_code req_fail_status_code;
 };
 
 /**

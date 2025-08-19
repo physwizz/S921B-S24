@@ -20,22 +20,14 @@
 #ifndef _DDAR_FS_HANDLER_H
 #define _DDAR_FS_HANDLER_H
 
-#include <ddar/dek_common.h>
 #include <ddar/fs_request.h>
 
 #include <linux/list.h>
-#include <linux/wait.h>
 #include <linux/spinlock.h>
-#include <linux/limits.h>
 
 #define SDP_FS_HANDLER_NETLINK 28
 #define SDP_FS_HANDLER_PID_SET 3001
 #define SDP_FS_HANDLER_RESULT 3002
-
-#define OP_SDP_SET_DIR_SENSITIVE 10
-#define OP_SDP_SET_DIR_PROTECTED 11
-
-#define OP_SDP_ERROR 99
 
 typedef struct result {
 	u32 request_id;
@@ -52,7 +44,6 @@ enum req_state {
 
 typedef struct __sdp_fs_handler_contorl {
 	struct list_head pending_list;
-	//wait_queue_head_t waitq;
 	spinlock_t lock;
 
 	/** The next unique request id */

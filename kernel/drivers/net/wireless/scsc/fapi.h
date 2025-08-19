@@ -25,14 +25,14 @@ extern "C" {
 #define FAPI_SAP_TYPE_DEBUG 0x8000
 #define FAPI_SAP_TYPE_TEST  0x9000
 
-#define FAPI_DEBUG_SAP_ENG_VERSION               0x0000
-#define FAPI_DATA_SAP_ENG_VERSION                0x0000
 #define FAPI_CONTROL_SAP_ENG_VERSION             0x0000
-#define FAPI_TEST_SAP_ENG_VERSION                0x0013
+#define FAPI_DATA_SAP_ENG_VERSION                0x0000
+#define FAPI_DEBUG_SAP_ENG_VERSION               0x0000
+#define FAPI_TEST_SAP_ENG_VERSION                0x0018
 #define FAPI_DEBUG_SAP_VERSION                   0x0e00
 #define FAPI_DATA_SAP_VERSION                    0x0f00
 #define FAPI_TEST_SAP_VERSION                    0x0f00
-#define FAPI_CONTROL_SAP_VERSION                 0x0f11
+#define FAPI_CONTROL_SAP_VERSION                 0x0f13
 
 #define FAPI_ACLPOLICY_BLACKLIST   0x0000
 #define FAPI_ACLPOLICY_WHITELIST   0x0001
@@ -1294,6 +1294,7 @@ extern "C" {
 #define FAPI_EVENT_WIFI_EVENT_NAN_NDP_RESPONSE_TX_STATUS              0x0055
 #define FAPI_EVENT_WIFI_EVENT_NAN_NDP_CONFIRM_TX_STATUS               0x0056
 #define FAPI_EVENT_WIFI_EVENT_NAN_NDP_INSTALL_TX_STATUS               0x0057
+#define FAPI_EVENT_WIFI_EVENT_NAN_USD_TIMEOUT                         0x0058
 #define FAPI_EVENT_WIFI_EVENT_BLACKOUT_START                          0x0064
 #define FAPI_EVENT_WIFI_EVENT_BLACKOUT_STOP                           0x0065
 #define FAPI_EVENT_WIFI_EVENT_NAN_PUBLISH_TERMINATED                  0x0100
@@ -1351,6 +1352,18 @@ extern "C" {
 #define FAPI_NANAVAILABILITYDURATION_32MS   0x01
 #define FAPI_NANAVAILABILITYDURATION_64MS   0x02
 
+#define FAPI_NANBOOTSTRAPPINGMETHODS_OPPORTUNISTIC        0x0001
+#define FAPI_NANBOOTSTRAPPINGMETHODS_PIN_CODE_DISPLAY     0x0002
+#define FAPI_NANBOOTSTRAPPINGMETHODS_PASSPHRASE_DISPLAY   0x0004
+#define FAPI_NANBOOTSTRAPPINGMETHODS_QR_CODE_DISPLAY      0x0008
+#define FAPI_NANBOOTSTRAPPINGMETHODS_NFC_TAG              0x0010
+#define FAPI_NANBOOTSTRAPPINGMETHODS_PIN_CODE_KEY_PAD     0x0020
+#define FAPI_NANBOOTSTRAPPINGMETHODS_PASSPHRASE_KEY_PAD   0x0040
+#define FAPI_NANBOOTSTRAPPINGMETHODS_QR_CODE_SCAN         0x0080
+#define FAPI_NANBOOTSTRAPPINGMETHODS_NFC_READER           0x0100
+#define FAPI_NANBOOTSTRAPPINGMETHODS_SERVICE_MANAGED      0x4000
+#define FAPI_NANBOOTSTRAPPINGMETHODS_HANDSHAKE_SKIPPED    0x8000
+
 #define FAPI_NANOPERATIONCONTROL_MAC_ADDRESS_EVENT      0x0002
 #define FAPI_NANOPERATIONCONTROL_START_CLUSTER_EVENT    0x0004
 #define FAPI_NANOPERATIONCONTROL_JOINED_CLUSTER_EVENT   0x0008
@@ -1374,12 +1387,19 @@ extern "C" {
 #define FAPI_NANTLVTYPE_MATCHFILTER                    0x010b
 #define FAPI_NANTLVTYPE_INTERFACEADDRESSSET            0x010c
 #define FAPI_NANTLVTYPE_MATCHIND                       0x010d
-#define FAPI_NANTLVTYPE_DATAPATHSECURITY               0x010e
+#define FAPI_NANTLVTYPE_NANSECURITYPMK                 0x010e
 #define FAPI_NANTLVTYPE_APPINFO                        0x010f
 #define FAPI_NANTLVTYPE_RANGING                        0x0110
 #define FAPI_NANTLVTYPE_NANCONFIGREQUESTSUPPLEMENTAL   0x0111
 #define FAPI_NANTLVTYPE_NANRTTCONFIG                   0x0112
 #define FAPI_NANTLVTYPE_NANRTTRESULT                   0x0113
+#define FAPI_NANTLVTYPE_INSTANTCOMMUNICATION           0x0114
+#define FAPI_NANTLVTYPE_USDCONFIGURATIONPARAMS         0x0115
+#define FAPI_NANTLVTYPE_PAIRINGCONFIG                  0x0116
+#define FAPI_NANTLVTYPE_NANIDENTITYKEY                 0x0117
+#define FAPI_NANTLVTYPE_NANIDENTITYRESOLUTIONATTR      0x0118
+#define FAPI_NANTLVTYPE_PAIRINGINFO                    0x0119
+#define FAPI_NANTLVTYPE_BOOTSTRAPPINGCOMEBACKINFO      0x011a
 
 #define FAPI_OPERATINGCLASSSET_UNKNOWN   0x0000
 #define FAPI_OPERATINGCLASSSET_FCC       0x0001
@@ -1388,6 +1408,7 @@ extern "C" {
 #define FAPI_OPERATINGCLASSSET_GLOBAL    0x0004
 #define FAPI_OPERATINGCLASSSET_CHINA     0x0006
 
+#define FAPI_OPTION_NONE      0x0000
 #define FAPI_OPTION_INLINE    0x0001
 #define FAPI_OPTION_DELAYED   0x0002
 #define FAPI_OPTION_LAST      0x0004
@@ -1651,6 +1672,7 @@ extern "C" {
 #define FAPI_RXSTARTFLAGS_ENABLE_MIFLESS         0x0800
 #define FAPI_RXSTARTFLAGS_PCT_MODE               0x1000
 #define FAPI_RXSTARTFLAGS_FULL_PERFORMANCE       0x2000
+#define FAPI_RXSTARTFLAGS_EMLSR                  0x4000
 
 #define FAPI_SCANPOLICY_PASSIVE           0x0001
 #define FAPI_SCANPOLICY_TEST_MODE         0x0002
@@ -1682,7 +1704,10 @@ extern "C" {
 #define FAPI_SCANTYPE_NAN_SCAN                    0x0016
 #define FAPI_SCANTYPE_FTM_NEIGHBOUR_SCAN          0x0017
 #define FAPI_SCANTYPE_OBSS_NARROW_BW_SCAN         0x0018
-#define FAPI_SCANTYPE_FIRST_ILLEGAL               0x0019
+#define FAPI_SCANTYPE_NAN_USD_PUB_SCAN            0x0019
+#define FAPI_SCANTYPE_NAN_USD_SUB_ACTIVE_SCAN     0x001a
+#define FAPI_SCANTYPE_NAN_USD_SUB_PASSIVE_SCAN    0x001b
+#define FAPI_SCANTYPE_FIRST_ILLEGAL               0x001c
 
 #define FAPI_SCHEDULEDPMLEAKYAPDETECTIONTYPE_ACTIVE_ONESHOT   0x0000
 #define FAPI_SCHEDULEDPMLEAKYAPDETECTIONTYPE_PASSIVE_START    0x0001
@@ -1785,6 +1810,7 @@ extern "C" {
 #define FAPI_TXSETPARAMSFLAGS2_SMART_SENSITIVITY   0x0100
 #define FAPI_TXSETPARAMSFLAGS2_ENABLE_MIFLESS      0x0200
 #define FAPI_TXSETPARAMSFLAGS2_PCT_MODE            0x0400
+#define FAPI_TXSETPARAMSFLAGS2_EMLSR               0x0800
 
 #define FAPI_TYPEOFAIRPOWER_EIRP   0x00
 #define FAPI_TYPEOFAIRPOWER_TPO    0x01
@@ -1939,6 +1965,7 @@ extern "C" {
 #define MLME_SET_IP_ADDRESS_REQ               0x2015
 #define MLME_SET_ACL_REQ                      0x2016
 #define MLME_SETKEYS_REQ                      0x2018
+#define MLME_DELETEKEYS_REQ                   0x2019
 #define MLME_GET_KEY_SEQUENCE_REQ             0x201a
 #define MLME_SET_CACHED_CHANNELS_REQ          0x201f
 #define MLME_SET_WHITELIST_SSID_REQ           0x2020
@@ -2011,9 +2038,12 @@ extern "C" {
 #define MLME_SET_SCAN_TIMINGS_REQ             0x2067
 #define MLME_SET_LOW_LATENCY_MODE_REQ         0x2068
 #define MLME_SAR_REQ                          0x2069
-#define MLME_SPARE_SIGNAL_1_REQ               0x206a
-#define MLME_SPARE_SIGNAL_2_REQ               0x206b
-#define MLME_SPARE_SIGNAL_3_REQ               0x206c
+#define MLME_NAN_BOOTSTRAPPING_REQUEST_REQ    0x206a
+#define MLME_NAN_BOOTSTRAPPING_RESPONSE_REQ   0x206b
+#define MLME_NAN_COMMAND_REQ                  0x206c
+#define MLME_SPARE_SIGNAL_1_REQ               0x206d
+#define MLME_SPARE_SIGNAL_2_REQ               0x206e
+#define MLME_SPARE_SIGNAL_3_REQ               0x206f
 #define MLME_GET_CFM                          0x2101
 #define MLME_SET_CFM                          0x2102
 #define MLME_POWERMGT_CFM                     0x2103
@@ -2037,6 +2067,7 @@ extern "C" {
 #define MLME_SET_IP_ADDRESS_CFM               0x2115
 #define MLME_SET_ACL_CFM                      0x2116
 #define MLME_SETKEYS_CFM                      0x2118
+#define MLME_DELETEKEYS_CFM                   0x2119
 #define MLME_GET_KEY_SEQUENCE_CFM             0x211a
 #define MLME_SET_CACHED_CHANNELS_CFM          0x211f
 #define MLME_SET_WHITELIST_SSID_CFM           0x2120
@@ -2109,9 +2140,12 @@ extern "C" {
 #define MLME_SET_SCAN_TIMINGS_CFM             0x2167
 #define MLME_SET_LOW_LATENCY_MODE_CFM         0x2168
 #define MLME_SAR_CFM                          0x2169
-#define MLME_SPARE_SIGNAL_1_CFM               0x216a
-#define MLME_SPARE_SIGNAL_2_CFM               0x216b
-#define MLME_SPARE_SIGNAL_3_CFM               0x216c
+#define MLME_NAN_BOOTSTRAPPING_REQUEST_CFM    0x216a
+#define MLME_NAN_BOOTSTRAPPING_RESPONSE_CFM   0x216b
+#define MLME_NAN_COMMAND_CFM                  0x216c
+#define MLME_SPARE_SIGNAL_1_CFM               0x216d
+#define MLME_SPARE_SIGNAL_2_CFM               0x216e
+#define MLME_SPARE_SIGNAL_3_CFM               0x216f
 #define MLME_CONNECT_RES                      0x2200
 #define MLME_CONNECTED_RES                    0x2201
 #define MLME_REASSOCIATE_RES                  0x2202
@@ -2171,10 +2205,17 @@ extern "C" {
 #define MLME_SCHEDULED_PM_LEAKY_AP_DETECT_IND 0x2331
 #define MLME_DELAYED_WAKEUP_IND               0x2332
 #define MLME_SAR_IND                          0x2333
+#define MLME_NAN_BOOTSTRAPPING_REQUESTED_IND  0x2334
+#define MLME_NAN_BOOTSTRAPPING_CONFIRM_IND    0x2335
 #define MLME_SAR_LIMIT_UPPER_IND              0x2336
-#define MLME_SPARE_SIGNAL_1_IND               0x2337
-#define MLME_SPARE_SIGNAL_2_IND               0x2338
-#define MLME_SPARE_SIGNAL_3_IND               0x2339
+#define MLME_NAN_PAIRING_NIK_IND              0x2337
+#define MLME_SET_BSS_MAX_CHANNEL_WIDTH_IND    0x2338
+#define MLME_SPATIAL_REUSE_PARAMETERS_IND     0x2339
+#define MLME_NAN_COMMAND_IND                  0x233a
+#define MLME_MLO_LINK_INFO_IND                0x233b
+#define MLME_SPARE_SIGNAL_1_IND               0x233c
+#define MLME_SPARE_SIGNAL_2_IND               0x233d
+#define MLME_SPARE_SIGNAL_3_IND               0x233e
 #define DEBUG_SPARE_1_REQ                     0x8000
 #define DEBUG_SPARE_2_REQ                     0x8001
 #define DEBUG_SPARE_3_REQ                     0x8002
@@ -2731,6 +2772,16 @@ struct fapi_signal {
 			__le32 spare_3;
 			u8     dr[0];
 		} __packed mlme_setkeys_req;
+		struct {
+			__le16 vif;
+			__le16 key_id;
+			__le16 key_type;
+			u8     address[ETH_ALEN];
+			__le32 spare_1;
+			__le32 spare_2;
+			__le32 spare_3;
+			u8     dr[0];
+		} __packed mlme_deletekeys_req;
 		struct {
 			__le16 vif;
 			__le16 key_id;
@@ -3376,6 +3427,35 @@ struct fapi_signal {
 		} __packed mlme_sar_req;
 		struct {
 			__le16 vif;
+			u8     peer_nmi_address[ETH_ALEN];
+			__le16 match_id;
+			__le16 bootstrapping_instance_id;
+			__le16 bootstrapping_method;
+			__le32 spare_1;
+			__le32 spare_2;
+			__le32 spare_3;
+			u8     dr[0];
+		} __packed mlme_nan_bootstrapping_request_req;
+		struct {
+			__le16 vif;
+			u8     peer_nmi_address[ETH_ALEN];
+			__le16 match_id;
+			u8     response;
+			__le16 bootstrapping_instance_id;
+			__le32 spare_1;
+			__le32 spare_2;
+			__le32 spare_3;
+			u8     dr[0];
+		} __packed mlme_nan_bootstrapping_response_req;
+		struct {
+			__le16 vif;
+			__le32 spare_1;
+			__le32 spare_2;
+			__le32 spare_3;
+			u8     dr[0];
+		} __packed mlme_nan_command_req;
+		struct {
+			__le16 vif;
 			__le32 spare_1;
 			__le32 spare_2;
 			__le32 spare_3;
@@ -3603,6 +3683,15 @@ struct fapi_signal {
 			__le32 spare_3;
 			u8     dr[0];
 		} __packed mlme_setkeys_cfm;
+		struct {
+			__le16 vif;
+			__le16 result_code;
+			__le32 timestamp;
+			__le32 spare_1;
+			__le32 spare_2;
+			__le32 spare_3;
+			u8     dr[0];
+		} __packed mlme_deletekeys_cfm;
 		struct {
 			__le16 vif;
 			__le16 sequence_number[8];
@@ -4267,6 +4356,35 @@ struct fapi_signal {
 		struct {
 			__le16 vif;
 			__le16 result_code;
+			__le16 bootstrapping_instance_id;
+			__le32 timestamp;
+			__le32 spare_1;
+			__le32 spare_2;
+			__le32 spare_3;
+			u8     dr[0];
+		} __packed mlme_nan_bootstrapping_request_cfm;
+		struct {
+			__le16 vif;
+			__le16 result_code;
+			__le16 bootstrapping_instance_id;
+			__le32 timestamp;
+			__le32 spare_1;
+			__le32 spare_2;
+			__le32 spare_3;
+			u8     dr[0];
+		} __packed mlme_nan_bootstrapping_response_cfm;
+		struct {
+			__le16 vif;
+			__le16 result_code;
+			__le32 timestamp;
+			__le32 spare_1;
+			__le32 spare_2;
+			__le32 spare_3;
+			u8     dr[0];
+		} __packed mlme_nan_command_cfm;
+		struct {
+			__le16 vif;
+			__le16 result_code;
 			__le32 spare_1;
 			__le32 spare_2;
 			__le32 spare_3;
@@ -4840,12 +4958,88 @@ struct fapi_signal {
 		} __packed mlme_sar_ind;
 		struct {
 			__le16 vif;
+			u8     peer_nmi_address[ETH_ALEN];
+			__le16 match_id;
+			__le16 session_id;
+			__le16 bootstrapping_method;
+			__le32 timestamp;
+			__le32 spare_1;
+			__le32 spare_2;
+			__le32 spare_3;
+			u8     dr[0];
+		} __packed mlme_nan_bootstrapping_requested_ind;
+		struct {
+			__le16 vif;
+			u8     response;
+			__le16 bootstrapping_instance_id;
+			__le32 timestamp;
+			__le32 spare_1;
+			__le32 spare_2;
+			__le32 spare_3;
+			u8     dr[0];
+		} __packed mlme_nan_bootstrapping_confirm_ind;
+		struct {
+			__le16 vif;
 			__le16 sar_limit_upper;
 			__le32 spare_1;
 			__le32 spare_2;
 			__le32 spare_3;
 			u8     dr[0];
 		} __packed mlme_sar_limit_upper_ind;
+		struct {
+			__le16 vif;
+			u8     peer_nmi_address[ETH_ALEN];
+			__le16 pairing_instance_id;
+			__le32 timestamp;
+			__le32 spare_1;
+			__le32 spare_2;
+			__le32 spare_3;
+			u8     dr[0];
+		} __packed mlme_nan_pairing_nik_ind;
+		struct {
+			__le16 vif;
+			__le16 result_code;
+			__le32 timestamp;
+			__le32 spare_1;
+			__le32 spare_2;
+			__le32 spare_3;
+			u8     dr[0];
+		} __packed mlme_set_bss_max_channel_width_ind;
+		struct {
+			__le16 vif;
+			u8     psr_allowed;
+			u8     non_srg_obss_pd_sr_allowed;
+			u8     non_srg_offset_present;
+			u8     srg_information_present;
+			u8     hesiga_spatial_reuse_value15allowed;
+			u8     non_srg_obss_pd_max_offset;
+			u8     srg_obss_pd_min_offset;
+			u8     srg_obss_pd_max_offset;
+			u8     srg_bss_color_bitmap[8];
+			u8     srg_partial_bssid_bitmap[8];
+			__le32 timestamp;
+			__le32 spare_1;
+			__le32 spare_2;
+			__le32 spare_3;
+			u8     dr[0];
+		} __packed mlme_spatial_reuse_parameters_ind;
+		struct {
+			__le16 vif;
+			__le32 timestamp;
+			__le32 spare_1;
+			__le32 spare_2;
+			__le32 spare_3;
+			u8     dr[0];
+		} __packed mlme_nan_command_ind;
+		struct {
+			__le16 vif;
+			u8     reason;
+			__le32 timestamp;
+			__le32 spare_1;
+			__le32 spare_2;
+			__le32 spare_3;
+			u8     dr[0];
+		} __packed mlme_mlo_link_info_ind;
 		struct {
 			__le16 vif;
 			__le32 spare_1;
@@ -5921,7 +6115,7 @@ static inline u16 fapi_get_expected_size(struct sk_buff *skb)
 		fapi_sig_size(mlme_set_acl_req),
 		0,
 		fapi_sig_size(mlme_setkeys_req),
-		0,
+		fapi_sig_size(mlme_deletekeys_req),
 		fapi_sig_size(mlme_get_key_sequence_req),
 		0,
 		0,
@@ -6002,6 +6196,9 @@ static inline u16 fapi_get_expected_size(struct sk_buff *skb)
 		fapi_sig_size(mlme_set_scan_timings_req),
 		fapi_sig_size(mlme_set_low_latency_mode_req),
 		fapi_sig_size(mlme_sar_req),
+		fapi_sig_size(mlme_nan_bootstrapping_request_req),
+		fapi_sig_size(mlme_nan_bootstrapping_response_req),
+		fapi_sig_size(mlme_nan_command_req),
 		fapi_sig_size(mlme_spare_signal_1_req),
 		fapi_sig_size(mlme_spare_signal_2_req),
 		fapi_sig_size(mlme_spare_signal_3_req),
@@ -6084,7 +6281,7 @@ static inline u16 fapi_get_expected_size(struct sk_buff *skb)
 		fapi_sig_size(mlme_set_acl_cfm),
 		0,
 		fapi_sig_size(mlme_setkeys_cfm),
-		0,
+		fapi_sig_size(mlme_deletekeys_cfm),
 		fapi_sig_size(mlme_get_key_sequence_cfm),
 		0,
 		0,
@@ -6165,6 +6362,9 @@ static inline u16 fapi_get_expected_size(struct sk_buff *skb)
 		fapi_sig_size(mlme_set_scan_timings_cfm),
 		fapi_sig_size(mlme_set_low_latency_mode_cfm),
 		fapi_sig_size(mlme_sar_cfm),
+		fapi_sig_size(mlme_nan_bootstrapping_request_cfm),
+		fapi_sig_size(mlme_nan_bootstrapping_response_cfm),
+		fapi_sig_size(mlme_nan_command_cfm),
 		fapi_sig_size(mlme_spare_signal_1_cfm),
 		fapi_sig_size(mlme_spare_signal_2_cfm),
 		fapi_sig_size(mlme_spare_signal_3_cfm),
@@ -6277,9 +6477,14 @@ static inline u16 fapi_get_expected_size(struct sk_buff *skb)
 		fapi_sig_size(mlme_scheduled_pm_leaky_ap_detect_ind),
 		fapi_sig_size(mlme_delayed_wakeup_ind),
 		fapi_sig_size(mlme_sar_ind),
-		0,
-		0,
+		fapi_sig_size(mlme_nan_bootstrapping_requested_ind),
+		fapi_sig_size(mlme_nan_bootstrapping_confirm_ind),
 		fapi_sig_size(mlme_sar_limit_upper_ind),
+		fapi_sig_size(mlme_nan_pairing_nik_ind),
+		fapi_sig_size(mlme_set_bss_max_channel_width_ind),
+		fapi_sig_size(mlme_spatial_reuse_parameters_ind),
+		fapi_sig_size(mlme_nan_command_ind),
+		fapi_sig_size(mlme_mlo_link_info_ind),
 		fapi_sig_size(mlme_spare_signal_1_ind),
 		fapi_sig_size(mlme_spare_signal_2_ind),
 		fapi_sig_size(mlme_spare_signal_3_ind),

@@ -26,7 +26,7 @@ static void __npu_precision_work(int freq)
 
 	mutex_lock(&info->exec_lock);
 	list_for_each_entry(d, &info->ip_list, ip_list) {
-		if (!strcmp("NPU0", d->name) || !strcmp("NPU1", d->name)) {
+		if (!strcmp("NPU0", d->name) || !strcmp("NPU1", d->name) || !strcmp("DSP", d->name)) {
 			npu_dvfs_set_freq(d, &d->qos_req_max_precision, freq);
 		} else if (!strcmp("DNC", d->name)) {
 			if (freq == 1066000) {
@@ -93,8 +93,9 @@ static bool is_matching_ncp_for_hash_with_session(struct npu_precision_model_inf
 		(h->io_workload == session->io_workload);
 }
 
-void npu_precision_hash_check(struct npu_session *session)
+int npu_precision_hash_check(struct npu_session *session)
 {
+	int ret = 0;
 	u32 key, index;
 	u32 find = 0;
 	struct npu_precision_model_info *h;
@@ -125,7 +126,8 @@ void npu_precision_hash_check(struct npu_session *session)
 		index = npu_precision_system->precision_index;
 		if (index >= PRECISION_LEN) {
 			npu_err("Registered Model(index : %u) bigger than precision len(%u)\n", index, PRECISION_LEN);
-			BUG_ON(1);
+			ret = -EFAULT;
+			goto err_exit;
 		}
 
 #if IS_ENABLED(CONFIG_SOC_S5E9945)
@@ -155,10 +157,11 @@ void npu_precision_hash_check(struct npu_session *session)
 		npu_precision_system->precision_index++;
 
 	}
-
+err_exit:
 	mutex_unlock(&npu_precision_system->model_lock);
 
 	__npu_precision_work(__npu_precision_active_check());
+	return ret;
 }
 
 void npu_precision_hash_update(struct npu_session *session, u32 type)
@@ -191,7 +194,6 @@ void npu_precision_hash_update(struct npu_session *session, u32 type)
 
 	if (!find) {
 		npu_err("Active hash is corruptioned - index is not found\n");
-		BUG_ON(1);
 	}
 
 	mutex_unlock(&npu_precision_system->model_lock);

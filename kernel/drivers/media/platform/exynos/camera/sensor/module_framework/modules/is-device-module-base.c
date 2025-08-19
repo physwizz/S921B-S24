@@ -764,15 +764,15 @@ static int sensor_module_s_ctrl(struct v4l2_subdev *subdev, struct v4l2_control 
 		break;
 	case V4L2_CID_IS_HW_SYNC_CAMERA:
 		{
-			int master_pos = ctrl->value & DUAL_SYNC_MASTER_POS_MASK;
+			int main_pos = ctrl->value & DUAL_SYNC_MAIN_POS_MASK;
 			int sync_type = ctrl->value >> DUAL_SYNC_TYPE_SHIFT;
-			if (master_pos >= AA_SENSORPLACE_END) {
-				err("wrong value for dual sync:%d\n", master_pos);
+			if (main_pos >= AA_SENSORPLACE_END) {
+				err("wrong value for dual sync:%d\n", main_pos);
 				goto p_err;
 			}
 			sensor_peri->cis.dual_sync_type = sync_type;
 			sensor_peri->cis.dual_sync_mode =
-				master_pos == module->position ? DUAL_SYNC_MASTER : DUAL_SYNC_SLAVE;
+				main_pos == module->position ? DUAL_SYNC_MASTER : DUAL_SYNC_SLAVE;
 			info("[MOD:%s] Dual sync mode: %s, type:%s", module->sensor_name,
 					sensor_peri->cis.dual_sync_mode == DUAL_SYNC_MASTER ? "Master" : "Slave",
 					sync_type == DUAL_SYNC_TYPE_HW ? "HW" : "SW");

@@ -156,6 +156,21 @@ int __is_mcu_hw_set_init_peri(void __iomem *base)
 	recover_val = src & 0xFFFFFF00;
 	recover_val |= 0x00000055;
 	is_mcu_set_reg(base, OIS_PERI2_PUD_CTRL, recover_val);
+#elif defined(CONFIG_CAMERA_BRY_V7)
+	src = is_mcu_get_reg(base, OIS_PERI_CON_CTRL);
+	recover_val = (src & 0xFFFFFF00) | 0x00000022;
+	is_mcu_set_reg(base, OIS_PERI_CON_CTRL, recover_val);
+
+	src = is_mcu_get_reg(base, OIS_PERI_PUD_CTRL);
+	recover_val = src & 0xFFFFFF00;
+	is_mcu_set_reg(base, OIS_PERI_PUD_CTRL, recover_val);
+
+	recover_val = 0x00002222;
+	is_mcu_set_reg(base, OIS_PERI2_CON_CTRL, recover_val);
+
+	src = is_mcu_get_reg(base, OIS_PERI2_PUD_CTRL);
+	recover_val = src & 0xFFFF0000;
+	is_mcu_set_reg(base, OIS_PERI2_PUD_CTRL, recover_val);
 #else
 	recover_val = 0x00001122;
 	is_mcu_set_reg(base, OIS_PERI_CON_CTRL, recover_val);
@@ -211,6 +226,23 @@ int __is_mcu_hw_set_clear_peri(void __iomem *base)
 
 	src = is_mcu_get_reg(base, OIS_PERI2_PUD_CTRL);
 	recover_val = src & 0xFFFFFF00;
+	is_mcu_set_reg(base, OIS_PERI2_PUD_CTRL, recover_val);
+#elif defined(CONFIG_CAMERA_BRY_V7)
+	src = is_mcu_get_reg(base, OIS_PERI_CON_CTRL);
+	recover_val = src & 0xFFFFFF00;
+	is_mcu_set_reg(base, OIS_PERI_CON_CTRL, recover_val);
+
+	src = is_mcu_get_reg(base, OIS_PERI_PUD_CTRL);
+	recover_val = src & 0xFFFFFF00;
+	is_mcu_set_reg(base, OIS_PERI_PUD_CTRL, recover_val);
+
+	recover_val = 0x00000000;
+	is_mcu_set_reg(base, OIS_PERI2_CON_CTRL, recover_val);
+
+	/* spi value ==> MISO, CS : NP, MOSI, CLK : PD */
+	src = is_mcu_get_reg(base, OIS_PERI2_PUD_CTRL);
+	recover_val = src & 0xFFFF0000;
+	recover_val |= 0x00000011;
 	is_mcu_set_reg(base, OIS_PERI2_PUD_CTRL, recover_val);
 #else
 	/* GPP9 */
@@ -303,7 +335,7 @@ long  __is_mcu_load_fw(void __iomem *base, struct device *dev)
 		goto request_err;
 	}
 
-	memcpy((void *)(base), (void *)mcu_bin.data, mcu_bin.size);
+	memcpy_toio((void *)(base), (void *)mcu_bin.data, mcu_bin.size);
 
 	info_mcu("Request FW was done (%s%s, %ld)\n",
 		IS_MCU_PATH, IS_MCU_FW_NAME, mcu_bin.size);

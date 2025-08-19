@@ -31,8 +31,10 @@
 #include <linux/kthread.h>
 #include <linux/syscalls.h>
 #include <linux/bug.h>
+#ifndef CAMERA_BLOCK_PCIE_L1SS_CTRL
 #if IS_ENABLED(CONFIG_PCI_EXYNOS)
 #include <linux/exynos-pci-ctrl.h>
+#endif
 #endif
 
 #include <linux/regulator/consumer.h>
@@ -108,6 +110,7 @@ static int is_ischain_open_setfile(struct is_device_ischain *device)
 	struct is_minfo *im = is_get_is_minfo();
 	struct is_module_enum *module;
 	ktime_t time_to_ready;
+	bool pinned;
 
 	mdbgd_ischain("%s\n", device, __func__);
 
@@ -117,6 +120,8 @@ static int is_ischain_open_setfile(struct is_device_ischain *device)
 		return ret;
 	}
 
+	pinned = module->setfile_pinned && !is_get_debug_param(IS_DEBUG_PARAM_ICPU_RELOAD);
+
 	time_to_ready = ktime_get();
 
 	/* a module has pinned setfile */
@@ -124,7 +129,7 @@ static int is_ischain_open_setfile(struct is_device_ischain *device)
 		/* a module has preloaded setfile */
 		if (module->setfile_size) {
 			im->loaded_setfile[position] = true;
-			im->pinned_setfile[position] = module->setfile_pinned;
+			im->pinned_setfile[position] = pinned;
 			im->name_setfile[position] = module->setfile_name;
 			if (!im->pinned_setfile[position])
 				refcount_set(&im->refcount_setfile[position], 1);
@@ -138,7 +143,7 @@ static int is_ischain_open_setfile(struct is_device_ischain *device)
 			if (ret)
 				return ret;
 
-			im->pinned_setfile[position] = module->setfile_pinned;
+			im->pinned_setfile[position] = pinned;
 			im->name_setfile[position] = module->setfile_name;
 			if (!im->pinned_setfile[position])
 				refcount_set(&im->refcount_setfile[position], 1);
@@ -539,11 +544,13 @@ int is_ischain_runtime_suspend(struct device *dev)
 
 	info("FIMC_IS runtime suspend in\n");
 
+#ifndef CAMERA_BLOCK_PCIE_L1SS_CTRL
 #if IS_ENABLED(CONFIG_PCI_EXYNOS)
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0))
 	exynos_pcie_l1ss_ctrl(1, PCIE_L1SS_CTRL_CAMERA, 0);
 #else
 	exynos_pcie_l1ss_ctrl(1, PCIE_L1SS_CTRL_CAMERA);
+#endif
 #endif
 #endif
 
@@ -600,11 +607,13 @@ int is_ischain_runtime_resume(struct device *dev)
 		goto p_err;
 	}
 
+#ifndef CAMERA_BLOCK_PCIE_L1SS_CTRL
 #if IS_ENABLED(CONFIG_PCI_EXYNOS)
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0))
 		exynos_pcie_l1ss_ctrl(0, PCIE_L1SS_CTRL_CAMERA, 0);
 #else
 		exynos_pcie_l1ss_ctrl(0, PCIE_L1SS_CTRL_CAMERA);
+#endif
 #endif
 #endif
 
@@ -1250,6 +1259,9 @@ static int is_ischain_init_wrap(struct is_device_ischain *device,
 				continue;
 
 			if (!test_bit(IS_SENSOR_S_INPUT, &sensor->state))
+				continue;
+
+			if (test_bit(IS_SENSOR_SUSPEND, &sensor->state))
 				continue;
 
 			ret = is_sensor_g_module(sensor, &module);

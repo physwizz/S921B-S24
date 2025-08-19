@@ -82,6 +82,7 @@ module_param_named(debug_crc_seed, debug_param[IS_DEBUG_PARAM_CRC_SEED], int, 06
 module_param_named(debug_sensor, debug_param[IS_DEBUG_PARAM_SENSOR], int, 0644);
 module_param_named(debug_assert_crash, debug_param[IS_DEBUG_PARAM_ASSERT_CRASH], int, 0644);
 module_param_named(debug_ixc, debug_param[IS_DEBUG_PARAM_IXC], int, 0644);
+module_param_named(debug_icpu_reload, debug_param[IS_DEBUG_PARAM_ICPU_RELOAD], int, 0644);
 
 /*
  * Decimal digit dot pattern.

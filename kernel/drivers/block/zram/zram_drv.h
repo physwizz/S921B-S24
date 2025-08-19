@@ -71,10 +71,22 @@ struct zram_table_entry {
 #ifdef CONFIG_ZRAM_MEMORY_TRACKING
 	ktime_t ac_time;
 #endif
-#ifdef CONFIG_ZRAM_RAMPLUS
+#ifdef CONFIG_ZRAM_LRU_WRITEBACK
 	struct list_head list;
 #endif
 };
+
+#ifdef CONFIG_ZRAM_PERF_STAT
+#define NR_IO_TYPES 2
+
+struct zram_perf_stat {
+	ktime_t start;
+	atomic64_t nr_io;
+	atomic64_t nr_pages;
+	atomic64_t time;
+	atomic64_t cnt;
+};
+#endif
 
 struct zram_stats {
 	atomic64_t compr_data_size;	/* compressed size of pages stored */
@@ -113,16 +125,34 @@ struct zram_stats {
 	atomic64_t bd_objwrites;
 	atomic64_t lru_pages;
 #endif
+#ifdef CONFIG_ZRAM_PERF_STAT
+	struct zram_perf_stat perf_stat[NR_IO_TYPES];
+#endif
 };
 
 #ifdef CONFIG_ZRAM_RAMPLUS
-#define LRU_LIMIT_RATIO 0
+#ifdef CONFIG_ZRAM_LRU_WRITEBACK
+#define LRU_LIMIT_RATIO 3
+#endif
 #define ZRAM_WB_THRESHOLD 32
 #define NR_ZWBS 64
 #define NR_FALLOC_PAGES 512
 #define FALLOC_ALIGN_MASK (~(NR_FALLOC_PAGES - 1))
 #define ZWBS_ALIGN_MASK (~(NR_ZWBS - 1))
 #define IDX_SHIFT (PAGE_SHIFT * 2)
+#define MAX_REQ_IDX 2042
+#define MIN_NR_POOL 8
+#define MAX_NR_POOL 64
+
+enum ramplus_type {
+	PREFETCH,
+#ifdef CONFIG_ZRAM_LRU_WRITEBACK
+	LRU_WRITEBACK,
+#endif
+	WRITEBACK,
+	POOL,
+	NR_RAMPLUS_TYPES
+};
 
 struct zram_wb_header {
 	u32 index;
@@ -136,8 +166,8 @@ struct zram_wb_work {
 	struct bio *bio;
 	struct bio *bio_chain;
 	struct zram_writeback_buffer *buf;
-	struct list_head ppr_list;
 	struct zram *zram;
+	struct list_head list;
 	unsigned long handle;
 	int nr_pages;
 };
@@ -160,6 +190,37 @@ struct zram_writeback_buffer {
 	int idx;
 };
 
+/* 8kB */
+struct zram_request {
+	struct list_head list;
+	int first;
+	int last;
+	u32 index[MAX_REQ_IDX];
+};
+
+struct zram_ramplus {
+	struct task_struct *task;
+	struct work_struct work;
+	struct list_head list;
+	wait_queue_head_t wait;
+	spinlock_t lock;
+	atomic_t nr;
+	bool running;
+};
+
+#ifdef CONFIG_ZRAM_LRU_WRITEBACK
+static void zram_entry_move_list(struct zram *zram,
+			struct list_head *list, u32 index);
+static void try_wakeup_zram_lru_writebackd(struct zram *zram);
+static void zram_reset_lru_entry(struct zram *zram, u32 index);
+static void init_lru_writeback(struct zram *zram, u64 disksize);
+#else
+static void zram_entry_move_list(struct zram *zram,
+			struct list_head *list, u32 index) {}
+static void try_wakeup_zram_lru_writebackd(struct zram *zram) {}
+static void zram_reset_lru_entry(struct zram *zram, u32 index) {}
+static void init_lru_writeback(struct zram *zram, u64 disksize) {}
+#endif
 static void deinit_ramplus(struct zram *zram);
 static int init_ramplus(struct zram *zram, unsigned long nr_pages);
 #endif
@@ -200,23 +261,18 @@ struct zram {
 	struct dentry *debugfs_dir;
 #endif
 #ifdef CONFIG_ZRAM_RAMPLUS
-	struct task_struct *wbd;
-	struct task_struct *prefetchd;
-	struct list_head lru_list;
-	struct list_head ppr_list;
-	struct list_head prefetch_list;
+	struct zram_ramplus ramplus[NR_RAMPLUS_TYPES];
 	struct mutex blk_bitmap_lock;
-	wait_queue_head_t wbd_wait;
-	wait_queue_head_t prefetchd_wait;
-	spinlock_t list_lock;
 	spinlock_t wb_table_lock;
 	spinlock_t bitmap_lock;
 	unsigned long *blk_bitmap;
 	unsigned long *chunk_bitmap;
 	unsigned long *read_req_bitmap;
 	unsigned long nr_lru_pages;
-	u8 *wb_table;
-	bool wbd_running;
+	u16 *wb_table;
+#endif
+#ifdef CONFIG_ZRAM_PERF_STAT
+	bool perf_stat_enabled;
 #endif
 };
 #endif

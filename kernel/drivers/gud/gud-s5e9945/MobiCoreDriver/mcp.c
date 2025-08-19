@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2013-2020 TRUSTONIC LIMITED
+ * Copyright (c) 2013-2023 TRUSTONIC LIMITED
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -105,8 +105,6 @@ static const char *cmd_to_string(enum cmd_id id)
 		return "unmap";
 	case MC_MCP_CMD_GET_MOBICORE_VERSION:
 		return "get version";
-	case MC_MCP_CMD_CLOSE_MCP:
-		return "close mcp";
 	case MC_MCP_CMD_LOAD_TOKEN:
 		return "load token";
 	}
@@ -681,15 +679,6 @@ int mcp_unmap(u32 session_id, const struct mcp_buffer_map *map)
 	return ret;
 }
 
-static int mcp_close(void)
-{
-	union mcp_message cmd;
-
-	memset(&cmd, 0, sizeof(cmd));
-	cmd.cmd_header.cmd_id = MC_MCP_CMD_CLOSE_MCP;
-	return mcp_cmd(&cmd, 0, NULL, NULL);
-}
-
 int mcp_notify(struct mcp_session *session)
 {
 	if (l_ctx.mcp_dead)
@@ -927,5 +916,4 @@ int mcp_start(void)
 
 void mcp_stop(void)
 {
-	mcp_close();
 }

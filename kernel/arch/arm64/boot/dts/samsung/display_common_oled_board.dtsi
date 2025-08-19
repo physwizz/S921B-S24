@@ -50,6 +50,14 @@
 };
 #endif
 
+#if defined(ERR_FG_Falling_edge_pull_down)
+&pinctrl_0 {
+	err_fg_default: err_fg_default {
+		GPIO_CONFIG_PUD(AP,gpa2,gpa2,2, FUNC_INPUT, PULL_DOWN);
+	};
+};
+#endif
+
 #if 1
 &pinctrl_0 {
 	conn_det_default: conn_det_default {
@@ -121,6 +129,14 @@
 };
 #endif
 
+#if 0
+&${rst_ready_parent} {
+	rst_ready_default: rst_ready_default {
+		GPIO_CONFIG_PUD(${rst_ready_gpio}, FUNC_INPUT, PULL_DOWN);
+	};
+};
+#endif
+
 #if 1
 &l10_reg {
 	regulator-boot-on;
@@ -147,7 +163,7 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <
 							&disp_rst_default
-#if defined(ERR_FG_Rising_edge) || defined(ERR_FG_Falling_edge) || defined(ERR_FG_TRUE)
+#if defined(ERR_FG_Rising_edge) || defined(ERR_FG_Falling_edge) || defined(ERR_FG_TRUE) || defined(ERR_FG_Falling_edge_pull_down)
 							&err_fg_default
 #endif
 #if 1
@@ -168,6 +184,9 @@
 #endif
 #if 0
 							&lcd_vendor_check_default
+#endif
+#if 0
+							&rst_ready_default
 #endif
 				>;
 
@@ -196,7 +215,7 @@
 					};
 
 #endif
-#if defined(ERR_FG_Falling_edge)
+#if defined(ERR_FG_Falling_edge) || defined(ERR_FG_Falling_edge_pull_down)
 					err_fg: err-fg {
 						gpios = <SEC_GPIO_REF(AP,gpa2,gpa2,2) 0>;		/* 0:NOK(active) 1:OK */
 						dir = <1>;				/* IN */
@@ -231,6 +250,14 @@
 						irq-type = <0x0>;   /* NONE */
 					};
 #endif
+#if 0
+					disp_reset_ready: disp_reset_ready {
+						gpios = <SEC_GPIO_REF(${rst_ready_gpio}) 1>;		/* 0:NOK(active) 1:OK */
+						dir = <1>;				/* IN */
+						irq-type = <0x0>;   /* NONE */
+					};
+#endif
+
 				};
 
 				regulators {

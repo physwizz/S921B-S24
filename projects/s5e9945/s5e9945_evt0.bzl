@@ -105,12 +105,14 @@ def define_s5e9945_evt0_kernel(
                 "modules.order",
                 "Module.symvers",
                 ".config",
-            ],
+            ] + [
+				f + suffix for f in lego_dtbo_list for suffix in ["", ".reverse.dts"]
+			],
             implicit_outs = [
                 "scripts/sign-file",
                 "certs/signing_key.pem",
                 "certs/signing_key.x509",
-            ]+lego_dtbo_list,
+            ],
             srcs = [
                 "//kernel:common_kernel_sources",
                 name + "_common_config",

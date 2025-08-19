@@ -52,7 +52,7 @@ static void idle_latency_measure_start(int target_cpu)
 	idle_lmg.measurer_cpu = cpumask_first(&mask);
 
 	/* keep target cpu dle */
-	ecs_request("idle_latency", &mask);
+	ecs_request("idle_latency", &mask, ECS_MAX);
 
 	cpumask_clear(&idle_lmg.target);
 	cpumask_set_cpu(target_cpu, &idle_lmg.target);
@@ -87,7 +87,7 @@ static void idle_latency_work_fn(struct work_struct *work)
 		return;
 	}
 
-	ecs_request("idle_latency", cpu_possible_mask);
+	ecs_request("idle_latency", cpu_possible_mask, ECS_MAX);
 	idle_lmg.measuring = 0;
 }
 
@@ -150,7 +150,7 @@ static int exynos_idle_lat_probe(struct platform_device *pdev)
 		pr_err("Failed to link IDLE latency sysfs to cpu\n");
 
 	INIT_DELAYED_WORK(&idle_lmg.work, idle_latency_work_fn);
-	ecs_request_register("idle_latency", cpu_possible_mask);
+	ecs_request_register("idle_latency", cpu_possible_mask, ECS_MAX);
 
 	return 0;
 }

@@ -45,4 +45,5 @@ void slsi_rx_scheduled_pm_teardown_indication(struct slsi_dev *sdev, struct net_
 void slsi_rx_scheduled_pm_leaky_ap_detect_indication(struct slsi_dev *sdev, struct net_device *dev, struct sk_buff *skb);
 void slsi_rx_delayed_wakeup_indication(struct slsi_dev *sdev, struct net_device *dev,
 				       struct sk_buff *skb);
+void slsi_rx_sr_params_changed_indication(struct slsi_dev *sdev, struct net_device *dev, struct sk_buff *skb);
 #endif

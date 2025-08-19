@@ -3043,7 +3043,7 @@ lim_update_mlo_mgr_ap_link_info_mbssid_connect(struct pe_session *session)
 
 		mlo_mgr_update_ap_link_info(session->vdev,
 					    partner_link_info->link_id,
-					    partner_link_info->ap_link_addr.bytes,
+					    partner_link_info->link_addr.bytes,
 					    channel);
 	}
 }
@@ -3150,6 +3150,7 @@ static void lim_process_switch_channel_join_req(
 	 * and wait for the probe response/ beacon to post JOIN CNF
 	 */
 	if (nontx_bss_id) {
+		pe_debug("Skip sending join probe for MBSS candidate");
 		session_entry->limMlmState = eLIM_MLM_JOINED_STATE;
 		join_cnf.sessionId = session_entry->peSessionId;
 		join_cnf.resultCode = eSIR_SME_SUCCESS;
@@ -3402,7 +3403,7 @@ void lim_process_switch_channel_rsp(struct mac_context *mac,
 		break;
 	case LIM_SWITCH_CHANNEL_SAP_DFS:
 		if (QDF_IS_STATUS_SUCCESS(status))
-			lim_set_tpc_power(mac, pe_session);
+			lim_set_tpc_power(mac, pe_session, NULL);
 
 		/* Note: This event code specific to SAP mode
 		 * When SAP session issues channel change as performing

@@ -10,7 +10,8 @@
 #include "mxmgmt_transport.h"
 #if IS_ENABLED(CONFIG_SOC_S5E8825) || IS_ENABLED(CONFIG_SOC_S5E5515) \
 	|| IS_ENABLED(CONFIG_SOC_S5E8535) || IS_ENABLED(CONFIG_SOC_S5E8835) \
-	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845)
+	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845)\
+	|| IS_ENABLED(CONFIG_SOC_S5E5535)
 #include "mifpmuman.h"
 #endif
 
@@ -28,14 +29,23 @@ int mxman_res_mappings_logger_deinit(struct mxman *mxman);
 #endif
 #if IS_ENABLED(CONFIG_SOC_S5E8825) || IS_ENABLED(CONFIG_SOC_S5E5515) \
 	|| IS_ENABLED(CONFIG_SOC_S5E8535) || IS_ENABLED(CONFIG_SOC_S5E8835) \
-	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845)
+	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845) \
+	|| IS_ENABLED(CONFIG_SOC_S5E5535)
 int mxman_res_pmu_init(struct mxman *mxman, mifpmuisr_handler handler);
 #else
 int mxman_res_pmu_init(struct mxman *mxman);
 #endif
+#ifdef CONFIG_SCSC_XO_CDAC_CON
+int mxman_res_dcxo_config_update(struct mxman *mxman);
+#endif
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+int mxman_res_pmu_boot(struct mxman *mxman, enum scsc_subsystem sub, bool recovery_enable);
+#else
 int mxman_res_pmu_boot(struct mxman *mxman, enum scsc_subsystem sub);
+#endif
 int mxman_res_pmu_reset(struct mxman *mxman, enum scsc_subsystem sub);
 int mxman_res_pmu_monitor(struct mxman *mxman, enum scsc_subsystem sub);
+int mxman_res_pmu_scan2mem(struct mxman *mxman, bool dump);
 int mxman_res_pmu_deinit(struct mxman *mxman);
 int mxman_res_init_common(struct mxman *mxman);
 int mxman_res_deinit_common(struct mxman *mxman);
@@ -44,5 +54,5 @@ int mxman_res_init_subsystem(struct mxman *mxman, enum scsc_subsystem sub, void 
 int mxman_res_post_init_subsystem(struct mxman *mxman, enum scsc_subsystem sub);
 int mxman_res_reset(struct mxman *mxman, bool reset);
 int mxman_res_deinit_subsystem(struct mxman *mxman, enum scsc_subsystem sub);
-#endif
 void mxman_res_control_suspend_gpio(struct mxman *mxman, u8 value);
+#endif

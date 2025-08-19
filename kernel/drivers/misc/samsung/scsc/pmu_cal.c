@@ -10,6 +10,10 @@
 #include "modap/platform_mif_regmap_api.h"
 #endif
 
+#ifdef CONFIG_WLBT_KUNIT
+#include "./kunit/kunit_pmu_cal.c"
+#endif
+
 /*  structure of pmucal_data */
 /*	struct pmucal_data{
  *		int accesstype;
@@ -45,7 +49,7 @@ static char *pmu_cal_getsfr(int sfr)
 		return "WLBT_INT_TYPE";
 	case WLBT_OPTION:
 		return "WLBT_OPTION";
-#if defined(CONFIG_SOC_S5E8535) || defined(CONFIG_SOC_S5E8835) || defined(CONFIG_SOC_S5E8845)
+#if defined(CONFIG_SOC_S5E8535) || defined(CONFIG_SOC_S5E8835) || defined(CONFIG_SOC_S5E8845) || defined(CONFIG_SOC_S5E5535)
 	case VGPIO_TX_MONITOR2:
 		return "VGPIO_TX_MONITOR2";
 	case V_PWREN:
@@ -63,7 +67,7 @@ static struct regmap *pmu_cal_check_base(struct platform_mif *platform,
 	/* Set base */
 	struct regmap *i3c_regmap;
 	struct regmap *pmu_regmap = platform_mif_get_regmap(platform, PMUREG);
-#if defined(CONFIG_SOC_S5E8835) || defined(CONFIG_SOC_S5E8845)
+#if defined(CONFIG_SOC_S5E8835) || defined(CONFIG_SOC_S5E8845) || defined(CONFIG_SOC_S5E5535)
 	(void)i3c_regmap;
 	return pmu_regmap;
 #else
@@ -166,6 +170,7 @@ static int pmu_cal_read(struct platform_mif *platform, struct pmucal_data data)
 	regmap_read(target, data.sfr, &reg_val);
 	val = reg_val & BIT(data.field);
 	val >>= data.field;
+	SCSC_TAG_INFO(PLAT_MIF,"%d %d", val, data.value);
 	if (val == data.value) {
 		SCSC_TAG_INFO(PLAT_MIF, "read %s[%d]  0x%08x\n",
 			      target_sfr, data.field, reg_val);
@@ -257,23 +262,23 @@ int pmu_cal_progress(struct platform_mif *platform,
 	for (i = 0; i < pmucal_data_size; i++) {
 		if (pmu_data[i].bypass || enable_hwbypass) {
 			switch (pmu_data[i].accesstype) {
-			case WLBT_PMUCAL_WRITE:
-				ret = pmu_cal_write(platform, pmu_data[i]);
-				break;
-			case WLBT_PMUCAL_DELAY:
-				udelay(pmu_data[i].value);
-				break;
-			case WLBT_PMUCAL_READ:
-				ret = pmu_cal_read(platform, pmu_data[i]);
-				break;
-			case WLBT_PMUCAL_ATOMIC:
-				ret = pmu_cal_atomic(platform, pmu_data[i]);
-				break;
-			case WLBT_PMUCAL_CLEAR:
-				ret = pmu_cal_clear(platform, pmu_data[i]);
-				break;
-			default:
-				return -EINVAL;
+				case WLBT_PMUCAL_WRITE:
+					ret = pmu_cal_write(platform, pmu_data[i]);
+					break;
+				case WLBT_PMUCAL_DELAY:
+					udelay(pmu_data[i].value);
+					break;
+				case WLBT_PMUCAL_READ:
+					ret = pmu_cal_read(platform, pmu_data[i]);
+					break;
+				case WLBT_PMUCAL_ATOMIC:
+					ret = pmu_cal_atomic(platform, pmu_data[i]);
+					break;
+				case WLBT_PMUCAL_CLEAR:
+					ret = pmu_cal_clear(platform, pmu_data[i]);
+					break;
+				default:
+					return -EINVAL;
 			}
 			if (ret < 0)
 				return ret;

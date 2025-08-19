@@ -183,7 +183,7 @@ void dp_dump_cr(struct dp_device *dp)
 	int err, err_cnt = 0;
 	u16 val;
 
-	dp_info(dp, "=== DP CR DUMP ===\n");
+	pr_info("Displayport: === DP CR DUMP ===\n");
 	height = (size / 32) + 1;
 	num_word = size;
 	for (i = 0; i < height; i++) {
@@ -202,13 +202,13 @@ void dp_dump_cr(struct dp_device *dp)
 
 			num_word--;
 		}
-		dp_info(dp, "%s\n", buf);
+		pr_info("%s\n", buf);
 		if (num_word <= 0) break;
 		if (err_cnt >= MAX_ERR_CNT) break;
 	}
 
 	if (err_cnt)
-		dp_info(dp, "=== CR read error: %d\n", err_cnt);
+		pr_info("Displayport: === CR read error: %d\n", err_cnt);
 }
 
 void dp_dump_registers(struct dp_device *dp)
@@ -513,6 +513,30 @@ int dp_check_pixel_clock_for_hdr(struct dp_device *dp,
 }
 #endif
 
+static bool dp_devid_is_ps176(struct dp_device *dp)
+{
+	if (dp->sink_info.devid_str[0] == '1' &&
+			dp->sink_info.devid_str[1] == '7' &&
+			dp->sink_info.devid_str[2] == '6')
+		return true;
+
+	return false;
+}
+
+static bool dp_mode_is_optimizable(struct drm_display_mode *mode, u64 max_pclk)
+{
+	int fps = drm_mode_vrefresh(mode);
+	int resolution = mode->hdisplay * mode->vdisplay;
+	
+	if (fps > 110 && resolution >= (1920 * 1080) && max_pclk > 250000000U)
+		return false;
+
+	if (fps > 75 && resolution >= (2560 * 1440)  && max_pclk > 300000000U)
+		return false;
+
+	return true;
+}
+
 static int dp_get_min_link_rate(struct dp_device *dp,
 		u8 rx_link_rate, u8 lane_cnt, enum bit_depth bpc)
 {
@@ -537,6 +561,7 @@ static int dp_get_min_link_rate(struct dp_device *dp,
 
 	max_pclk = dp_find_edid_max_pixelclock(dp);
 	dp_info(dp, "max_pixel clock: %llu\n", max_pclk);
+
 	for (i = 0; i < max_link_rate_num; i++) {
 		if (dp_check_link_rate_pixel_clock(dp, link_rate[i],
 				lane_cnt, max_pclk, bpc) == true)
@@ -551,6 +576,13 @@ static int dp_get_min_link_rate(struct dp_device *dp,
 #endif
 	else
 		min_link_rate = link_rate[i] > rx_link_rate ? rx_link_rate : link_rate[i];
+
+	/* check if mode does not allow optimization. */
+	if (dp_devid_is_ps176(dp) && min_link_rate == LINK_RATE_2_7Gbps &&
+			!dp_mode_is_optimizable(&dp->best_mode, max_pclk)) {
+		dp_info(dp, "no optimize link rate\n");
+		return rx_link_rate;
+	}
 
 	dp_info(dp, "set link late: 0x%x, lane cnt:%d\n", min_link_rate, lane_cnt);
 
@@ -978,12 +1010,14 @@ Reduce_Link_Rate_Retry:
 	val[0] = 0x21;	/* SCRAMBLING_DISABLE, TRAINING_PATTERN_1 */
 	dp_reg_dpcd_write(&dp->cal_res, DPCD_ADD_TRANING_PATTERN_SET, 1, val);
 #ifdef FEATURE_MANAGE_HMD_LIST
+	mutex_lock(&dp->hmd_lock);
 	if (dp->is_hmd_dev &&
 		!strncmp(dp->sink_info.monitor_name, "PicoVR", MON_NAME_LEN)) {
 		dp_info(dp, "increase swing level\n");
 		for (i = 0; i < 4; i++)
 			drive_current[i] = MAX_REACHED_CNT - 1;
 	}
+	mutex_unlock(&dp->hmd_lock);
 #endif
 
 Voltage_Swing_Retry:
@@ -1325,6 +1359,7 @@ static int dp_read_branch_revision(struct dp_device *dp)
 {
 	int ret = 0;
 	u8 val[4] = {0, };
+	char devid[DPCD_DEVID_STR_SIZE + 1] = {0, };
 
 	ret = dp_reg_dpcd_read_burst(&dp->cal_res, DPCD_BRANCH_HW_REVISION, 3, val);
 	if (!ret) {
@@ -1336,6 +1371,12 @@ static int dp_read_branch_revision(struct dp_device *dp)
 		secdp_bigdata_save_item(BD_ADAPTER_HWID, val[0]);
 		secdp_bigdata_save_item(BD_ADAPTER_FWVER, (val[1] << 8) | val[2]);
 #endif
+	}
+
+	ret = dp_reg_dpcd_read_burst(&dp->cal_res, DPCD_DEVID_STR, DPCD_DEVID_STR_SIZE, devid);
+	if (!ret) {
+		memcpy(dp->sink_info.devid_str, devid, DPCD_DEVID_STR_SIZE);
+		dp_info(dp, "devid: %s\n", devid);
 	}
 
 	return ret;
@@ -1794,6 +1835,9 @@ int dp_dpcd_read_for_hdcp22(u32 address, u32 length, u8 *data)
 	struct dp_device *dp = get_dp_drvdata();
 	int ret;
 
+	if (dp->state == DP_STATE_OFF)
+		return -EPERM;
+
 	ret = dp_reg_dpcd_read_burst(&dp->cal_res, address, length, data);
 
 	if (ret != 0)
@@ -1806,6 +1850,9 @@ int dp_dpcd_write_for_hdcp22(u32 address, u32 length, u8 *data)
 {
 	struct dp_device *dp = get_dp_drvdata();
 	int ret;
+
+	if (dp->state == DP_STATE_OFF)
+		return -EPERM;
 
 	ret = dp_reg_dpcd_write_burst(&dp->cal_res, address, length, data);
 
@@ -2331,12 +2378,15 @@ void dp_hpd_changed(struct dp_device *dp,
 	else
 		dp_logger_set_max_count(-1);
 #endif
+
+	mutex_lock(&dp->hpd_lock);
+
 	if (dp_get_hpd_state(dp) == state) {
 		dp_info(dp, "hpd same state skip %x\n", state);
+		mutex_unlock(&dp->hpd_lock);
 		return;
 	}
 
-	mutex_lock(&dp->hpd_lock);
 	dp->bist_used = forced_bist_en;
 
 	if (state == EXYNOS_HPD_PLUG || state == EXYNOS_HPD_IRQ) {
@@ -4271,11 +4321,13 @@ static ssize_t dex_store(struct class *dev,
 
 		if (dex_setting == DEX_ON) {
 			/* check if cur mode is the same as best dex mode */
-			if (drm_mode_match(&dp->cur_mode, &dp->dex.best_mode, DRM_MODE_MATCH_TIMINGS))
+			if (drm_mode_match(&dp->cur_mode, &dp->dex.best_mode,
+					DRM_MODE_MATCH_TIMINGS|DRM_MODE_MATCH_CLOCK))
 				need_reconnect = false;
 		} else if (dex_setting == DEX_OFF) {
 			/* check if cur mode is the same as best mode */
-			if (drm_mode_match(&dp->cur_mode, &dp->best_mode, DRM_MODE_MATCH_TIMINGS))
+			if (drm_mode_match(&dp->cur_mode, &dp->best_mode,
+					DRM_MODE_MATCH_TIMINGS|DRM_MODE_MATCH_CLOCK))
 				need_reconnect = false;
 		}
 	}
@@ -4941,7 +4993,8 @@ static int dp_atomic_check(struct exynos_drm_encoder *exynos_encoder,
 		}
 	}
 #ifdef FEATURE_USE_DRM_EDID_PARSER
-	if (!drm_mode_match(&dp->cur_mode, adjusted_mode, DRM_MODE_MATCH_TIMINGS)) {
+	if (!drm_mode_match(&dp->cur_mode, adjusted_mode,
+			DRM_MODE_MATCH_TIMINGS|DRM_MODE_MATCH_CLOCK)) {
 		dp_warn(dp, "%s mode mismatch " DRM_MODE_FMT "\n", __func__, DRM_MODE_ARG(adjusted_mode));
 		drm_mode_copy(&dp->cur_mode, adjusted_mode);
 	}
@@ -5200,9 +5253,6 @@ int dp_itmon_notifier(struct notifier_block *nb, unsigned long act, void *data)
 			atomic_read(&dp->dev->power.usage_count));
 		dp_info(dp, "[DP][debug] usbdp phy usage cnt(%d)\n",
 			atomic_read(&dp->cal_res.usbdp_phy_en_cnt));
-
-		if (dp_hsi0_domain_power_check() == 0)
-			dp_hsi0_clk_check();
 
 		dp->itmon_notified = true;
 		return NOTIFY_OK;

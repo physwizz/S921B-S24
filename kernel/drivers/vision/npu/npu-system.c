@@ -974,9 +974,10 @@ int npu_system_probe(struct npu_system *system, struct platform_device *pdev)
 
 	addr1 = (void *)npu_get_io_area(system, "sfrmbox0")->vaddr;
 	addr2 = (void *)npu_get_io_area(system, "sfrmbox1")->vaddr;
-#if IS_ENABLED(CONFIG_NPU_USE_FENCE_SYNC)
+#if IS_ENABLED(CONFIG_SOC_S5E9945)
 	addr3 = (void *)npu_get_io_area(system, "sfrmbox2")->vaddr;
 #endif
+
 	ret = system->interface_ops->interface_probe(dev, addr1, addr2, addr3);
 	if (ret) {
 		probe_err("fail(%d) in npu_interface_probe\n", ret);
@@ -1079,6 +1080,9 @@ int npu_system_probe(struct npu_system *system, struct platform_device *pdev)
 	system->token_work_cnt = 0;
 	system->token_intr_cnt = 0;
 	system->token_clear_cnt = 0;
+#endif
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+	system->enter_suspend = 0;
 #endif
 	goto p_exit;
 p_qos_err:
@@ -1356,10 +1360,16 @@ int npu_system_resume(struct npu_system *system)
 
 #if IS_ENABLED(CONFIG_PM_SLEEP)
 	/* prevent the system to suspend */
-	if (!npu_wake_lock_active(system->ws)) {
-		npu_wake_lock(system->ws);
-		npu_info("wake_lock, now(%d)\n", npu_wake_lock_active(system->ws));
+#if IS_ENABLED(CONFIG_SOC_S5E9945)
+	if ((exynos_soc_info.main_rev == 1) && (exynos_soc_info.sub_rev < 2)) {
+#endif
+		if (!npu_wake_lock_active(system->ws)) {
+			npu_wake_lock(system->ws);
+			npu_info("wake_lock, now(%d)\n", npu_wake_lock_active(system->ws));
+		}
+#if IS_ENABLED(CONFIG_SOC_S5E9945)
 	}
+#endif
 	set_bit(NPU_SYS_RESUME_SETUP_WAKELOCK, &system->resume_steps);
 #endif
 
@@ -1498,10 +1508,16 @@ int npu_system_suspend(struct npu_system *system)
 
 #if IS_ENABLED(CONFIG_PM_SLEEP)
 	BIT_CHECK_AND_EXECUTE(NPU_SYS_RESUME_SETUP_WAKELOCK, &system->resume_steps, "Unlock wake lock", {
-		if (npu_wake_lock_active(system->ws)) {
-			npu_wake_unlock(system->ws);
-			npu_info("wake_unlock, now(%d)\n", npu_wake_lock_active(system->ws));
+#if IS_ENABLED(CONFIG_SOC_S5E9945)
+		if ((exynos_soc_info.main_rev == 1) && (exynos_soc_info.sub_rev < 2)) {
+#endif
+			if (npu_wake_lock_active(system->ws)) {
+				npu_wake_unlock(system->ws);
+				npu_info("wake_unlock, now(%d)\n", npu_wake_lock_active(system->ws));
+			}
+#if IS_ENABLED(CONFIG_SOC_S5E9945)
 		}
+#endif
 	});
 #endif
 

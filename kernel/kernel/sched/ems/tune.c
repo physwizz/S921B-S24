@@ -810,6 +810,9 @@ static int string_to_keys(char *cmd_str, int keys[NUM_OF_KEY])
 		if (kstrtol(ptr, 10, &val))
 			return -EINVAL;
 
+		if (i >= NUM_OF_KEY)
+			return -EINVAL;
+
 		keys[i] = (int)val;
 		i++;
 
@@ -1566,7 +1569,7 @@ static ssize_t task_boost_store(struct device *dev,
 	int data[2] = {-1, -1};
 	int type, ret;
 
-	if (sscanf(buf, "%s", arg) != 1)
+	if (sscanf(buf, "%99s", arg) != 1)
 		return -EINVAL;
 
 	mutex_lock(&task_boost.lock);
@@ -1994,10 +1997,8 @@ void emstune_set_pboost(int mode, int level, int cpu, int value) {
 
 	if (is_invalid_mode(mode))
 		return;
-
 	if (is_invalid_level(level))
 		return;
-
 	if (!cpu_possible(cpu))
 		return;
 

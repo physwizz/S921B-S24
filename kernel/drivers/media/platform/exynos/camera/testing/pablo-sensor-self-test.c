@@ -269,6 +269,7 @@ int pablo_test_set_sensor_run(const char *val, const struct kernel_param *kp)
 			sr_info.position, sr_info.width, sr_info.height,
 			sr_info.fps, sr_info.ex_mode, sr_info.ex_mode_format);
 
+		fst_phy_check_step = true;
 		sensor_self_start();
 		break;
 	default:

@@ -624,9 +624,13 @@ void sensor_cis_data_calculation(struct v4l2_subdev *subdev, u32 mode)
 	cis_data->frame_length_lines = fll;
 	cis_data->pre_line_length_pck = cis_data->line_length_pck;
 	cis_data->line_length_pck = llp;
-	cis_data->line_readOut_time = (u64)llp * 1000 * 1000 * 1000 / pclk_hz;
-
-	frame_valid_us = (u64)cis_data->cur_height * llp * 1000 * 1000 / pclk_hz;
+	if (cis->sensor_info->readout_factor > 1) {
+		cis_data->line_readOut_time = (u64)llp * cis->sensor_info->readout_factor * 1000 * 1000 * 1000 / pclk_hz;
+		frame_valid_us = (u64)cis_data->cur_height * llp * cis->sensor_info->readout_factor * 1000 * 1000 / pclk_hz;
+	} else {
+		cis_data->line_readOut_time = (u64)llp * 1000 * 1000 * 1000 / pclk_hz;
+		frame_valid_us = (u64)cis_data->cur_height * llp * 1000 * 1000 / pclk_hz;
+	}
 	cis_data->frame_valid_us_time = (unsigned int)frame_valid_us;
 
 	cis_data->frame_time = (cis_data->line_readOut_time * cis_data->cur_height / 1000);
@@ -1906,8 +1910,8 @@ int sensor_cis_get_mode_info(struct v4l2_subdev *subdev, u32 mode, struct is_sen
 	max_fine = max_fine_integration_time;
 
 	/* calculate min_expo */
-	min_coarse = cis_data->min_coarse_integration_time;
-	min_fine = cis_data->min_fine_integration_time;
+	min_coarse = min_coarse_integration_time;
+	min_fine = min_fine_integration_time;
 
 	mode_info->min_expo = (u32)((u64)((llp * min_coarse) + min_fine) * 1000 / pclk_khz);
 	mode_info->max_expo = (u32)((u64)((llp * max_coarse) + max_fine) * 1000 / pclk_khz);
@@ -2661,6 +2665,9 @@ int sensor_cis_set_group_param_hold(struct v4l2_subdev *subdev, bool hold)
 	if (!cis->sensor_info->use_group_param_hold)
 		return ret;
 
+	if (cis_data->is_data.scene_mode == AA_SCENE_MODE_FAST_AE)
+		return ret;
+
 	if (hold == cis_data->group_param_hold) {
 		dbg_sensor(1, "%s : already group_param_hold (%d)\n", __func__, cis_data->group_param_hold);
 		return ret;
@@ -2834,7 +2841,8 @@ int sensor_cis_set_flip_mode(struct v4l2_subdev *subdev)
 
 	flip_mode = cis->cis_data->is_data.flip_mode;
 
-	info("[%s] sensor flip mode (%d)", __func__, flip_mode);
+	info("[%s][%d][%s] flip_mode(%d)\n",
+		__func__, cis->id, cis->sensor_info->name, flip_mode);
 
 	if (flip_mode < 0 || flip_mode >= CAM_FLIP_MODE_MAX) {
 		err("[%s] flip_mode(%d) is out of range", __func__, flip_mode);

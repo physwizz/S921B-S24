@@ -136,7 +136,7 @@ static int __mfc_rm_get_core_num_by_load(struct mfc_dev *dev, struct mfc_ctx *ct
 	if (dev->debugfs.core_balance)
 		dev->core_balance = dev->debugfs.core_balance;
 	else if (dev->num_enc_inst)
- 		dev->core_balance = MFC_MAX_CORE_BALANCE;
+		dev->core_balance = MFC_MAX_CORE_BALANCE;
 	else
 		dev->core_balance = dev->pdata->core_balance;
 
@@ -234,6 +234,8 @@ static int __mfc_rm_move_core_running(struct mfc_ctx *ctx, int to_core_num, int 
 	struct mfc_dev *dev = ctx->dev;
 	struct mfc_core *to_core = dev->core[to_core_num];
 	struct mfc_core *from_core = dev->core[from_core_num];
+	struct mfc_core *maincore = dev->core[MFC_CORE_MAIN];
+	struct mfc_core *subcore = dev->core[MFC_CORE_SUB];
 	struct mfc_core_ctx *core_ctx;
 	int is_to_core = 0;
 	int ret = 0;
@@ -244,6 +246,12 @@ static int __mfc_rm_move_core_running(struct mfc_ctx *ctx, int to_core_num, int 
 		return -EINVAL;
 	}
 
+	if (!maincore || !subcore) {
+		mfc_ctx_err("The core is invalid(main: %p, sub: %p)\n",
+			    maincore, subcore);
+		return -EINVAL;
+	}
+
 	ret = mfc_get_corelock_migrate(ctx);
 	if (ret < 0) {
 		mfc_err("[RMLB] failed to get corelock\n");
@@ -251,12 +259,19 @@ static int __mfc_rm_move_core_running(struct mfc_ctx *ctx, int to_core_num, int 
 	}
 
 	/* 1. Change state on from_core */
-	ret = mfc_core_get_hwlock_dev(from_core);
+	ret = mfc_core_get_hwlock_dev(maincore);
 	if (ret < 0) {
-		mfc_ctx_err("Failed to get hwlock\n");
+		mfc_ctx_err("Failed to get hwlock of maincore\n");
 		mfc_release_corelock_migrate(ctx);
 		return ret;
 	}
+
+	ret = mfc_core_get_hwlock_dev(subcore);
+	if (ret < 0) {
+		mfc_err("Failed to get hwlock of subcore\n");
+		goto err_state;
+	}
+	is_to_core = 1;
 
 	if (core_ctx->state != MFCINST_RUNNING) {
 		mfc_debug(3, "[RMLB] it is not running state: %d\n", core_ctx->state);
@@ -271,12 +286,6 @@ static int __mfc_rm_move_core_running(struct mfc_ctx *ctx, int to_core_num, int 
 	mfc_change_state(core_ctx, MFCINST_MOVE_INST);
 
 	/* 2. Cache flush on to_core */
-	ret = mfc_core_get_hwlock_dev(to_core);
-	if (ret < 0) {
-		mfc_err("Failed to get hwlock\n");
-		goto err_migrate;
-	}
-	is_to_core = 1;
 
 	if (from_core->sleep || to_core->sleep) {
 		mfc_err("Failed to move inst. Sleep was called\n");
@@ -324,8 +333,8 @@ static int __mfc_rm_move_core_running(struct mfc_ctx *ctx, int to_core_num, int 
 	mfc_core_pm_clock_off(to_core, 0);
 
 	mfc_core_move_hwlock_ctx(to_core, from_core, core_ctx);
-	mfc_core_release_hwlock_dev(to_core);
-	mfc_core_release_hwlock_dev(from_core);
+	mfc_core_release_hwlock_dev(subcore);
+	mfc_core_release_hwlock_dev(maincore);
 
 	mfc_change_state(core_ctx, MFCINST_RUNNING);
 	mfc_qos_on(to_core, ctx);
@@ -343,9 +352,9 @@ err_move:
 err_migrate:
 	mfc_change_state(core_ctx, MFCINST_RUNNING);
 err_state:
-	mfc_core_release_hwlock_dev(from_core);
 	if (is_to_core)
-		mfc_core_release_hwlock_dev(to_core);
+		mfc_core_release_hwlock_dev(subcore);
+	mfc_core_release_hwlock_dev(maincore);
 
 	mfc_release_corelock_migrate(ctx);
 
@@ -445,12 +454,19 @@ static struct mfc_core *__mfc_rm_switch_to_single_mode(struct mfc_ctx *ctx, int 
 	 * is only MFC_OP_CORE_FIXED_(N), select the other core.
 	 * Otherwise, select a lower load core.
 	 */
-	if (op_core_type == MFC_OP_CORE_FIXED_1)
+	if (ctx->cmd_counter == 0)
+		switch_single_core = ctx->last_op_core;
+	else if ((ctx->stream_op_mode == MFC_OP_TWO_MODE2) &&
+		 (ctx->curr_src_index != -1))
+		switch_single_core = ctx->curr_src_index % ctx->dev->num_core;
+	else if (ctx->op_core_type == MFC_OP_CORE_FIXED_0)
+		switch_single_core = 0;
+	else if (ctx->op_core_type == MFC_OP_CORE_FIXED_1)
+		switch_single_core = 1;
+	else if (op_core_type == MFC_OP_CORE_FIXED_1)
 		switch_single_core = 0;
 	else if (op_core_type == MFC_OP_CORE_FIXED_0)
 		switch_single_core = 1;
-	else if (ctx->cmd_counter == 0)
-		switch_single_core = ctx->last_op_core;
 	else
 		switch_single_core = __mfc_rm_get_core_num_by_load(dev, ctx, MFC_SURPLUS_CORE);
 	mfc_debug(2, "[RM] switch to single to core: %d\n", switch_single_core);
@@ -1035,8 +1051,9 @@ static int __mfc_rm_switch_to_multi_mode(struct mfc_ctx *ctx)
 	if (ctx->op_mode == MFC_OP_SWITCH_BUT_MODE2) {
 		mfc_ctx_debug(2, "[RMLB] just go to mode2\n");
 	} else {
-		if (!ctx->cmd_counter) {
-			mfc_ctx_err("It didn't worked on switch to single\n");
+		if (!ctx->cmd_counter || ctx->handle_drc_multi_mode) {
+			mfc_ctx_err("Skip op mode change, counter(%d), drc_multi(%d)",
+				ctx->cmd_counter, ctx->handle_drc_multi_mode);
 			mfc_core_release_hwlock_dev(maincore);
 			mfc_core_release_hwlock_dev(subcore);
 			mutex_unlock(&ctx->op_mode_mutex);
@@ -1058,6 +1075,9 @@ static int __mfc_rm_switch_to_multi_mode(struct mfc_ctx *ctx)
 	changed_subcore = mfc_get_sub_core(ctx->dev, ctx);
 	if (!changed_subcore) {
 		mfc_ctx_err("[RM] There is no sub core for flushing context\n");
+		mutex_unlock(&ctx->op_mode_mutex);
+		mfc_core_release_hwlock_dev(maincore);
+		mfc_core_release_hwlock_dev(subcore);
 		return -EINVAL;
 	}
 	mfc_core_clear_main_core_context_flush_done(changed_subcore);
@@ -1085,7 +1105,8 @@ static void __mfc_rm_check_instance(struct mfc_ctx *ctx)
 	if (!IS_MULTI_CORE_DEVICE(dev))
 		return;
 
-	if (dev->num_inst == 1 && IS_SWITCH_SINGLE_MODE(ctx)) {
+	if (dev->num_inst == 1 && IS_SWITCH_SINGLE_MODE(ctx)
+			&& !(IS_VP9_DEC(ctx) && ctx->is_10bit)) {
 		/*
 		 * If there is only one instance and it is still switch to single mode,
 		 * switch to multi core mode again.
@@ -1314,7 +1335,8 @@ void mfc_rm_load_balancing(struct mfc_ctx *ctx, int load_add)
 		if (IS_MULTI_MODE(tmp_ctx)) {
 			__mfc_rm_update_core_load(tmp_ctx, 0, 1);
 			continue;
-		} else if (IS_SWITCH_SINGLE_MODE(tmp_ctx) && (dev->num_inst == 1)) {
+		} else if (IS_SWITCH_SINGLE_MODE(tmp_ctx) && (dev->num_inst == 1)
+				&& !(IS_VP9_DEC(tmp_ctx) && tmp_ctx->is_10bit)) {
 			mfc_ctx_debug(2, "[RMLB] ctx[%d] can be changed to mode%d\n",
 					tmp_ctx->num, tmp_ctx->stream_op_mode);
 			MFC_TRACE_RM("[c:%d] can be changed to mode%d\n",
@@ -1520,6 +1542,14 @@ int mfc_rm_instance_open(struct mfc_dev *dev, struct mfc_ctx *ctx)
 		mfc_get_corelock_ctx(ctx);
 		is_corelock = 1;
 
+		if (ctx->gdc_votf || ctx->otf_handle) {
+			if (!dev->core[MFC_CORE_SUB]->has_mfc_votf) {
+				ctx->op_core_type = MFC_OP_CORE_FIXED_0;
+			} else if (!dev->core[MFC_CORE_MAIN]->has_mfc_votf) {
+				ctx->op_core_type = MFC_OP_CORE_FIXED_1;
+			}
+		}
+
 		/* Core balance by both standard and load */
 		core_num = __mfc_rm_get_core_num(ctx, core->id);
 		if (core_num != core->id) {
@@ -1561,10 +1591,76 @@ err_inst_open:
 	return ret;
 }
 
+/* For 2core DRC.
+ * 1) CACHE_FLUSH(main) -> CLOSE_INST(sub) -> CACHE_FLUSH(sub)
+ * 2) Clear multi_core_inst_bits
+ * 3) Change state to MFCINST_RES_CHANGE_END
+ */
+static void __mfc_rm_handle_drc_sub_core_deinit(struct mfc_ctx *ctx)
+{
+	struct mfc_core *core;
+	struct mfc_core_ctx *core_ctx;
+	struct mfc_core *subcore;
+	int ret;
+
+	mutex_lock(&ctx->op_mode_mutex);
+
+	core = mfc_get_main_core(ctx->dev, ctx);
+	if (!core)
+		return;
+
+	core_ctx = core->core_ctx[ctx->num];
+
+	subcore = mfc_get_sub_core(ctx->dev, ctx);
+	if (!subcore) {
+		mutex_unlock(&ctx->op_mode_mutex);
+		return;
+	}
+
+	if (IS_SINGLE_MODE(ctx)) {
+		mutex_unlock(&ctx->op_mode_mutex);
+		return;
+	}
+
+	ctx->subcore_inst_no = MFC_NO_INSTANCE_SET;
+	ctx->op_core_num[MFC_CORE_SUB] = MFC_CORE_INVALID;
+	ctx->op_core_type = MFC_OP_CORE_ALL;
+
+	ctx->stream_op_mode = MFC_OP_SINGLE;
+	mfc_change_op_mode(ctx, MFC_OP_SINGLE);
+
+	mfc_ctx_debug(2, "[RM][2CORE][DRC] DRC update op_mode: %d\n", ctx->op_mode);
+
+	mutex_unlock(&ctx->op_mode_mutex);
+
+        /* deinit subcore, this instance will be operate with single core */
+	if (IS_TWO_MODE1(ctx))
+		mfc_core_pm_clock_off(subcore, 0);
+
+	/* If 2-core mode, cache_flush(MAIN) is needed
+	 * after LAST_FRAME(MAIN) & before CLOSE_INST(SUB)
+	 */
+	core->core_ops->instance_cache_flush(core, ctx);
+
+	ret = subcore->core_ops->instance_deinit(subcore, ctx);
+
+	mutex_lock(&ctx->op_mode_mutex);
+	clear_bit(ctx->num, &ctx->dev->multi_core_inst_bits);
+	mfc_change_state(core_ctx, MFCINST_RES_CHANGE_END);
+	ctx->handle_drc_multi_mode = 0;
+	mutex_unlock(&ctx->op_mode_mutex);
+
+	if (ret) {
+		mfc_core_err("[RM][2CORE][DRC] Failed to deinit\n");
+		call_dop(core, dump_and_broadcast, core);
+	}
+}
+
 static void __mfc_rm_inst_dec_dst_stop(struct mfc_dev *dev, struct mfc_ctx *ctx)
 {
 	struct mfc_core *maincore;
 	struct mfc_core *subcore;
+	struct mfc_core_ctx *core_ctx;
 	int ret;
 
 	mfc_ctx_debug(3, "op_mode: %d\n", ctx->op_mode);
@@ -1591,7 +1687,17 @@ static void __mfc_rm_inst_dec_dst_stop(struct mfc_dev *dev, struct mfc_ctx *ctx)
 			goto err_dst_stop;
 		}
 		maincore->core_ops->instance_dpb_flush(maincore, ctx);
-		subcore->core_ops->instance_dpb_flush(subcore, ctx);
+		/* Check one more time, because sub core could be denit-ed by DRC */
+		if (IS_TWO_MODE2(ctx) || IS_SWITCH_SINGLE_MODE(ctx)) {
+			/* If drc is running yet, we need to deinit first. */
+			core_ctx = subcore->core_ctx[ctx->num];
+			if (core_ctx->state == MFCINST_RES_CHANGE_INIT ||
+					core_ctx->state == MFCINST_RES_CHANGE_FLUSH ||
+					core_ctx->state == MFCINST_RES_CHANGE_FLUSH_FINISHED)
+				__mfc_rm_handle_drc_sub_core_deinit(ctx);
+			else
+				subcore->core_ops->instance_dpb_flush(subcore, ctx);
+		}
 	} else {
 		maincore = mfc_get_main_core(dev, ctx);
 		if (!maincore) {
@@ -1835,56 +1941,6 @@ fail_init:
 	return ret;
 }
 
-static void __mfc_rm_handle_drc_multi_mode(struct mfc_ctx *ctx)
-{
-	struct mfc_core *core;
-	struct mfc_core *subcore;
-	int ret;
-
-	core = __mfc_rm_switch_to_single_mode(ctx, 1, ctx->op_core_type);
-	if (!core)
-		return;
-
-	mutex_lock(&ctx->op_mode_mutex);
-
-	if (IS_SINGLE_MODE(ctx)) {
-		mutex_unlock(&ctx->op_mode_mutex);
-		return;
-	}
-
-	mfc_change_state(core->core_ctx[ctx->num], MFCINST_RES_CHANGE_INIT);
-	mfc_ctx_debug(2, "[RM][2CORE][DRC] switch single for DRC op_mode: %d, state: %d\n",
-			ctx->op_mode, core->core_ctx[ctx->num]->state);
-
-	subcore = mfc_get_sub_core(ctx->dev, ctx);
-	if (!subcore) {
-		mutex_unlock(&ctx->op_mode_mutex);
-		return;
-	}
-
-	ctx->subcore_inst_no = MFC_NO_INSTANCE_SET;
-	ctx->op_core_num[MFC_CORE_SUB] = MFC_CORE_INVALID;
-	ctx->op_core_type = MFC_OP_CORE_ALL;
-
-	ctx->stream_op_mode = MFC_OP_SINGLE;
-	mfc_change_op_mode(ctx, MFC_OP_SINGLE);
-
-	clear_bit(ctx->num, &ctx->dev->multi_core_inst_bits);
-	mfc_ctx_debug(2, "[RM][2CORE][DRC] DRC update op_mode: %d\n", ctx->op_mode);
-
-	mutex_unlock(&ctx->op_mode_mutex);
-
-	/* deinit subcore, this instance will be operate with single core */
-	if (IS_TWO_MODE1(ctx))
-		mfc_core_pm_clock_off(subcore, 0);
-
-	ret = subcore->core_ops->instance_deinit(subcore, ctx);
-	if (ret) {
-		mfc_core_err("[RM][2CORE][DRC] Failed to deinit\n");
-		call_dop(core, dump_and_broadcast, core);
-	}
-}
-
 void mfc_rm_request_work(struct mfc_dev *dev, enum mfc_request_work work,
 		struct mfc_ctx *ctx)
 {
@@ -1913,8 +1969,17 @@ void mfc_rm_request_work(struct mfc_dev *dev, enum mfc_request_work work,
 		return;
 	}
 
-	if (!IS_SINGLE_MODE(ctx) && mfc_rm_query_state(ctx, EQUAL_OR, MFCINST_RES_CHANGE_INIT))
-		__mfc_rm_handle_drc_multi_mode(ctx);
+	if (mfc_rm_query_state(ctx, EQUAL_OR, MFCINST_RES_CHANGE_INIT) && !IS_SINGLE_MODE(ctx)) {
+		/* When 2-core DRC, switch_to_single is needed */
+		__mfc_rm_switch_to_single_mode(ctx, 1, ctx->op_core_type);
+	}
+
+        /* If 2core DRC, CACHE_FLUSH of main core and deinit of sub core are needed.
+	 * If not 2core DRC, just change the state to MFCINST_RES_CHANGE_END.
+	 */
+	if (ctx->handle_drc_multi_mode &&
+            mfc_rm_query_state(ctx, EQUAL_OR, MFCINST_RES_CHANGE_FLUSH_FINISHED))
+		__mfc_rm_handle_drc_sub_core_deinit(ctx);
 
 	if (IS_TWO_MODE2(ctx)) {
 		__mfc_rm_move_buf_request_work(ctx, work);
@@ -1931,12 +1996,15 @@ void mfc_rm_request_work(struct mfc_dev *dev, enum mfc_request_work work,
 		}
 		mfc_get_corelock_ctx(ctx);
 		is_corelock = 1;
-		core = mfc_get_main_core(dev, ctx);
-		if (!core)
-			goto err_req_work;
 	}
 
 	mutex_lock(&ctx->op_mode_mutex);
+
+	core = mfc_get_main_core(dev, ctx);
+	if (!core) {
+		mutex_unlock(&ctx->op_mode_mutex);
+		goto err_req_work;
+	}
 
 	if (IS_TWO_MODE2(ctx) || IS_MODE_SWITCHING(ctx)) {
 		/* do not move the src buffer */

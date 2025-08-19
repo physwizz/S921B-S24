@@ -8,6 +8,7 @@
 
 #include <trace/events/ems.h>
 #include <trace/events/ems_debug.h>
+#include <linux/perf/arm_pmuv3.h>
 
 /******************************************************************************
  *                           MULTI LOAD for TASK                              *

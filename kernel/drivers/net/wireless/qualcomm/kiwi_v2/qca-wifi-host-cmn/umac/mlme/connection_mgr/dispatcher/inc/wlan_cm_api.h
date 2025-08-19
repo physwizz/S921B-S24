@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -91,6 +91,17 @@ QDF_STATUS wlan_cm_bss_select_ind_rsp(struct wlan_objmgr_vdev *vdev,
 QDF_STATUS wlan_cm_bss_peer_create_rsp(struct wlan_objmgr_vdev *vdev,
 				       QDF_STATUS status,
 				       struct qdf_mac_addr *peer_mac);
+
+/**
+ * wlan_cm_update_scan_mlme_info() - Called after connect/roam complete
+ * to update the scan cache with assoc state
+ * @vdev: vdev object pointer
+ * @resp: Connect response
+ *
+ * Return: QDF_STATUS
+ */
+void wlan_cm_update_scan_mlme_info(struct wlan_objmgr_vdev *vdev,
+				   struct wlan_cm_connect_resp *resp);
 
 /**
  * wlan_cm_connect_rsp() - Connection manager connect response
@@ -570,8 +581,19 @@ void wlan_cm_set_candidate_custom_sort_cb(
  */
 QDF_STATUS wlan_cm_get_rnr(struct wlan_objmgr_vdev *vdev, wlan_cm_id cm_id,
 			   struct reduced_neighbor_report *rnr);
+
+/**
+ * wlan_cm_get_curr_candidate_entry() - Get current candidate from cnx mgr
+ * @vdev: VDEV object manager
+ * @cm_id: cnx mgr ID
+ *
+ * Get the current candidate for connection from cnx mgr.
+ *
+ * Return: Scan entry
+ */
 struct scan_cache_entry *
-wlan_cm_get_curr_candidate_entry(struct wlan_objmgr_vdev *vdev, wlan_cm_id cm_id);
+wlan_cm_get_curr_candidate_entry(struct wlan_objmgr_vdev *vdev,
+				 wlan_cm_id cm_id);
 
 /**
  * wlan_cm_disc_cont_after_rso_stop() - Continue disconnect after RSO stop

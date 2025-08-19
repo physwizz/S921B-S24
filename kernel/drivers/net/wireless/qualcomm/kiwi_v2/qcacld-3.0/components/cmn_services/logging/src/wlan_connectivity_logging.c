@@ -596,9 +596,6 @@ wlan_populate_roam_mld_log_param(struct wlan_objmgr_vdev *vdev,
 	struct wlan_objmgr_pdev *pdev;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
 
-	if (!mlo_is_mld_sta(vdev))
-		return status;
-
 	pdev = wlan_vdev_get_pdev(vdev);
 	if (!pdev)
 		return QDF_STATUS_E_INVAL;
@@ -636,7 +633,8 @@ wlan_convert_freq_to_diag_band(uint16_t ch_freq)
 #define REJECTED_LINK_STATUS 1
 
 void
-wlan_connectivity_mlo_setup_event(struct wlan_objmgr_vdev *vdev)
+wlan_connectivity_mlo_setup_event(struct wlan_objmgr_vdev *vdev,
+				  bool is_band_present)
 {
 	uint i = 0;
 	struct mlo_link_switch_context *link_ctx = NULL;
@@ -646,7 +644,16 @@ wlan_connectivity_mlo_setup_event(struct wlan_objmgr_vdev *vdev)
 	WLAN_HOST_DIAG_EVENT_DEF(wlan_diag_event,
 				 struct wlan_diag_mlo_setup);
 
-	if (!mlo_is_mld_sta(vdev))
+	/*
+	 * MLO setup event need to be logged in the following cases:
+	 *
+	 * 1. When connection request is initiated and the ML
+	 *    candidate is selected.
+	 * 2. When roamed successfully to ML AP
+	 *
+	 */
+	if ((wlan_cm_is_vdev_connecting(vdev) && !mlo_is_mld_sta(vdev)) ||
+	    (wlan_cm_is_vdev_active(vdev) && !is_band_present))
 		return;
 
 	qdf_mem_zero(&wlan_diag_event, sizeof(struct wlan_diag_mlo_setup));
@@ -892,7 +899,7 @@ wlan_connectivity_sta_info_event(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
 	}
 
 	WLAN_HOST_DIAG_EVENT_REPORT(&wlan_diag_event, EVENT_WLAN_STA_INFO);
-	wlan_connectivity_connecting_event(vdev);
+	wlan_connectivity_connecting_event(vdev, NULL);
 out:
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_OBJMGR_ID);
 }
@@ -989,8 +996,8 @@ wlan_connectivity_mgmt_event(struct wlan_objmgr_psoc *psoc,
 	wlan_diag_event.auth_seq_num = auth_seq;
 	wlan_diag_event.assoc_id = aid;
 
-	if (tag == WLAN_DEAUTH_TX || tag == WLAN_DISASSOC_TX)
-		wlan_populate_vsie(vdev, &wlan_diag_event, true);
+	if (tag == WLAN_DEAUTH_RX || tag == WLAN_DISASSOC_RX)
+		wlan_populate_vsie(vdev, &wlan_diag_event, false);
 
 	if (wlan_diag_event.subtype > WLAN_CONN_DIAG_REASSOC_RESP_EVENT &&
 	    wlan_diag_event.subtype < WLAN_CONN_DIAG_BMISS_EVENT)
@@ -1016,25 +1023,34 @@ wlan_connectivity_mgmt_event(struct wlan_objmgr_psoc *psoc,
 	WLAN_HOST_DIAG_EVENT_REPORT(&wlan_diag_event, EVENT_WLAN_MGMT);
 
 	if (tag == WLAN_ASSOC_RSP || tag == WLAN_REASSOC_RSP)
-		wlan_connectivity_mlo_setup_event(vdev);
+		wlan_connectivity_mlo_setup_event(vdev, false);
 
 out:
 	wlan_objmgr_vdev_release_ref(vdev, WLAN_MLME_OBJMGR_ID);
 }
 
 void
-wlan_connectivity_connecting_event(struct wlan_objmgr_vdev *vdev)
+wlan_connectivity_connecting_event(struct wlan_objmgr_vdev *vdev,
+				   struct wlan_cm_connect_req *con_req)
 {
 	QDF_STATUS status;
 	struct wlan_cm_connect_req req;
 
 	WLAN_HOST_DIAG_EVENT_DEF(wlan_diag_event, struct wlan_diag_connect);
 
-	status = wlan_cm_get_active_connect_req_param(vdev, &req);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		logging_err("vdev: %d failed to get active cmd request",
-			    wlan_vdev_get_id(vdev));
+	if (!wlan_cm_is_first_candidate_connect_attempt(vdev))
 		return;
+
+	/* for candidate not found case*/
+	if (con_req) {
+		req = *con_req;
+	} else {
+		status = wlan_cm_get_active_connect_req_param(vdev, &req);
+		if (QDF_IS_STATUS_ERROR(status)) {
+			logging_err("vdev: %d failed to get active cmd request",
+				    wlan_vdev_get_id(vdev));
+			return;
+		}
 	}
 
 	wlan_diag_event.version = DIAG_CONN_VERSION;

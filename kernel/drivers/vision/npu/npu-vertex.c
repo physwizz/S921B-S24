@@ -309,6 +309,9 @@ normal_complete:
 	vctx->state |= BIT(NPU_VERTEX_CLOSE);
 	npu_iinfo("(%d)\n", vctx, ret);
 session_free:
+#if IS_ENABLED(CONFIG_SOC_S5E9945)
+	npu_precision_active_hash_delete(session);
+#endif
 	npu_queue_close(queue, queue->inqueue);
 	npu_queue_close(queue, queue->otqueue);
 
@@ -387,29 +390,11 @@ unsigned int npu_vertex_poll(struct file *file, poll_table *poll)
 int npu_vertex_flush(struct file *file)
 {
 	int ret = 0;
-	struct npu_vertex_ctx *vctx = file->private_data;
-	struct npu_session *session = container_of(
-			vctx, struct npu_session, vctx);
-	struct npu_vertex *vertex = vctx->vertex;
-	struct mutex *lock = &vertex->lock;
 
-	if (fatal_signal_pending(current) || (current->exit_code != 0)) {
-		mutex_lock(lock);
-		npu_info("Flush caused by forced terminated.(%d)\n", current->exit_code);
-		if (!(vctx->state & BIT(NPU_VERTEX_STREAMOFF)) &&
-				(vctx->state & BIT(NPU_VERTEX_POWER))) {
-			ret = __force_streamoff(file);
-			if (ret)
-				npu_err("fail(%d) in flush, __force_streamoff\n", ret);
-		}
+	if (fatal_signal_pending(current) || (current->exit_code != 0))
+		npu_dump("Flush caused by forced terminated. PID(%d), CUR(%s), EXIT_CODE(%d)\n",
+				task_pid_nr(current), current->comm, current->exit_code);
 
-		ret = npu_session_flush(session);
-		if (ret)
-			npu_err("fail(%d) in npu_session_flush\n", ret);
-		mutex_unlock(lock);
-	}
-
-	npu_idbg("(%d)\n", vctx, ret);
 	return ret;
 }
 
@@ -694,7 +679,11 @@ int npu_vertex_qbuf(struct file *file, struct vs4l_container_bundle *cbundle)
 #if IS_ENABLED(CONFIG_NPU_GOVERNOR)
 	vertex = vctx->vertex;
 	device = container_of(vertex, struct npu_device, vertex);
-	start_cmdq_table_read(&device->cmdq_table_info);
+	ret = start_cmdq_table_read(&device->cmdq_table_info);
+	if (ret) {
+		npu_ierr("start_cmdq_table_read is fail(%d)\n", vctx, ret);
+		goto p_err;
+	}
 #endif
 #if IS_ENABLED(CONFIG_NPU_USE_IFD)
 #if !IS_ENABLED(CONFIG_NPU_BRINGUP_NOTDONE)
@@ -853,7 +842,6 @@ static int __npu_vertex_bootup(struct file *file, struct vs4l_ctrl *ctrl)
 	struct npu_scheduler_info *info;
 
 	info = npu_scheduler_get_info();
-	session->hids = ctrl->value;
 #if !IS_ENABLED(CONFIG_DSP_USE_VS4L)
 	if (ctrl->value == NPU_HWDEV_ID_DSP) {
 		npu_err("recv err cmd\n");
@@ -861,6 +849,7 @@ static int __npu_vertex_bootup(struct file *file, struct vs4l_ctrl *ctrl)
 	}
 #endif
 
+	session->hids = ctrl->value;
 	/* check npu_device emergency error */
 	ret = check_emergency_vctx(vctx);
 	if (ret)

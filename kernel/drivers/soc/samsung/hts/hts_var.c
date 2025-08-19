@@ -90,7 +90,14 @@ void hts_clear_target_cgroup(void)
 void hts_add_mask(unsigned long mask)
 {
 	int bit;
-	struct cpumask *bufferMask = &hts_mask_cpu[hts_mask_buffer_count];
+	struct cpumask *bufferMask = NULL;
+
+	if (MAX_MASK_BUFFER <= hts_mask_buffer_count) {
+		pr_err("HTS: Couldn't add mask anymore!");
+		return;
+	}
+
+	bufferMask = &hts_mask_cpu[hts_mask_buffer_count];
 
 	cpumask_clear(bufferMask);
 	for_each_set_bit(bit, &mask, CONFIG_VENDOR_NR_CPUS)
@@ -137,8 +144,11 @@ void hts_set_predefined_value(int index, unsigned long *value, int count)
 
 	if (index < 0 ||
 		MAX_ENTRIES_MASK <= index ||
-		value == NULL)
+		value == NULL ||
+		MAX_PREDEFINED_BUFFER <= hts_predefined_value_count) {
+		pr_err("HTS: Couldn't set predefined value anymore!");
 		return;
+	}
 
 	if (maxIndex > REG_CTRL_END)
 		maxIndex = REG_CTRL_END;

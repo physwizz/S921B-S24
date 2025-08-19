@@ -33,7 +33,13 @@
 #include <soc/samsung/exynos/exynos-itmon.h>
 #endif
 #include <exynos_drm_sfr_dma.h>
+#if IS_ENABLED(CONFIG_EXYNOS_DRM_BUFFER_SANITY_CHECK)
+#include <exynos_drm_drv.h>
+#endif
 
+#if IS_ENABLED(CONFIG_DRM_MCD_COMMON)
+#include <linux/sec_debug.h>
+#endif
 /* TODO: erase global variable */
 struct memlog_obj *g_log_obj;
 EXPORT_SYMBOL(g_log_obj);
@@ -633,14 +639,13 @@ static u64 get_buffer_checksum(struct exynos_drm_gem *exynos_gem)
 {
 	struct drm_gem_object *gem = &exynos_gem->base;
 	u64 checksum64 = 0;
-	size_t i, size;
+	size_t i, step, range;
 
-	size = gem->size;
-	if (size > BUFFER_SANITY_CHECK_SIZE)
-		size = BUFFER_SANITY_CHECK_SIZE;
+	range = gem->size / sizeof(u64);
+	step = max_t(size_t, 1, range / BUFFER_SANITY_CHECK_SIZE);
 
-	for (i = 0; i + sizeof(u64) < size; i += sizeof(u64))
-		checksum64 += *((u64 *)(exynos_gem->vaddr + i));
+	for (i = 0; i < range; i += step)
+		checksum64 ^= *((u64 *)(exynos_gem->vaddr + i));
 
 	return checksum64;
 }
@@ -675,9 +680,8 @@ exynos_atomic_commit_prepare_buf_sanity(struct drm_atomic_state *old_state)
 				continue;
 
 			exynos_gem->checksum64 = get_buffer_checksum(exynos_gem);
-			pr_debug("%s: ch(%lu)[%d] fd(%d) checksum(%#llx)\n",
-				__func__, plane->index, j, exynos_gem->acq_fence,
-				exynos_gem->checksum64);
+			pr_debug("%s: ch(%u)[%d] checksum(%#llx)\n",
+				__func__, plane->index, j, exynos_gem->checksum64);
 		}
 	}
 }
@@ -686,32 +690,27 @@ exynos_atomic_commit_prepare_buf_sanity(struct drm_atomic_state *old_state)
 bool exynos_atomic_commit_check_buf_sanity(struct drm_atomic_state *old_state)
 {
 	int i, j;
-	int fps;
 	u64 checksum64;
 	bool sanity_ok = true;
 	struct drm_crtc *crtc = NULL;
-	struct drm_crtc_state *new_crtc_state;
+	struct drm_crtc_state *old_crtc_state, *new_crtc_state;
 	struct drm_plane *plane;
-	struct drm_plane_state *new_plane_state;
+	struct drm_plane_state *old_plane_state;
 	struct drm_framebuffer *fb;
 	struct drm_gem_object **gem;
 	struct exynos_drm_gem *exynos_gem;
 
-	for_each_new_crtc_in_state(old_state, crtc, new_crtc_state, i) {
+	for_each_oldnew_crtc_in_state(old_state, crtc, old_crtc_state, new_crtc_state, i) {
 		if (crtc->index == 0)
 			break;
 	}
 	if (!crtc || crtc->index)
 		return sanity_ok;
 
-	fps = drm_mode_vrefresh(&new_crtc_state->adjusted_mode);
-	if (!fps)
-		fps = SANITY_DFT_FPS;
+	drm_for_each_plane_mask(plane, crtc->dev, old_crtc_state->plane_mask) {
+		old_plane_state = drm_atomic_get_old_plane_state(old_state, plane);
 
-	usleep_range(100000/fps/4, 100000/fps/4 + 10);
-
-	for_each_new_plane_in_state(old_state, plane, new_plane_state, i) {
-		fb = new_plane_state->fb;
+		fb = old_plane_state->fb;
 		if (!fb)
 			continue;
 		gem = fb->obj;
@@ -720,23 +719,30 @@ bool exynos_atomic_commit_check_buf_sanity(struct drm_atomic_state *old_state)
 			if (!exynos_gem->vaddr)
 				continue;
 
+			if (exynos_gem->checksum64 == 0ULL)
+				continue;
+
 			checksum64 = get_buffer_checksum(exynos_gem);
 
 			sanity_ok = (exynos_gem->checksum64 == checksum64);
 
 			if (sanity_ok) {
-				pr_debug("%s: ch(%lu)[%d] fd(%d) checksum(%#llx)\n",
-						__func__, plane->index, j,
-						exynos_gem->acq_fence,
-						exynos_gem->checksum64);
+				pr_debug("%s: ch(%u)[%d] checksum(%#llx)\n",
+					__func__, plane->index, j, exynos_gem->checksum64);
 			} else {
+				const struct exynos_drm_plane_state *old_exynos_plane_state =
+					to_exynos_plane_state(old_plane_state);
+
 				pr_err("%s: sanity check error\n", __func__);
-				pr_err("%s: ch(%lu)[%d] fd(%d) checksum(%#llx)\n",
-						__func__, plane->index, j,
-						exynos_gem->acq_fence,
-						exynos_gem->checksum64);
+				pr_err("%s: ch(%u)[%d] checksum(cur:%#llx, exp:%#llx)\n",
+					__func__, plane->index, j, exynos_gem->checksum64, checksum64);
+
+				pr_err("fence_info : %s\n", old_exynos_plane_state->fence_info);
 			}
+
+			exynos_gem->checksum64 = 0ULL;
 		}
+
 	}
 
 	return sanity_ok;
@@ -881,7 +887,7 @@ int exynos_drm_register_dpu_fault_handler(struct drm_device *drm_dev,
 }
 EXPORT_SYMBOL(exynos_drm_register_dpu_fault_handler);
 
-static void __print_memlogger_to_kmsg(struct exynos_drm_crtc *exynos_crtc)
+void __print_memlogger_to_kmsg(struct exynos_drm_crtc *exynos_crtc)
 {
 	struct dpu_debug *d;
 	struct dpu_memlog_event *event_log;
@@ -946,6 +952,9 @@ static int dpu_event_log_set(const char *val, const struct kernel_param *kp)
 	struct decon_device *decon;
 	unsigned int *pvalue = kp->arg;
 	unsigned int res = param_set_uint(val, kp);
+#if IS_ENABLED(CONFIG_DRM_MCD_COMMON)
+	int upload_mode = secdbg_mode_enter_upload();
+#endif
 
 	decon = get_decon_drvdata(*pvalue);
 	if (!decon) {
@@ -954,7 +963,12 @@ static int dpu_event_log_set(const char *val, const struct kernel_param *kp)
 	}
 
 	__print_memlogger_to_kmsg(decon->crtc);
-
+#if IS_ENABLED(CONFIG_DRM_MCD_COMMON)
+	if (upload_mode)
+		BUG();
+	else
+		pr_err("%s", __func__);
+#endif
 	return res;
 }
 

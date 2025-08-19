@@ -12,6 +12,8 @@
 #include "cpif_page.h"
 #include "cpif_vmapper.h"
 
+#define NETRX_POOL_PAGE_SIZE	SZ_64K
+
 struct cpif_addr_pair {
 	u64			cp_addr;	/* cp address */
 	void			*ap_addr;	/* ap virtual address */
@@ -32,7 +34,6 @@ struct cpif_netrx_mng {
 	struct cpif_addr_pair	*apair_arr;
 	u32			map_idx; /* idx mapped recently*/
 	u32			unmap_idx; /*  idx unmapped recently */
-	spinlock_t		lock;
 
 	/* contains pre-unmapped AP addr which couldn't be delivered to kernel yet */
 	void *already_retrieved;

@@ -376,6 +376,7 @@ enum cnss_driver_state {
 	CNSS_FS_READY = 25,
 	CNSS_DRIVER_REGISTERED,
 	CNSS_DMS_DEL_SERVER,
+	CNSS_PROBE_FAILED,
 };
 
 struct cnss_recovery_data {

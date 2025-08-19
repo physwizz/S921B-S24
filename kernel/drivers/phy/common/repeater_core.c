@@ -33,6 +33,24 @@ int repeater_enable(bool en)
 }
 EXPORT_SYMBOL_GPL(repeater_enable);
 
+int eusb_repeater_set_bypass(bool en)
+{
+	struct repeater_data *data = gdata;
+
+	if (!data) {
+		pr_err("%s no repeater data\n", __func__);
+		return -ENODATA;
+	}
+
+	if (data->set_bypass)
+		return data->set_bypass(data->private_data, en);
+	else
+		pr_err("%s no eusb_repeater_set_bypass function\n", __func__);
+
+	return -ENODEV;
+}
+EXPORT_SYMBOL_GPL(eusb_repeater_set_bypass);
+
 int repeater_core_register(struct repeater_data *_data)
 {
 	int ret = 0;

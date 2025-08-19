@@ -333,12 +333,8 @@ static int exynos_ufs_perf_pm_notifier(struct notifier_block *nb,
 	case PM_SUSPEND_PREPARE:
 		pr_info("%s: suspend prepare\n", __func__);
 		perf->perf_suspend = PERF_SUSPEND_PREPARE;
-		perf->uac_state = 1;
 		break;
 
-	case PM_POST_SUSPEND:
-		perf->uac_state = 0;
-		break;
 	}
 
 	return NOTIFY_OK;
@@ -504,7 +500,7 @@ int ufs_perf_request_boost_mode(struct ufs_boost_request *rq,
 	u8 prev;
 	int ret = 0;
 
-	if (!perf || !rq) {
+	if (!perf || !rq || !rq->func || !rq->line) {
 		ret = -ENOMEM;
 		goto out;
 	}

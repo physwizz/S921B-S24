@@ -187,6 +187,10 @@ void csis_pdp_top_s_otf_lc(void __iomem *regs, u32 otf_ch, u32 *lc)
 	if (lc[CAMIF_VC_VPD] < CSIS_OTF_CH_LC_NUM)
 		printk(KERN_CONT ", VPD_LC%d", lc[CAMIF_VC_VPD]);
 
+	/* EMB LC: EMB doesn't have MUX of PDP input */
+	if (lc[CAMIF_VC_EMB] < CSIS_OTF_CH_LC_NUM)
+		printk(KERN_CONT ", EMB_LC%d", lc[CAMIF_VC_EMB]);
+
 	printk(KERN_CONT "\n");
 
 	is_hw_set_reg(regs, &csis_top_regs[CSIS_R_PDP_VC_CON0 + otf_ch], val);
@@ -264,6 +268,7 @@ void csis_pdp_top_set_ibuf(void __iomem *base_reg, struct pablo_camif_otf_info *
 			lc_en = false;
 			fallthrough;
 		case HW_FORMAT_RAW8:
+		case HW_FORMAT_EMBEDDED_8BIT:
 			bit_mode = 0;
 			break;
 		case HW_FORMAT_RAW10:
@@ -285,7 +290,7 @@ void csis_pdp_top_set_ibuf(void __iomem *base_reg, struct pablo_camif_otf_info *
 			break;
 		}
 
-		if (potf && (sensor_cfg->input[link_vc].type == VC_EMBEDDED))
+		if (potf && sensor_cfg->input[link_vc].data == DATA_EMB)
 			user_emb = true;
 
 		if (lc_en)

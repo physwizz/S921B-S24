@@ -361,6 +361,11 @@ enum pld_bus_event pld_bus_event_type_convert(enum cnss_bus_event_type etype)
 	case BUS_EVENT_PCI_LINK_DOWN:
 		pld_etype = PLD_BUS_EVENT_PCIE_LINK_DOWN;
 		break;
+#if defined(SEC_CONFIG_FORCE_CHANGE_BT_EN)
+	case BUS_EVENT_PCI_LINK_DOWN_BT_EN_DOWN:
+		pld_etype = PLD_BUS_EVENT_PCIE_LINK_DOWN_BT_EN_DOWN;
+		break;
+#endif /* SEC_CONFIG_FORCE_CHANGE_BT_EN */
 	default:
 		break;
 	}

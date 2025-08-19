@@ -331,6 +331,9 @@ static int mfc_dec_start_streaming(struct vb2_queue *q, unsigned int count)
 	struct mfc_ctx *ctx = q->drv_priv;
 	struct mfc_dev *dev = ctx->dev;
 
+	mfc_ctx_info("dec start_streaming is called, type : %d\n", q->type);
+	MFC_TRACE_CTX("** DEC streamon(type:%d)\n", q->type);
+
 	mfc_rm_update_real_time(ctx);
 
 	if ((q->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) && ctx->plugin_type)

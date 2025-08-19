@@ -78,6 +78,7 @@ void usb_tpmon_check_tp(void *data, struct dwc3_request *req)
 
 		return;
 	}
+
 	tpmon.accumulated_time += time_delta_us;
 	tpmon.accumulated_data += data_size;
 	tpmon.last_time = current_time;
@@ -86,22 +87,21 @@ void usb_tpmon_check_tp(void *data, struct dwc3_request *req)
 	if (tpmon.accumulated_time <= ACCUMULATING_TIME)
 		return;
 
-	/*
-	printk("KS : TP : %llu / %llu (%d)\n",
-		tpmon.accumulated_data, tpmon.accumulated_time,
-		tpmon.gathered_data);
-	*/
-	val = tpmon.accumulated_data / tpmon.accumulated_time *
-		1000000 /* usec -> sec */;
+
+	// pr_info("tpmon : throughput: %llu(data) / %llu(time) (%d)(gathered_data)\n",
+	// 	tpmon.accumulated_data, tpmon.accumulated_time, tpmon.gathered_data);
+
+	val = tpmon.accumulated_data / tpmon.accumulated_time * 1000000 /* usec -> sec */;
 
 	val /= SZ_1M; /* Change to MB */
 
-	pr_info("throughput %llu(%llu) MB/sec\n", val, val * 8);
+	pr_info("tpmon: throughput %llu MB/sec (%llu Mbit/s)\n", val, val * 8);
 
-	if (val >= tpmon_threshold) { /* 1Gb */
+	if (val >= tpmon_threshold) { /* tpmon_threashold: 10 MB */
 		queue_work(tpmon.tpmon_wq, &tpmon.tpmon_work);
 	}
 
+	// reset accumulated data after setting QoS
 	tpmon.accumulated_time = 0;
 	tpmon.accumulated_data = 0;
 	tpmon.gathered_data = 0;
@@ -150,7 +150,6 @@ void usb_tpmon_init(struct device *dev)
 
 	pr_info("%s\n", __func__);
 
-	register_trace_dwc3_ep_queue(usb_tpmon_check_tp, NULL);
 	tpmon.tpmon_wq = alloc_ordered_workqueue("usb_tpmon_wq",
 				__WQ_LEGACY | WQ_MEM_RECLAIM | WQ_FREEZABLE);
 	INIT_WORK(&tpmon.tpmon_work, usb_tpmon_work);

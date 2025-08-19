@@ -636,6 +636,9 @@ int mfc_core_cmd_dec_one_frame(struct mfc_core *core, struct mfc_ctx *ctx,
 		ctx->curr_src_index = src_index;
 	}
 
+	if (IS_TWO_MODE1(ctx))
+		core_ctx->mb_begin = ktime_get();
+
 	/*
 	 * Issue different commands to instance basing on whether it
 	 * is the last frame or not.
@@ -686,6 +689,9 @@ void mfc_core_cmd_enc_one_frame(struct mfc_core *core, struct mfc_ctx *ctx,
 	}
 	if (core->dev->debugfs.sfr_dump & MFC_DUMP_ENC_NAL_START)
 		call_dop(core, dump_regs, core);
+
+	if (IS_TWO_MODE1(ctx))
+		core_ctx->mb_begin = ktime_get();
 
 	/*
 	 * Issue different commands to instance basing on whether it

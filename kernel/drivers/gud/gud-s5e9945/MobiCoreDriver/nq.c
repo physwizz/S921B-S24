@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2013-2022 TRUSTONIC LIMITED
+ * Copyright (c) 2013-2023 TRUSTONIC LIMITED
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -51,6 +51,7 @@
 #include "logging.h"
 #include "nq.h"
 #include "ffa.h"
+#include "mmu_internal.h"
 
 #define NQ_NUM_ELEMS		64
 #define DEFAULT_TIMEOUT_MS	20000	/* We do nothing on timeout anyway */
@@ -69,7 +70,8 @@ static struct {
 	void (*iwp_notif_handler)(u32 id, u32 payload);
 	/* MobiCore MCI information */
 	unsigned int mci_order;
-	unsigned int mci_page_count;
+	unsigned int kernel_mci_page_count;
+	unsigned int kinibi_page_count;
 	union {
 		void		  *mci;
 		struct mci_header *mci_header;
@@ -96,7 +98,8 @@ static struct {
 
 	/* TEE status */
 	struct tee_sched	*tee_sched;
-	unsigned int		tee_sched_page_count;
+	unsigned int		tee_sched_page_count; /* Kinibi side */
+	unsigned int		kernel_sched_page_count; /* Kernel side */
 
 	/* Dump buffer */
 	char			*tee_version;
@@ -798,7 +801,7 @@ static int nq_boot_tee(void)
 
 #ifdef MC_FFA_FASTCALL
 	ret = ffa_share_mci_buffer(l_ctx.tee_sched,
-				   l_ctx.tee_sched_page_count,
+				   l_ctx.kernel_sched_page_count,
 				   &tee_sched_buffer);
 	if (ret) {
 		mc_dev_err(ret, "TEE status buffer FFA memory share failed");
@@ -813,7 +816,7 @@ static int nq_boot_tee(void)
 		goto out;
 
 #ifdef MC_FFA_FASTCALL
-	ret = ffa_share_mci_buffer(l_ctx.mci, l_ctx.mci_page_count,
+	ret = ffa_share_mci_buffer(l_ctx.mci, l_ctx.kernel_mci_page_count,
 				   &mci_buffer);
 	if (ret) {
 		mc_dev_err(ret, "MCI buffer FFA memory share failed");
@@ -822,7 +825,7 @@ static int nq_boot_tee(void)
 #else
 	mci_buffer = virt_to_phys(l_ctx.mci);
 #endif
-	ret = fc_mci_init(mci_buffer, l_ctx.mci_page_count);
+	ret = fc_mci_init(mci_buffer, l_ctx.kinibi_page_count);
 	logging_run();
 	if (ret)
 		goto out;
@@ -1157,11 +1160,7 @@ static int tee_worker(void *arg)
 			nq_handle_tee_crash();
 
 		/* Logging */
-		ret = fc_trace_deinit();
-		if (!ret)
-			l_ctx.log_buffer_busy = false;
-		else
-			mc_dev_err(ret, "failed to unregister log buffer");
+		l_ctx.log_buffer_busy = false;
 
 		/* Disable TEE clock */
 		mc_clock_disable();
@@ -1281,6 +1280,11 @@ int nq_start(void)
 		return ret;
 	}
 
+	/* Create the VM */
+	ret = fc_vm_create();
+	if (ret)
+		return ret;
+
 	/* Logging */
 	if (l_ctx.log_buffer_size) {
 		cpumask_t old_affinity = tee_set_affinity();
@@ -1381,6 +1385,11 @@ void nq_stop(void)
 	complete(&l_ctx.irq_bh_complete);
 	kthread_stop(l_ctx.irq_bh_thread);
 	free_irq(l_ctx.irq, NULL);
+
+	/* Destroy NWd VM */
+	fc_vm_destroy();
+	fc_nsiq(0, 0);
+	fc_yield(0, 0, NULL);
 }
 
 static ssize_t debug_tee_affinity_write(struct file *file,
@@ -1478,15 +1487,18 @@ static const struct file_operations mc_debug_tee_affinity_stats_ops = {
 static int tee_sched_init(void)
 {
 	unsigned long tee_sched;
-	size_t page_count = PAGE_ALIGN(sizeof(struct tee_sched)) / PAGE_SIZE;
-	size_t order = get_order(page_count);
+	size_t sched_len = PAGE_ALIGN(sizeof(struct tee_sched));
+	size_t order = get_order(sched_len);
 
 	tee_sched = __get_free_pages(GFP_USER | __GFP_ZERO, order);
 	if (!tee_sched)
 		return -ENOMEM;
 
 	l_ctx.tee_sched = (struct tee_sched *)tee_sched;
-	l_ctx.tee_sched_page_count = page_count;
+	l_ctx.kernel_sched_page_count = sched_len / PAGE_SIZE;
+
+	sched_len = KINIBI_PAGE_ALIGN(sizeof(struct tee_sched));
+	l_ctx.tee_sched_page_count = sched_len / KINIBI_PAGE_SIZE;
 
 	return 0;
 }
@@ -1508,11 +1520,13 @@ static int mci_init(void)
 	iwp_len = ALIGN(MAX_IW_SESSION * sizeof(struct interworld_session), 8);
 	time_len = ALIGN(sizeof(*l_ctx.time), 8);
 
-	mci_len = PAGE_ALIGN(header_len + nq_len + mcp_len + iwp_len
+	mci_len = KINIBI_PAGE_ALIGN(header_len + nq_len + mcp_len + iwp_len
 			     + time_len);
 
 	l_ctx.mci_order = get_order(mci_len);
-	l_ctx.mci_page_count = mci_len / PAGE_SIZE;
+	l_ctx.kinibi_page_count = mci_len / KINIBI_PAGE_SIZE;
+
+	l_ctx.kernel_mci_page_count = PAGE_ALIGN(mci_len) / PAGE_SIZE;
 
 	mci = __get_free_pages(GFP_USER | __GFP_ZERO, l_ctx.mci_order);
 	if (!mci)
@@ -1557,7 +1571,6 @@ static int mci_init(void)
 	l_ctx.mci_header->iwp_size = iwp_len;
 	l_ctx.mci_header->time_offset = l_ctx.mci_header->iwp_offset + iwp_len;
 	l_ctx.mci_header->time_size = time_len;
-
 	return 0;
 }
 

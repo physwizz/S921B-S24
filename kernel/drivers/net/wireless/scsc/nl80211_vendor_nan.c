@@ -1934,9 +1934,6 @@ exit:
 	return 0;
 }
 
-/* TODO: To be removed here after autogen */
-#define SLSI_PSID_UNIFI_NAN_INSTANT_COMM_SUPPORTED 6176
-
 int slsi_nan_get_capabilities(struct wiphy *wiphy, struct wireless_dev *wdev, const void *data, int len)
 {
 	struct slsi_dev *sdev = SDEV_FROM_WIPHY(wiphy);

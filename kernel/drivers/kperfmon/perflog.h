@@ -1,13 +1,9 @@
-/*
- * Copyright (c) 2014 Samsung Electronics Co., Ltd.
- * System performance team / System Group
- *
- * All right reserved. This software is the confidential and proprietary
- * information of Samsung Electronics ("Confidential Information").
- * You shall not disclose such Confidential Information and shall use it
- * only in accordance with the terms of the license agreement you
- * entered into with Samsung Electronics.
- */
+// SPDX-License-Identifier: GPL-2.0
+//
+// Samsung's performance logging
+//
+// Copyright (c) 2014 Samsung Electronics Co., Ltd
+//              http://www.samsung.com
 
 #ifndef PERFLOG_H_
 #define PERFLOG_H_

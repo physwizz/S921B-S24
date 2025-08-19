@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) 2013-2022 TRUSTONIC LIMITED
+ * Copyright (c) 2013-2023 TRUSTONIC LIMITED
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -35,6 +35,12 @@ bool client_has_sessions(struct tee_client *client);
 void client_close(struct tee_client *client);
 void client_cleanup(void);
 const char *client_vm_id(struct tee_client *client);
+int client_get_session_state(struct tee_client *client, u32 session_id);
+int client_is_wait_cancelled(struct tee_client *client,
+			     u32 session_id,
+			     int *cancelled_status);
+int client_set_wait_cancelled(struct tee_client *client, u32 session_id);
+int client_unset_wait_cancelled(struct tee_client *client, u32 session_id);
 
 /* MC */
 int client_mc_open_session(struct tee_client *client,
@@ -111,7 +117,14 @@ struct tee_mmu *client_mmu_create(struct tee_client *client,
 /* Buffer shared with SWd at client level */
 u32 client_get_cwsm_sva(struct tee_client *client,
 			const struct gp_shared_memory *memref);
+
+/* MMU from client world share memory */
+struct tee_mmu *client_get_cwsm_mmu(struct tee_client *client,
+				    const struct gp_shared_memory *memref);
+
 void client_put_cwsm_sva(struct tee_client *client, u32 sva);
+
+void client_put_cwsm_mmu(struct tee_client *client, struct tee_mmu *sva);
 
 /* Global */
 void client_init(void);

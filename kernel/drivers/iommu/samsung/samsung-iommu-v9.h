@@ -246,6 +246,7 @@ struct sysmmu_drvdata {
 	bool async_fault_mode;
 	bool cacheable_override_mode;
 	bool initialized_sysmmu;
+	bool perf_mode;
 	struct stream_props *props;
 	struct samsung_iommu_log log;
 };

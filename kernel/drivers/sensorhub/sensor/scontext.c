@@ -145,7 +145,7 @@ void shub_report_scontext_notice_data(char notice)
 
 }
 
-int convert_ap_status(int command)
+int convert_ap_status(unsigned char command)
 {
 	int ret = -1;
 
@@ -176,7 +176,7 @@ int convert_ap_status(int command)
 	return ret;
 }
 
-int shub_scontext_send_cmd(const char *buf, int count)
+int shub_scontext_send_cmd(const unsigned char *buf, int count)
 {
 	int ret = 0;
 	int convert_status = 0;
@@ -188,7 +188,7 @@ int shub_scontext_send_cmd(const char *buf, int count)
 		return -EINVAL;
 	}
 
-	ret = shub_send_status(convert_status);
+	ret = shub_send_status(convert_status, NULL, 0);
 
 	if (buf[2] == SCONTEXT_AP_STATUS_LCD_ON || buf[2] == SCONTEXT_AP_STATUS_LCD_OFF)
 		shub_data->lcd_status = convert_status;
@@ -201,14 +201,14 @@ int shub_scontext_send_cmd(const char *buf, int count)
 #define SCONTEXT_VALUE_PEDOMETER_USERWEIGHT	   0x13
 #define SCONTEXT_VALUE_PEDOMETER_USERGENDER	   0x14
 #define SCONTEXT_VALUE_PEDOMETER_INFOUPDATETIME       0x15
-#define SCONTEXT_VLAUE_DISPLAY_STATE			0x47
+#define SCONTEXT_VALUE_DISPLAY_STATE			0x47
 
 int convert_scontext_putvalue_subcmd(int subcmd)
 {
 	int ret = -1;
 
 	switch (subcmd) {
-	case SCONTEXT_VLAUE_DISPLAY_STATE:
+	case SCONTEXT_VALUE_DISPLAY_STATE:
 		ret = SCREEN_STATE;
 		break;
 	case SCONTEXT_VALUE_CURRENTSYSTEMTIME:
@@ -297,10 +297,10 @@ void get_ss_sensor_name(int type, char *buf, int buf_size)
 	}
 }
 
-int shub_scontext_send_instruction(const char *buf, int count)
+int shub_scontext_send_instruction(const unsigned char *buf, int count)
 {
 	char cmd, type, sub_cmd = 0;
-	char *buffer = (char *)(buf + 2);
+	unsigned char *buffer = (unsigned char *)(buf + 2);
 	int length = count - 2;
 	char name[SCONTEXT_NAME_MAX] = "";
 
@@ -400,7 +400,7 @@ void disable_scontext_all(void)
 	}
 }
 
-void print_scontext_debug(void)
+void print_scontext_debug(int type)
 {
 	/* print nothing for debug */
 }

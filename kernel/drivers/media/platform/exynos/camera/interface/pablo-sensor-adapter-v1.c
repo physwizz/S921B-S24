@@ -1048,7 +1048,8 @@ static int __pablo_sensor_adt_get_vc_dma_pdaf_buf_info(struct is_sensor_interfac
 	return ret;
 }
 
-static int pablo_sensor_adt_get_sensor_info(struct pablo_sensor_adt *adt, struct pablo_crta_sensor_info *pcsi)
+static int pablo_sensor_adt_get_sensor_info(
+	struct pablo_sensor_adt *adt, struct pablo_crta_sensor_info *pcsi, u32 fcount)
 {
 	u32 instance;
 	unsigned long flags;
@@ -1095,7 +1096,7 @@ static int pablo_sensor_adt_get_sensor_info(struct pablo_sensor_adt *adt, struct
 		pcsi->seamless_mode_info, &pcsi->seamless_mode_cnt);
 
 	sensor_itf->cis_ext2_itf_ops.get_sensor_applied_seamless_mode(sensor_itf,
-		&pcsi->applied_seamless_mode);
+		&pcsi->applied_seamless_mode, fcount);
 
 	pcsi->mono_en = is_sensor_get_mono_mode(sensor_itf); /* 0: normal, 1: mono */
 	pcsi->bayer_pattern = 0; /* 0: normal, 1: tetra */

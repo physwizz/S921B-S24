@@ -51,6 +51,10 @@ enum sensor_imx564_mode_enum {
 	SENSOR_IMX564_MODE_MAX,
 };
 
+struct sensor_imx564_private_runtime {
+	u32 lte_on_delay;
+};
+
 static const struct sensor_reg_addr sensor_imx564_reg_addr = {
 	.fll = 0x0340,
 	.fll_aeb_long = AEB_IMX564_LUT0 + AEB_IMX564_OFFSET_FLL,

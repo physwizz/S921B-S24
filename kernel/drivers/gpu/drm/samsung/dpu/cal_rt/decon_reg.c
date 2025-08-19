@@ -773,6 +773,14 @@ void decon_reg_set_dither_enable(u32 id, bool en)
 	decon_write_mask(id, DATA_PATH_CON, val, ENHANCE_DITHER_ON);
 }
 
+void decon_reg_set_rcd_enable(u32 id, bool en)
+{
+	u32 val;
+
+	val = en ? ENHANCE_RCD_ON : 0;
+	decon_write_mask(id, DATA_PATH_CON, val, ENHANCE_RCD_ON);
+}
+
 void decon_reg_set_win_idx_base(u32 id, u32 win_id_0, u32 win_id_1)
 {
 	u32 val, mask;
@@ -1290,12 +1298,10 @@ static void dsc_calc_pps_info_v2(struct decon_config *config, u32 dscc_en,
 	} else if (i == 0 && j != 0) {
 		dsc_enc0_w = comp_slice_width_pixel_unit + 1;
 	} else if (i != 0) {
-		while (1) {
+		do {
 			comp_slice_width_pixel_unit++;
 			j = comp_slice_width_pixel_unit % 2;
-			if (j == 0)
-				break;
-		}
+		} while (j != 0);
 		dsc_enc0_w = comp_slice_width_pixel_unit;
 	}
 
@@ -1432,12 +1438,10 @@ static void dsc_calc_pps_info(struct decon_config *config, u32 dscc_en,
 		if (dscc_en)
 			dsc_enc1_w = comp_slice_width_pixel_unit + 1;
 	} else if (i != 0) {
-		while (1) {
+		do {
 			comp_slice_width_pixel_unit++;
 			j = comp_slice_width_pixel_unit % 2;
-			if (j == 0)
-				break;
-		}
+		} while (j != 0);
 		dsc_enc0_w = comp_slice_width_pixel_unit;
 		if (dscc_en)
 			dsc_enc1_w = comp_slice_width_pixel_unit;
@@ -1882,7 +1886,7 @@ static void decon_reg_update_req_global(u32 id)
 	 * command & video mode of operation.
 	 */
 
-	if (decon_read_mask(id, DATA_PATH_CON, ENHANCE_PATH_MASK))
+	if ((id <= 1) && decon_read_mask(id, DATA_PATH_CON, ENHANCE_PATH_MASK))
 		mask |= (SHD_REG_UP_REQ_DQE | SHD_REG_UP_REQ_DQE_CGC);
 
 	if (decon_read_mask(id, DATA_PATH_CON, COMP_DSC_MASK))

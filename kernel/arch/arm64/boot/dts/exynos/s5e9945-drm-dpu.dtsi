@@ -27,8 +27,12 @@
 		dsimfc1 = &dma_dsimfc_1;
 		dsimfc2 = &dma_dsimfc_2;
 		drmdsim0 = &drmdsim_0;
+		drmdsim1 = &drmdsim_1;
 		drmdp = &drmdp;
 		drmdecon0 = &drmdecon0;
+		drmdecon1 = &drmdecon1;
+		drmdecon3 = &drmdecon3;
+		drmdpp17 = &drmdpp17;
 	};
 
 	drmdpp0: drmdpp@19900000 {	/* L0 */
@@ -583,7 +587,58 @@
 		dpp,restriction = <&dpp_restriction>;
 	};
 
-	drmdpp16: drmdpp@19908000 {
+	drmdpp16: drmdpp@0x1990C000 {
+		compatible = "samsung,exynos-dpp";
+		reg = <0x0 0x1990C000 0x1000>;
+		reg-names = "dma";
+
+		interrupts = <GIC_SPI INTREQ__DPUF0_DMA_RCDDISP0 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "dma";
+
+		attr = <(DPP_ATTR_RCD)>;
+		port = <0>;
+		scale_down = <1>;
+		scale_up = <1>;
+
+		rcd_block_mode_en = <1>;
+		rcd_block_mode_x  = <0>;
+		rcd_block_mode_y  = <200>;
+		rcd_block_mode_w  = <1400>;
+		rcd_block_mode_h  = <2800>;
+
+		dpp,id = <16>;
+		dpuf,id = <0>;
+		dpp,formats = <&rcd_formats>;
+		dpp,restriction = <&dpp_restriction>;
+	};
+
+	drmdpp17: drmdpp@0x19B0C000 {
+		compatible = "samsung,exynos-dpp";
+		reg = <0x0 0x19B0C000 0x1000>;
+		reg-names = "dma";
+
+		interrupts = <GIC_SPI INTREQ__DPUF1_DMA_RCDDISP1 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "dma";
+
+		status = "disabled";
+		attr = <(DPP_ATTR_RCD)>;
+		port = <1>;
+		scale_down = <1>;
+		scale_up = <1>;
+
+		rcd_block_mode_en = <1>;
+		rcd_block_mode_x  = <0>;
+		rcd_block_mode_y  = <200>;
+		rcd_block_mode_w  = <720>;
+		rcd_block_mode_h  = <1200>;
+
+		dpp,id = <17>;
+		dpuf,id = <1>;
+		dpp,formats = <&rcd_formats>;
+		dpp,restriction = <&dpp_restriction>;
+	};
+
+	drmdpp18: drmdpp@19908000 {
 		compatible = "samsung,exynos-writeback";
 		reg = <0x0 0x19908000 0x1000>,
 			  <0x0 0x19938000 0x1000>,
@@ -606,13 +661,13 @@
 		votf_o,enabled;
 		votf_o,mfc_base = <0x1E070000>;
 
-		dpp,id = <16>;
+		dpp,id = <18>;
 		dpuf,id = <0>;
 		dpp,formats = <&writeback_formats>;
 		dpp,restriction = <&dpp_restriction>;
 	};
 
-	drmdpp17: drmdpp@19B08000 {
+	drmdpp19: drmdpp@19B08000 {
 		compatible = "samsung,exynos-writeback";
 		reg = <0x0 0x19B08000 0x1000>,
 			  <0x0 0x19B38000 0x1000>;
@@ -632,7 +687,7 @@
 		votf_o,enabled;
 		votf_o,mfc_base = <0x1E070000>;
 
-		dpp,id = <17>;
+		dpp,id = <19>;
 		dpuf,id = <1>;
 		dpp,formats = <&writeback_formats>;
 		dpp,restriction = <&dpp_restriction>;
@@ -707,6 +762,38 @@
 
 		frequency-hopping;
 		wide-frequency-hopping;
+		pll-sleep = <DPHY_SLEEP_CTRL_LINK>;
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+	};
+
+	drmdsim_1: drmdsim@190C0000 {
+		compatible = "samsung,exynos-dsim";
+		reg = <0x0 0x190C0000 0x300>,	/* DSIM0 */
+		      <0x0 0x190E0900 0x700>,	/* DCPHY_M4M4_TOP */
+		      <0x0 0x190E0000 0x100>;	/* DCPHY_M4M4_COMMON */
+		reg-names = "dsi", "dphy", "dphy-extra";
+
+		dsim,id = <1>;
+		status = "disabled";
+
+		interrupts = <GIC_SPI INTREQ__DPUB_DSIM1 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "dsim";
+
+		iommus = <&sysmmu_dpuf_s0>;
+		samsung,iommu-group = <&iommu_group_dpu>;
+
+		phys = <&mipi_phy_dsim0_m4m4 0>;
+		phy-names = "dsim_dphy";
+
+		dsim_mode = <&dsim_modes>;
+
+		clock-names = "oscclk_dsim";
+		clocks = <&clock DOUT_DIV_CLK_DPUB_OSCCLK_DSIM>;
+
+//		frequency-hopping;
+//		wide-frequency-hopping;
 		pll-sleep = <DPHY_SLEEP_CTRL_LINK>;
 
 		#address-cells = <1>;
@@ -850,6 +937,7 @@
 
 		hibernation;
 		partial-update;
+		rcd = <&drmdpp16>;
 
 		#address-cells = <2>;
 		#size-cells = <1>;

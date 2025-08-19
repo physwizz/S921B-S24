@@ -142,7 +142,7 @@ int amdgpu_fence_driver_start_ring(struct amdgpu_ring *ring,
 				   struct amdgpu_irq_src *irq_src,
 				   unsigned irq_type);
 void amdgpu_fence_driver_deinit_ring(struct amdgpu_ring *ring);
-void amdgpu_fence_driver_suspend(struct amdgpu_device *adev);
+int amdgpu_fence_driver_suspend(struct amdgpu_device *adev);
 void amdgpu_fence_driver_resume(struct amdgpu_device *adev);
 int amdgpu_fence_emit(struct amdgpu_ring *ring, struct dma_fence **fence,
 		      unsigned flags);

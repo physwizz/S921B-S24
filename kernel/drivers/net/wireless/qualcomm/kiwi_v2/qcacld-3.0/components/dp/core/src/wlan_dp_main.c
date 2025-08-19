@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -79,7 +79,9 @@ QDF_STATUS dp_allocate_ctx(void)
 	}
 
 	qdf_spinlock_create(&dp_ctx->intf_list_lock);
+	qdf_spinlock_create(&dp_ctx->dp_link_del_lock);
 	qdf_list_create(&dp_ctx->intf_list, 0);
+	TAILQ_INIT(&dp_ctx->inactive_dp_link_list);
 
 	dp_attach_ctx(dp_ctx);
 
@@ -226,6 +228,11 @@ bool is_dp_link_valid(struct wlan_dp_link *dp_link)
 
 	if (!dp_link) {
 		dp_err("link is NULL");
+		return false;
+	}
+
+	if (dp_link->magic != WLAN_DP_LINK_MAGIC) {
+		dp_err("dp_link %pK bad magic %llx", dp_link, dp_link->magic);
 		return false;
 	}
 
@@ -512,10 +519,17 @@ static void dp_ini_bus_bandwidth(struct wlan_dp_psoc_cfg *config,
 static void dp_ini_tcp_settings(struct wlan_dp_psoc_cfg *config,
 				struct wlan_objmgr_psoc *psoc)
 {
+	uint32_t adv_win_scl_bit_set;
+
 	config->enable_tcp_limit_output =
 		cfg_get(psoc, CFG_DP_ENABLE_TCP_LIMIT_OUTPUT);
-	config->enable_tcp_adv_win_scale =
-		cfg_get(psoc, CFG_DP_ENABLE_TCP_ADV_WIN_SCALE);
+	adv_win_scl_bit_set = cfg_get(psoc, CFG_DP_ENABLE_TCP_ADV_WIN_SCALE);
+	if (DP_TCP_ADV_WIN_SCL_BIT & adv_win_scl_bit_set) {
+		config->enable_tcp_adv_win_scale = true;
+		if (DP_TCP_ADV_WIN_SCALE_DISC_LOW & adv_win_scl_bit_set)
+			config->tcp_adv_win_scl_disc_lvl_low = true;
+	}
+
 	config->enable_tcp_delack =
 		cfg_get(psoc, CFG_DP_ENABLE_TCP_DELACK);
 	config->tcp_delack_thres_high =
@@ -1014,8 +1028,6 @@ dp_link_switch_notification(struct wlan_objmgr_vdev *vdev,
 			    struct wlan_mlo_link_switch_req *lswitch_req,
 			    enum wlan_mlo_link_switch_notify_reason notify_reason)
 {
-	/* Add prints to string and print it at last, so we have only 1 print */
-	struct wlan_dp_psoc_context *dp_ctx;
 	struct wlan_dp_intf *dp_intf;
 	struct wlan_dp_link *dp_link;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
@@ -1027,8 +1039,6 @@ dp_link_switch_notification(struct wlan_objmgr_vdev *vdev,
 	 */
 	if (notify_reason != MLO_LINK_SWITCH_NOTIFY_REASON_PRE_START_POST_SER)
 		return QDF_STATUS_SUCCESS;
-
-	dp_ctx = dp_get_context();
 
 	dp_link = dp_get_vdev_priv_obj(vdev);
 	if (!is_dp_link_valid(dp_link)) {
@@ -1194,6 +1204,8 @@ dp_vdev_obj_create_notification(struct wlan_objmgr_vdev *vdev, void *arg)
 	}
 
 	/* Update Parent interface details */
+	dp_link->magic = WLAN_DP_LINK_MAGIC;
+	TAILQ_INIT(&dp_link->cdp_vdev_list);
 	dp_link->dp_intf = dp_intf;
 	qdf_spin_lock_bh(&dp_intf->dp_link_list_lock);
 	qdf_list_insert_front(&dp_intf->dp_link_list, &dp_link->node);
@@ -1246,10 +1258,44 @@ dp_vdev_obj_create_notification(struct wlan_objmgr_vdev *vdev, void *arg)
 	return status;
 }
 
+static void dp_link_handle_cdp_vdev_delete(struct wlan_dp_psoc_context *dp_ctx,
+					   struct wlan_dp_link *dp_link)
+{
+	qdf_spin_lock_bh(&dp_ctx->dp_link_del_lock);
+
+	if (TAILQ_EMPTY(&dp_link->cdp_vdev_list)) {
+		/*
+		 * No CDP vdev is not registered for this dp_link,
+		 * hence no one will use the dp_link and
+		 * we can free this dp_link.
+		 */
+		dp_info("Free dp_link %pK id %d (" QDF_MAC_ADDR_FMT ")",
+			dp_link, dp_link->link_id,
+			QDF_MAC_ADDR_REF(dp_link->mac_addr.bytes));
+		dp_link->magic = 0;
+		qdf_mem_free(dp_link);
+	} else {
+		/*
+		 * Add it to inactive dp_link list, and it will be freed when
+		 * the CDP vdev gets deleted
+		 */
+		dp_info("Add to inactive list dp_link %pK id %d ("
+			QDF_MAC_ADDR_FMT ")",
+			dp_link, dp_link->link_id,
+			QDF_MAC_ADDR_REF(dp_link->mac_addr.bytes));
+		TAILQ_INSERT_TAIL(&dp_ctx->inactive_dp_link_list, dp_link,
+				  inactive_list_elem);
+		dp_link->destroyed = 1;
+	}
+
+	qdf_spin_unlock_bh(&dp_ctx->dp_link_del_lock);
+}
+
 QDF_STATUS
 dp_vdev_obj_destroy_notification(struct wlan_objmgr_vdev *vdev, void *arg)
 
 {
+	struct wlan_dp_psoc_context *dp_ctx;
 	struct wlan_dp_intf *dp_intf;
 	struct wlan_dp_link *dp_link;
 	QDF_STATUS status = QDF_STATUS_SUCCESS;
@@ -1264,6 +1310,7 @@ dp_vdev_obj_destroy_notification(struct wlan_objmgr_vdev *vdev, void *arg)
 	}
 
 	dp_intf = dp_link->dp_intf;
+	dp_ctx = dp_intf->dp_ctx;
 
 	qdf_spin_lock_bh(&dp_intf->dp_link_list_lock);
 	qdf_list_remove_node(&dp_intf->dp_link_list, &dp_link->node);
@@ -1324,7 +1371,8 @@ dp_vdev_obj_destroy_notification(struct wlan_objmgr_vdev *vdev, void *arg)
 		return status;
 	}
 
-	qdf_mem_free(dp_link);
+	dp_link_handle_cdp_vdev_delete(dp_ctx, dp_link);
+
 	return status;
 }
 
@@ -1977,6 +2025,66 @@ wlan_dp_fisa_resume(struct wlan_dp_psoc_context *dp_ctx)
 	return QDF_STATUS_SUCCESS;
 }
 #endif
+
+void wlan_dp_link_cdp_vdev_delete_notification(ol_osif_vdev_handle context,
+					       struct cdp_vdev *cdp_vdev)
+{
+	struct wlan_dp_link *dp_link = (struct wlan_dp_link *)context;
+	struct wlan_dp_link *tmp_dp_link;
+	struct wlan_dp_psoc_context *dp_ctx = NULL;
+	uint8_t found = 0;
+
+	/* dp_link will not be freed before this point. */
+	if (!dp_link || dp_link->magic != WLAN_DP_LINK_MAGIC) {
+		dp_info("dp_link %pK magic 0x%llx", dp_link,
+			dp_link ? dp_link->magic : 0xDEADDEAD);
+		return;
+	}
+
+	dp_info("dp_link %pK id %d mac (" QDF_MAC_ADDR_FMT ")",
+		dp_link, dp_link->link_id,
+		QDF_MAC_ADDR_REF(dp_link->mac_addr.bytes));
+
+	dp_ctx = dp_get_context();
+
+	qdf_spin_lock_bh(&dp_ctx->dp_link_del_lock);
+	if (wlan_dp_link_check_cdp_vdev(dp_link, cdp_vdev))
+		TAILQ_REMOVE(&dp_link->cdp_vdev_list, cdp_vdev,
+			     cdp_vdev_list_elem);
+	else
+		qdf_assert_always(0);
+
+	if (TAILQ_EMPTY(&dp_link->cdp_vdev_list) && dp_link->destroyed) {
+		/*
+		 * dp_link has been destroyed as a part of vdev_obj_destroy
+		 * notification and will be present in inactive list
+		 */
+		TAILQ_FOREACH(tmp_dp_link, &dp_ctx->inactive_dp_link_list,
+			      inactive_list_elem) {
+			if (tmp_dp_link == dp_link) {
+				found = 1;
+				break;
+			}
+		}
+
+		if (found)
+			TAILQ_REMOVE(&dp_ctx->inactive_dp_link_list, dp_link,
+				     inactive_list_elem);
+		else {
+			dp_info("dp_link %pK release skipped", dp_link);
+			goto exit;
+		}
+
+		dp_info("Free dp_link %pK id %d (" QDF_MAC_ADDR_FMT ")",
+			dp_link, dp_link->link_id,
+			QDF_MAC_ADDR_REF(dp_link->mac_addr.bytes));
+		dp_link->magic = 0;
+		qdf_mem_free(dp_link);
+	}
+
+exit:
+	qdf_spin_unlock_bh(&dp_ctx->dp_link_del_lock);
+}
 
 QDF_STATUS __wlan_dp_runtime_suspend(ol_txrx_soc_handle soc, uint8_t pdev_id)
 {

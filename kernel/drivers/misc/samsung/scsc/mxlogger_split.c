@@ -663,7 +663,7 @@ static void mxlogger_to_host(struct mxlogger *mxlogger, u8 channel)
 	struct mxlogger_channel *chan = &mxlogger->chan[channel];
 
 	SCSC_TAG_INFO(MXMAN, "MXLOGGER -- active observers detected. Send logs to host\n");
-	if (!chan && !chan->enabled) {
+	if (!chan->enabled) {
 		SCSC_TAG_INFO(MXMAN, "Channel %s disabled\n", channel ? "WPAN" : "WLAN");
 		return;
 	}
@@ -680,6 +680,7 @@ static void mxlogger_to_host(struct mxlogger *mxlogger, u8 channel)
 	mxmgmt_transport_send(mxmgmt_transport, MMTRANS_CHAN_ID_MAXWELL_LOGGING, &msg, sizeof(msg));
 }
 
+#if IS_ENABLED(CONFIG_BT_FWSNOOP_LOGGING)
 static void mxlogger_to_host_class(struct mxlogger *mxlogger, u8 channel, uint8_t class)
 {
 	int r;
@@ -687,12 +688,18 @@ static void mxlogger_to_host_class(struct mxlogger *mxlogger, u8 channel, uint8_
 	struct mxmgmt_transport *mxmgmt_transport;
 	struct mxlogger_channel *chan = &mxlogger->chan[channel];
 
-	SCSC_TAG_INFO(MXMAN, "MXLOGGER -- active %s observers detected. Send logs to host\n",
-		      class ? "RELAXED" : "REALTIME");
-	if (!chan && !chan->enabled) {
+	if (!chan->enabled) {
 		SCSC_TAG_INFO(MXMAN, "Channel %s disabled\n", channel ? "WPAN" : "WLAN");
 		return;
 	}
+
+	if (mxlogger->registered_class >> MXLOGGER_BITPOS_REALTIME) {
+		class = MXLOGGER_CLASS_REALTIME;
+	} else if (class == MXLOGGER_CLASS_REGISTERED)
+		class = MXLOGGER_CLASS_RELAXED;
+
+	SCSC_TAG_INFO(MXMAN, "MXLOGGER -- active %s observers detected. Send logs to host\n",
+			class ? "RELAXED" : "REALTIME");
 
 	if (chan->target == SCSC_MIF_ABS_TARGET_WLAN)
 		mxmgmt_transport = scsc_mx_get_mxmgmt_transport(mxlogger->mx);
@@ -709,6 +716,7 @@ static void mxlogger_to_host_class(struct mxlogger *mxlogger, u8 channel, uint8_
 
 	mxmgmt_transport_send(mxmgmt_transport, MMTRANS_CHAN_ID_MAXWELL_LOGGING, &msg, sizeof(msg));
 }
+#endif
 
 #if IS_ENABLED(CONFIG_SCSC_LOG_COLLECTION)
 static int mxlogger_collect_init(struct scsc_log_collector_client *collect_client)
@@ -1528,7 +1536,11 @@ int mxlogger_start_channel(struct mxlogger *mxlogger, enum scsc_mif_abs_target t
 		scsc_log_collector_is_observer(false);
 #endif
 	} else {
+#if IS_ENABLED(CONFIG_BT_FWSNOOP_LOGGING)
+		mxlogger_to_host_class(mxlogger, channel, MXLOGGER_CLASS_REGISTERED);
+#else
 		mxlogger_to_host(mxlogger, channel);
+#endif
 #if IS_ENABLED(CONFIG_SCSC_LOG_COLLECTION)
 		scsc_log_collector_is_observer(true);
 #endif
@@ -1568,7 +1580,12 @@ int mxlogger_stop_channel(struct mxlogger *mxlogger, enum scsc_mif_abs_target ta
 		return -EIO;
 	}
 
+#if IS_ENABLED(CONFIG_BT_FWSNOOP_LOGGING)
+	mxlogger_to_host_class(mxlogger, channel, MXLOGGER_CLASS_REGISTERED);
+#else
 	mxlogger_to_host(mxlogger, channel);
+#endif
+
 	/* Disable channel */
 	mxlogger->chan[channel].enabled = false;
 	mutex_unlock(&mxlogger->lock);
@@ -1589,8 +1606,13 @@ void mxlogger_deinit(struct scsc_mx *mx, struct mxlogger *mxlogger)
 		return;
 	}
 
-	for (i = 0; i < MXLOGGER_CHANNELS; i++)
-		mxlogger_to_host(mxlogger, i); /* immediately before deconfigure to get a last sync rec */
+	for (i = 0; i < MXLOGGER_CHANNELS; i++) {
+#if IS_ENABLED(CONFIG_BT_FWSNOOP_LOGGING)
+		mxlogger_to_host_class(mxlogger, i, MXLOGGER_CLASS_REGISTERED);
+#else
+		mxlogger_to_host(mxlogger, i);	/* immediately before deconfigure to get a last sync rec */
+#endif
+	}
 
 	mxlogger->configured = false;
 	mxlogger->initialized = false;
@@ -1635,7 +1657,9 @@ int mxlogger_register_observer(struct mxlogger *mxlogger, char *name)
 	mutex_lock(&mxlogger->lock);
 
 	mxlogger->observers++;
-
+#if IS_ENABLED(CONFIG_BT_FWSNOOP_LOGGING)
+	mxlogger->registered_class += 1 << MXLOGGER_BITPOS_REALTIME;
+#endif
 	SCSC_TAG_INFO(MXMAN, "Register observer[%d] -- %s\n", mxlogger->observers, name);
 
 	/* Switch logs to host */
@@ -1644,35 +1668,6 @@ int mxlogger_register_observer(struct mxlogger *mxlogger, char *name)
 #if IS_ENABLED(CONFIG_SCSC_LOG_COLLECTION)
 	scsc_log_collector_is_observer(true);
 #endif
-
-	mutex_unlock(&mxlogger->lock);
-
-	return 0;
-}
-
-int mxlogger_register_observer_class(struct mxlogger *mxlogger, char *name, uint8_t class)
-{
-	u8 i;
-
-	if (mxlogger->configured == false) {
-		SCSC_TAG_INFO(MXMAN, "Mxlogger not configured\n");
-		return -EIO;
-	}
-
-	mutex_lock(&mxlogger->lock);
-
-	mxlogger->observers++;
-
-	SCSC_TAG_INFO(MXMAN, "Register observer_class[%d] class[%s] -- %s\n",
-		      mxlogger->observers, class ? "RELAXED" : "REALTIME", name);
-
-	/* Switch logs to host */
-	for (i = 0; i < MXLOGGER_CHANNELS; i++)
-		mxlogger_to_host_class(mxlogger, i, class);
-#if IS_ENABLED(CONFIG_SCSC_LOG_COLLECTION)
-	scsc_log_collector_is_observer(true);
-#endif
-
 	mutex_unlock(&mxlogger->lock);
 
 	return 0;
@@ -1696,6 +1691,9 @@ int mxlogger_unregister_observer(struct mxlogger *mxlogger, char *name)
 	}
 
 	mxlogger->observers--;
+#if IS_ENABLED(CONFIG_BT_FWSNOOP_LOGGING)
+	mxlogger->registered_class -= 1 << MXLOGGER_BITPOS_REALTIME;
+#endif
 
 	SCSC_TAG_INFO(MXMAN, "UN-register observer[%d] --  %s\n", mxlogger->observers, name);
 #if defined(CONFIG_SCSC_PCIE_CHIP)
@@ -1717,6 +1715,78 @@ int mxlogger_unregister_observer(struct mxlogger *mxlogger, char *name)
 #endif
 	return 0;
 }
+
+#if IS_ENABLED(CONFIG_BT_FWSNOOP_LOGGING)
+int mxlogger_register_observer_class(struct mxlogger *mxlogger, char *name, uint8_t class)
+{
+	u8 i;
+
+	if (mxlogger->configured == false) {
+		SCSC_TAG_INFO(MXMAN, "Mxlogger not configured\n");
+		return -EIO;
+	}
+
+	mutex_lock(&mxlogger->lock);
+
+	mxlogger->observers++;
+	mxlogger->registered_class += 1 << ((!class) ? MXLOGGER_BITPOS_REALTIME : MXLOGGER_BITPOS_RELAXED);
+
+	SCSC_TAG_INFO(MXMAN, "Register observer_class[%d] class[%s] -- %s\n",
+		      mxlogger->observers, class ? "RELAXED" : "REALTIME", name);
+
+	/* Switch logs to host */
+	for (i = 0; i < MXLOGGER_CHANNELS; i++)
+		mxlogger_to_host_class(mxlogger, i, class);
+#if IS_ENABLED(CONFIG_SCSC_LOG_COLLECTION)
+	scsc_log_collector_is_observer(true);
+#endif
+
+	mutex_unlock(&mxlogger->lock);
+
+	return 0;
+}
+
+int mxlogger_unregister_observer_class(struct mxlogger *mxlogger, char *name, uint8_t class)
+{
+	u8 i;
+
+	if (mxlogger->configured == false) {
+		SCSC_TAG_INFO(MXMAN, "Mxlogger not configured\n");
+		return -EIO;
+	}
+
+	mutex_lock(&mxlogger->lock);
+
+	if (mxlogger->observers == 0) {
+		SCSC_TAG_INFO(MXMAN, "Incorrect number of observers\n");
+		mutex_unlock(&mxlogger->lock);
+		return -EIO;
+	}
+
+	mxlogger->observers--;
+	mxlogger->registered_class -= 1 << ((!class) ? MXLOGGER_BITPOS_REALTIME : MXLOGGER_BITPOS_RELAXED);
+
+	SCSC_TAG_INFO(MXMAN, "UN-register observer[%d] --  %s\n", mxlogger->observers, name);
+#if defined(CONFIG_SCSC_PCIE_CHIP)
+	if(scsc_mx_service_claim(MXLOGGER_UNREGISTER_OBSERVER)) {
+		mutex_unlock(&mxlogger->lock);
+		return -EIO;
+	}
+#endif
+	if (mxlogger->observers == 0) {
+		for (i = 0; i < MXLOGGER_CHANNELS; i++)
+			mxlogger_to_shared_dram(mxlogger, i);
+#if IS_ENABLED(CONFIG_SCSC_LOG_COLLECTION)
+		scsc_log_collector_is_observer(false);
+#endif
+	}
+	mutex_unlock(&mxlogger->lock);
+#if defined(CONFIG_SCSC_PCIE_CHIP)
+	scsc_mx_service_release(MXLOGGER_UNREGISTER_OBSERVER);
+#endif
+	return 0;
+}
+#endif
 
 /* Global observer are not associated to any [mx] mxlogger instance. So it registers as
  * an observer to all the [mx] mxlogger instances.
@@ -1747,6 +1817,28 @@ int mxlogger_register_global_observer(char *name)
 }
 EXPORT_SYMBOL(mxlogger_register_global_observer);
 
+int mxlogger_unregister_global_observer(char *name)
+{
+	struct mxlogger_node *mn, *next;
+
+	mutex_lock(&global_lock);
+
+	if (active_global_observers)
+		active_global_observers--;
+
+	SCSC_TAG_INFO(MXMAN, "UN-register global observer[%d] --  %s\n", active_global_observers, name);
+
+	list_for_each_entry_safe (mn, next, &mxlogger_list.list, list) {
+		/* There is a mxlogger instance */
+		mxlogger_unregister_observer(mn->mxl, name);
+	}
+
+	mutex_unlock(&global_lock);
+	return 0;
+}
+EXPORT_SYMBOL(mxlogger_unregister_global_observer);
+
+#if IS_ENABLED(CONFIG_BT_FWSNOOP_LOGGING)
 int mxlogger_register_global_observer_class(char *name, uint8_t class)
 {
 	struct mxlogger_node *mn, *next;
@@ -1774,7 +1866,7 @@ int mxlogger_register_global_observer_class(char *name, uint8_t class)
 }
 EXPORT_SYMBOL(mxlogger_register_global_observer_class);
 
-int mxlogger_unregister_global_observer(char *name)
+int mxlogger_unregister_global_observer_class(char *name, uint8_t class)
 {
 	struct mxlogger_node *mn, *next;
 
@@ -1787,13 +1879,14 @@ int mxlogger_unregister_global_observer(char *name)
 
 	list_for_each_entry_safe (mn, next, &mxlogger_list.list, list) {
 		/* There is a mxlogger instance */
-		mxlogger_unregister_observer(mn->mxl, name);
+		mxlogger_unregister_observer_class(mn->mxl, name, class);
 	}
 
 	mutex_unlock(&global_lock);
 	return 0;
 }
-EXPORT_SYMBOL(mxlogger_unregister_global_observer);
+EXPORT_SYMBOL(mxlogger_unregister_global_observer_class);
+#endif
 
 #if defined(SCSC_SEP_VERSION) && SCSC_SEP_VERSION >= 12
 static int mxlogger_buffer_to_index(enum scsc_log_chunk_type fw_buffer)

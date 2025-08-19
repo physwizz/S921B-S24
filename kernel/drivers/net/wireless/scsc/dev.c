@@ -608,12 +608,6 @@ struct slsi_dev *slsi_dev_attach(struct device *dev, struct scsc_mx *core, struc
 #endif
 #endif
 	}
-#ifdef CONFIG_SCSC_WLAN_TX_ZERO_COPY
-	if (dma_set_mask_and_coherent(sdev->dev, DMA_BIT_MASK(64)) != 0) {
-		SLSI_ERR(sdev, "Cannot set DMA for dev\n");
-		goto err_nan_registered;
-	}
-#endif
 #ifdef CONFIG_SCSC_WIFI_NAN_ENABLE
 #if (KERNEL_VERSION(5, 12, 0) <= LINUX_VERSION_CODE)
 	INIT_WORK(&sdev->nan_data_interface_create_work, slsi_nan_data_interface_create_wq);

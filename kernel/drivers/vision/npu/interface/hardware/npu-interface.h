@@ -52,7 +52,7 @@
  */
 
 #if !IS_ENABLED(CONFIG_SOC_S5E8845)
-#define MAILBOX_IRQ_CNT		5
+#define MAILBOX_IRQ_CNT		4
 #else // IS_ENABLED(CONFIG_SOC_S5E8845)
 #define MAILBOX_IRQ_CNT		4
 #endif
@@ -90,6 +90,7 @@ int fw_msg_available(void);
 #endif
 int nw_rslt_available(void);
 int fr_rslt_available(enum channel_flag c);
+int npu_interface_irq_set(struct device *dev, struct npu_system *system);
 int register_msgid_get_type(int (*msgid_get_type_func)(int));
 int register_rslt_notifier(protodrv_notifier);
 void fw_rprt_manager(void);

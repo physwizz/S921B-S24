@@ -28,9 +28,12 @@
 #include <linux/genalloc.h>
 #include <linux/kmemleak.h>
 #include <linux/dma-map-ops.h>
+#include <soc/samsung/exynos/debug-snapshot.h>
 
 #include <asm/cacheflush.h>
 #include <asm/pgtable.h>
+#include <soc/samsung/exynos/debug-snapshot.h>
+#include <linux/sched/clock.h>
 
 #include "exynos-pcie-iommu.h"
 #include <soc/samsung/exynos-pcie-iommu-exp.h>
@@ -44,13 +47,115 @@ static u32 alloc_counter;
 static u32 lv2table_counter;
 static u32 max_req_cnt;
 static u32 wrong_pf_cnt;
-#if IS_ENABLED(CONFIG_PCIE_IOMMU_HISTORY_LOG)
-static struct history_buff pcie_map_history, pcie_unmap_history;
-#endif
+static struct history_buff pcie_map_history;
 
 int pcie_iommu_map(unsigned long iova, phys_addr_t paddr,
 			size_t size, int prot, int pcie_channel);
 size_t pcie_iommu_unmap(unsigned long iova, size_t size, int pcie_channel);
+
+int pcie_sysmmu_check_all_mapping_addr(struct sysmmu_drvdata *drvdata, int pcie_channel)
+{
+	u32 lv1_idx, lv2_idx;
+	u32 lv1_entry_val, lv2_entry_val, lv1_page_size, lv2_page_size;
+	int ret = 0;
+
+	for (lv1_idx = 0; lv1_idx < NUM_LV1ENTRIES; lv1_idx += 0x1) {
+		lv1_entry_val = readl(drvdata->domain[pcie_channel]->pgtable + lv1_idx);
+		lv1_page_size = (lv1_entry_val & FLPD_FLAG_MASK);
+
+		if (lv1_page_size == 0x0) {
+			dev_dbg(drvdata->dev, "Lv1(+0x%x) entry's value: 0x%x(unmapped page)\n",
+					lv1_idx, lv1_entry_val);
+		} else if (lv1_page_size == 0x1) {
+			dev_info(drvdata->dev, "Lv1_Lv2(+0x%x) entry's value: 0x%x, Lv1 entry PA: 0x%llx, VA: %p\n",
+					lv1_idx,
+					lv1_entry_val,
+					(unsigned long long)virt_to_phys(drvdata->domain[pcie_channel]->pgtable + lv1_idx),
+					drvdata->domain[pcie_channel]->pgtable + lv1_idx);
+
+			for (lv2_idx = 0; lv2_idx < NUM_LV2ENTRIES; lv2_idx += 0x1) {
+				sysmmu_pte_t *pent = phys_to_virt(lv2table_base(&lv1_entry_val)) + (lv2_idx * 0x4);
+				sysmmu_pte_t *refcnt_buf;
+
+				lv2_entry_val = readl(pent);
+				refcnt_buf = (pent + NUM_LV2ENTRIES);
+				lv2_page_size = (lv2_entry_val & SLPD_FLAG_MASK);
+
+				if (lv2_page_size == 0x1) {
+					dev_info(drvdata->dev, "Lv2_64KB(+0x%x) entry's value: 0x%x, PA: 0x%llx, VA: %p\n",
+							lv2_idx,
+							lv2_entry_val,
+							(unsigned long long)virt_to_phys(pent),
+							pent);
+				} else if ((lv2_page_size == 0x2) || (lv2_page_size == 0x3)) {
+					dev_info(drvdata->dev, "Lv2_4KB(+0x%x) entry's value: 0x%x, PA: 0x%llx, VA: %p\n",
+							lv2_idx,
+							lv2_entry_val,
+							(unsigned long long)virt_to_phys(pent),
+							pent);
+				} else {
+					dev_dbg(drvdata->dev, "Lv2(+0x%x) entry's value: 0x%x, but not exist Lv2 entry \n",
+							lv2_idx, lv2_entry_val);
+				}
+			}
+		} else if (lv1_page_size == 0x2) {
+			dev_info(drvdata->dev, "Lv1_1MB(+0x%x) entry's value: 0x%x, Lv1 entry PA: 0x%llx, VA: %p\n",
+					lv1_idx,
+					lv1_entry_val,
+					(unsigned long long)virt_to_phys(drvdata->domain[pcie_channel]->pgtable + lv1_idx),
+					drvdata->domain[pcie_channel]->pgtable + lv1_idx);
+		} else if (lv1_page_size == 0x4) {
+			dev_info(drvdata->dev, "Lv1_2MB(+0x%x) entry's value: 0x%x, Lv1 entry PA: 0x%llx, VA: %p\n",
+					lv1_idx,
+					lv1_entry_val,
+					(unsigned long long)virt_to_phys(drvdata->domain[pcie_channel]->pgtable + lv1_idx),
+					drvdata->domain[pcie_channel]->pgtable + lv1_idx);
+		} else if (lv1_page_size == 0x6) {
+			dev_info(drvdata->dev, "Lv1_16MB(+0x%x) entry's value: 0x%x, Lv1 entry PA: 0x%llx, VA: %p\n",
+					lv1_idx,
+					lv1_entry_val,
+					(unsigned long long)virt_to_phys(drvdata->domain[pcie_channel]->pgtable + lv1_idx),
+					drvdata->domain[pcie_channel]->pgtable + lv1_idx);
+		}
+	}
+	return ret;
+}
+
+void exynos_sysmmu_memlog_print(struct sysmmu_drvdata *data,
+		int level, const char *fmt, ...)
+{
+	int ret;
+	va_list args;
+
+	if (!data->log_obj) {
+		dev_err(data->dev, "%s: pcie sysmmu log object is NULL\n", __func__);
+		return;
+	}
+
+	va_start(args, fmt);
+	ret = memlog_write_vsprintf(data->log_obj, level, fmt, args);
+	va_end(args);
+
+	return;
+}
+
+void exynos_sysmmu_memlog_init(struct sysmmu_drvdata *data)
+{
+	int ret;
+
+	ret = memlog_register("PCIe-sysmmu", data->dev, &data->log_desc);
+	if (ret) {
+		dev_err(data->dev, "%s: Failed to register sysmmu memlog\n", __func__);
+		return;
+	}
+
+	data->log_obj = memlog_alloc_printf(data->log_desc, SZ_512K,
+			NULL, "Log", 0);
+	if (!data->log_obj)
+		dev_err(data->dev, "%s: Failed to allocate memory for driver\n", __func__);
+
+	return;
+}
 
 /* For ARM64 only */
 static inline void pgtable_flush(void *vastart, void *vaend)
@@ -298,7 +403,6 @@ static int sysmmu_parse_stream_property(struct device *dev, struct sysmmu_drvdat
 
 	return 0;
 }
-
 
 static char *sysmmu_fault_name[SYSMMU_FAULTS_NUM] = {
 	"PTW ACCESS FAULT",
@@ -646,11 +750,9 @@ static void dump_sysmmu_tlb_port(struct sysmmu_drvdata *drvdata, phys_addr_t pgt
 	pr_crit("SysMMU has %d PTLBs(PMMU %d), %d STLBs, 1 S1L1TLB\n",
 		num_ptlb, pmmu_id, num_stlb);
 
-	/*
 	dump_sysmmu_ptlb_status(drvdata, pgtable, num_ptlb, pmmu_id, fault_ptlb);
 	dump_sysmmu_stlb_status(drvdata, pgtable, num_stlb, fault_stlb);
 	dump_sysmmu_s1l1tlb_status(drvdata, pgtable);
-	*/
 }
 
 void print_pcie_sysmmu_tlb(enum pcie_sysmmu_vid pcie_vid)
@@ -676,6 +778,8 @@ static int show_fault_information(struct sysmmu_drvdata *drvdata, int flags,
 	int ret = 0;
 	u32 info0, info1, info2;
 	int pmmu_id, stream_id;
+	struct history_buff *hbuff = &pcie_map_history;
+	int i = 0, pr_idx;
 
 	pgtable = __raw_readl(drvdata->sfrbase + REG_PT_BASE_PPN_VID(pcie_vid));
 	pgtable <<= PAGE_SHIFT;
@@ -701,7 +805,6 @@ static int show_fault_information(struct sysmmu_drvdata *drvdata, int flags,
 		MMU_FAULT_INFO0_ASID(info0), MMU_FAULT_INFO0_LEN(info0),
 		MMU_FAULT_INFO1_AXID(info1), pmmu_id, stream_id);
 
-
 	if (fault_id == SYSMMU_FAULT_UNKNOWN) {
 		pr_crit("The fault is not caused by this System MMU.\n");
 		pr_crit("Please check IRQ and SFR base address.\n");
@@ -723,13 +826,19 @@ static int show_fault_information(struct sysmmu_drvdata *drvdata, int flags,
 		sysmmu_pte_t *ent;
 
 		ent = section_entry(phys_to_virt(pgtable), fault_addr);
-		pr_crit("Lv1 entry: %#010x\n", *ent);
+		pr_crit("Lv1 entry's value: %#010x, Lv1 entry PA: 0x%llx, VA: %p\n",
+				*ent,
+				(unsigned long long)virt_to_phys(ent),
+				ent);
 
 		if (lv1ent_page(ent)) {
 			u64 sft_ent_addr, sft_fault_addr;
 
 			ent = page_entry(ent, fault_addr);
-			pr_crit("Lv2 entry: %#010x\n", *ent);
+			pr_crit("Lv2 entry's value: %#010x, Lv2 entry PA: 0x%llx, VA: %p\n",
+					*ent,
+					(unsigned long long)virt_to_phys(ent),
+					ent);
 
 			sft_ent_addr = (*ent) >> 8;
 			sft_fault_addr = fault_addr >> 12;
@@ -757,6 +866,24 @@ static int show_fault_information(struct sysmmu_drvdata *drvdata, int flags,
 	}
 
 	dump_sysmmu_tlb_port(drvdata, pgtable, pmmu_id, stream_id);
+
+	for (i = 0; i < MAX_HISTORY_BUFF; i++) {
+		pr_idx = ((hbuff->index + i) % MAX_HISTORY_BUFF);
+		sysmmu_dump("[%5lu.%06lu][%d] %s: va: 0x%lx(pa: 0x%lx), org: 0x%lx, sz:0x%x, org_sz:0x%x, refcnt:%d\n",
+				hbuff->tv_kernel[pr_idx],
+				hbuff->rem_nsec[pr_idx],
+				pr_idx,
+				(hbuff->mu[pr_idx] ? "map" : "unmap"),
+				hbuff->save_addr[pr_idx],
+				hbuff->paddr[pr_idx],
+				hbuff->orig_addr[pr_idx],
+				hbuff->size[pr_idx],
+				hbuff->orig_size[pr_idx],
+				hbuff->refcnt[pr_idx]);
+	}
+
+	pcie_sysmmu_check_all_mapping_addr(drvdata, SYSMMU_PCIE_CH0);
+
 finish:
 	pr_crit("----------------------------------------------------------\n");
 
@@ -774,9 +901,9 @@ int pcie_sysmmu_add_fault_handler(struct notifier_block *pcie_sysmmu_nb)
 }
 EXPORT_SYMBOL_GPL(pcie_sysmmu_add_fault_handler);
 
-void (*pci_fault_handler)(int id);
+void (*pci_fault_handler)(int id, int full_dump);
 
-int pcie_sysmmu_add_pcie_fault_handler(void (*func)(int))
+int pcie_sysmmu_add_pcie_fault_handler(void (*func)(int, int))
 {
 	pci_fault_handler = func;
 
@@ -838,7 +965,7 @@ static irqreturn_t exynos_sysmmu_irq(int irq, void *dev_id)
 		return IRQ_HANDLED;
 
 	if (pci_fault_handler != NULL)
-		pci_fault_handler(pcie_vid - SYSMMU_PCIE_VID_OFFSET);
+		pci_fault_handler(pcie_vid - SYSMMU_PCIE_VID_OFFSET, 0);
 
 	ret = atomic_notifier_call_chain(&drvdata->fault_notifiers, addr, &flags);
 	if (ret == SYSMMU_PANIC_BY_DEV) {
@@ -853,10 +980,12 @@ static irqreturn_t exynos_sysmmu_irq(int irq, void *dev_id)
 	}
 
 	fault_id = SYSMMU_FAULT_ID(flags);
-	panic("(%s) From [PCIe CH%d], SysMMU %s %s at %#010lx\n", dev_name(drvdata->dev),
+	dev_info(drvdata->dev, "From [PCIe CH%d], SysMMU %s %s at %#010lx\n",
 		pcie_vid - SYSMMU_PCIE_VID_OFFSET, /* PCIe channel number */
 		(flags & IOMMU_FAULT_WRITE) ? "WRITE" : "READ",
 		sysmmu_fault_name[fault_id], addr);
+
+	dbg_snapshot_expire_watchdog();
 
 	return IRQ_HANDLED;
 }
@@ -1078,7 +1207,7 @@ static size_t iommu_pgsize(unsigned long addr_merge, size_t size, int domain_num
 }
 
 static int exynos_iommu_map(unsigned long l_iova, phys_addr_t paddr,
-		size_t size, int prot, int domain_num)
+		size_t size, int prot, int domain_num, int *refcnt)
 {
 	struct exynos_iommu_domain *domain = g_sysmmu_drvdata->domain[domain_num];
 	sysmmu_pte_t *entry;
@@ -1094,15 +1223,21 @@ static int exynos_iommu_map(unsigned long l_iova, phys_addr_t paddr,
 				     &domain->lv2entcnt[lv1ent_offset(iova)]);
 	} else {
 		sysmmu_pte_t *pent;
+		sysmmu_pte_t *refcnt_buf;
 		pent = alloc_lv2entry(domain, entry, iova,
 			      &domain->lv2entcnt[lv1ent_offset(iova)],
 			      GFP_ATOMIC);
 
-		if (IS_ERR(pent))
+		if (IS_ERR(pent)) {
 			ret = PTR_ERR(pent);
-		else
+		} else {
 			ret = lv2set_page(pent, paddr, size, prot,
-				       &domain->lv2entcnt[lv1ent_offset(iova)]);
+					&domain->lv2entcnt[lv1ent_offset(iova)]);
+			if(!ret) {
+				refcnt_buf = pent + NUM_LV2ENTRIES;
+				*refcnt =  *refcnt_buf;
+			}
+		}
 	}
 
 	if (ret)
@@ -1112,7 +1247,8 @@ static int exynos_iommu_map(unsigned long l_iova, phys_addr_t paddr,
 	return ret;
 }
 
-static size_t exynos_iommu_unmap(unsigned long l_iova, size_t size, int domain_num)
+static size_t exynos_iommu_unmap(unsigned long l_iova, size_t size,
+					int domain_num, int *refcnt)
 {
 	struct exynos_iommu_domain *domain = g_sysmmu_drvdata->domain[domain_num];
 	sysmmu_iova_t iova = (sysmmu_iova_t)l_iova;
@@ -1158,6 +1294,7 @@ static size_t exynos_iommu_unmap(unsigned long l_iova, size_t size, int domain_n
 		refcnt_buf = (pent + NUM_LV2ENTRIES);
 		if (*refcnt_buf != 0) {
 			*refcnt_buf = *refcnt_buf - 1;
+			*refcnt = *refcnt_buf;
 			goto done;
 		}
 
@@ -1334,20 +1471,28 @@ static size_t exynos_iommu_unmap_once(unsigned long l_iova, size_t size, int dom
 }
 #endif
 
-#if IS_ENABLED(CONFIG_PCIE_IOMMU_HISTORY_LOG)
-static inline void add_history_buff(struct history_buff *hbuff,
-			phys_addr_t addr, phys_addr_t orig_addr,
-			size_t size, size_t orig_size)
+static inline void add_history_buff(phys_addr_t addr, phys_addr_t paddr,
+		phys_addr_t orig_addr,
+		size_t size, size_t orig_size, int refcnt, int mu)
 {
-	hbuff->save_addr[hbuff->index] = (u32)((addr >> 0x4) & 0xffffffff);
-	hbuff->orig_addr[hbuff->index] = (u32)((orig_addr >> 0x4) & 0xffffffff);
+	struct history_buff *hbuff = &pcie_map_history;
+	u64 tv_kernel = local_clock();
+	unsigned long rem_nsec = do_div(tv_kernel, 1000000000);
+
+	hbuff->tv_kernel[hbuff->index] = (unsigned long)tv_kernel;
+	hbuff->rem_nsec[hbuff->index] = rem_nsec / 1000;
+	hbuff->save_addr[hbuff->index] = addr;
+	hbuff->paddr[hbuff->index] = paddr;
+	hbuff->orig_addr[hbuff->index] = orig_addr;
 	hbuff->size[hbuff->index] = size;
 	hbuff->orig_size[hbuff->index] = orig_size;
+	hbuff->refcnt[hbuff->index] = refcnt;
+	hbuff->mu[hbuff->index] = mu;
+
 	hbuff->index++;
-	if (hbuff->index >= MAX_HISTROY_BUFF)
+	if (hbuff->index >= MAX_HISTORY_BUFF)
 		hbuff->index = 0;
 }
-#endif
 
 static inline int check_memory_validation(phys_addr_t paddr)
 {
@@ -1415,6 +1560,7 @@ int pcie_iommu_map(unsigned long iova, phys_addr_t paddr, size_t size,
 #endif
 
 	while (size) {
+		int refcnt = 0;
 		size_t pgsize = iommu_pgsize(iova | paddr, size, pcie_channel);
 
 		pr_debug("mapping: iova 0x%lx pa %pa pgsize 0x%zx\n",
@@ -1423,14 +1569,14 @@ int pcie_iommu_map(unsigned long iova, phys_addr_t paddr, size_t size,
 		alloc_counter++;
 		if (alloc_counter > max_req_cnt)
 			max_req_cnt = alloc_counter;
-		ret = exynos_iommu_map(iova, paddr, pgsize, prot, pcie_channel);
+		ret = exynos_iommu_map(iova, paddr, pgsize, prot, pcie_channel, &refcnt);
 		/* exynos_sysmmu_tlb_invalidate(iova, pgsize, pcie_vid); */
-#if IS_ENABLED(CONFIG_PCIE_IOMMU_HISTORY_LOG)
-		add_history_buff(&pcie_map_history, paddr, orig_paddr,
-				changed_size, orig_size);
-#endif
 		if (ret)
 			break;
+		pr_debug("iova : 0x%lx, orig_iova: 0x%lx, changed_size: 0x%lx, orig_size: 0x%lx, refcnt: %d\n",
+				iova, orig_iova, changed_size, orig_size, refcnt + 1);
+		add_history_buff(iova, paddr, orig_iova,
+				changed_size, orig_size, refcnt + 1, 1);
 
 		iova += pgsize;
 		paddr += pgsize;
@@ -1510,20 +1656,18 @@ size_t pcie_iommu_unmap(unsigned long iova, size_t size, int pcie_channel)
 	 * or we hit an area that isn't mapped.
 	 */
 	while (unmapped < size) {
+		int refcnt = -1;
 		size_t pgsize = iommu_pgsize(iova, size - unmapped, pcie_channel);
 
 		alloc_counter--;
-		unmapped_page = exynos_iommu_unmap(iova, pgsize, pcie_channel);
+		unmapped_page = exynos_iommu_unmap(iova, pgsize, pcie_channel, &refcnt);
 		/* exynos_sysmmu_tlb_invalidate(iova, pgsize, pcie_vid); */
-#if IS_ENABLED(CONFIG_PCIE_IOMMU_HISTORY_LOG)
-		add_history_buff(&pcie_unmap_history, iova, orig_iova,
-				size, orig_size);
-#endif
 		if (!unmapped_page)
 			break;
 
-		pr_debug("unmapped: iova 0x%lx size 0x%zx\n",
-			 iova, unmapped_page);
+		add_history_buff(iova, iova, orig_iova, size, orig_size, (refcnt + 1), 0);
+		pr_debug("unmapped: iova 0x%lx size 0x%zx, refcnt: %d\n",
+				iova, unmapped_page, refcnt + 1);
 
 		iova += unmapped_page;
 		unmapped += unmapped_page;
@@ -1728,6 +1872,8 @@ static int exynos_sysmmu_probe(struct platform_device *pdev)
 			MMU_MIN_VER(data->version),
 			MMU_REV_VER(data->version),
 			data->max_vm, data->va_width);
+
+	exynos_sysmmu_memlog_init(data);
 
 	pm_runtime_put(&pdev->dev);
 	return 0;

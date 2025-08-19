@@ -103,6 +103,7 @@ static int is_hw_mcsc_handle_interrupt(u32 id, void *context)
 	status = is_scaler_get_intr_status(get_base(hw_ip), hw_ip->id);
 	status = (~mask) & status;
 
+	is_hw_trace_logger(hw_ip, status);
 	is_scaler_clear_intr_src(get_base(hw_ip), hw_ip->id, status);
 
 	if (!test_bit(HW_OPEN, &hw_ip->state)) {

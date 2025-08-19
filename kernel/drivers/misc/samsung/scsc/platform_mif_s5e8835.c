@@ -2141,10 +2141,10 @@ static void platform_mif_irq_bit_set(struct scsc_mif_abs *interface, int bit_num
 	}
 
 	reg = INTGR1;
-	if (target == SCSC_MIF_ABS_TARGET_WLAN)
-		platform_mif_reg_write(platform, MAILBOX_WLBT_REG(reg), (1 << bit_num));
-	else
+	if (target == SCSC_MIF_ABS_TARGET_WPAN)
 		platform_mif_reg_write_wpan(platform, MAILBOX_WLBT_REG(reg), (1 << bit_num));
+	else
+		platform_mif_reg_write(platform, MAILBOX_WLBT_REG(reg), (1 << bit_num));
 
 	SCSC_TAG_DEBUG_DEV(PLAT_MIF, platform->dev, "Setting INTGR1: bit %d on target %s\n", bit_num,
 			   (target == SCSC_MIF_ABS_TARGET_WPAN) ? "WPAN":"WLAN");

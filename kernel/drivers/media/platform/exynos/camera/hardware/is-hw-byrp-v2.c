@@ -1415,6 +1415,9 @@ static int is_hw_byrp_notify_timeout(struct is_hw_ip *hw_ip, u32 instance)
 	/* DEBUG */
 	byrp_hw_dump(hw_ip->pmio, HW_DUMP_DBG_STATE);
 
+	print_hex_dump(KERN_INFO, "BYRP config:", DUMP_PREFIX_OFFSET, 16, 1,
+			(u32 *)&hw_byrp->config, sizeof(struct is_byrp_config), true);
+
 	return 0;
 }
 

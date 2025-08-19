@@ -35,6 +35,14 @@ void slsi_dev_attach_post(struct slsi_dev *sdev);
 void slsi_dev_detach_post(struct slsi_dev *sdev);
 
 /**
+ * Lock: No lock is acquired.
+ * Context: Process
+ * Description: It is called at the end of slsi_hip_setup.
+ * It sets up the maximum TX units in the HIP that the TXBP will use as MOD.
+ */
+void slsi_hip_setup_post(struct slsi_dev *sdev, u16 tx_slots);
+
+/**
  * Lock: netdev_add_remove_mutex
  * Context: Process.
  * Description: return # of Tx queue. Return value should be > 1.

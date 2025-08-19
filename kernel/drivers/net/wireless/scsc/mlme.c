@@ -2586,13 +2586,14 @@ static const u8 *slsi_mlme_connect_get_sec_ie(struct cfg80211_connect_params *sm
 /* If is_copy is true copy the required IEs from connect_ie to ie_dest. else
  * calculate the required ie length
  */
-static int slsi_mlme_connect_info_elems_ie_prep(struct slsi_dev *sdev, const u8 *connect_ie,
+static int slsi_mlme_connect_info_elems_ie_prep(struct slsi_dev *sdev, struct net_device *dev, const u8 *connect_ie,
 						const size_t connect_ie_len, bool is_copy, u8 *ie_dest, int ie_dest_len)
 {
 	const u8 *ie_pos = NULL;
 	int      info_elem_length = 0;
 	u16      curr_ie_len, rem_len;
 	int i = 0;
+	struct netdev_vif *ndev_vif = netdev_priv(dev);
 	u8 ie_eid[] = {SLSI_WLAN_EID_INTERWORKING,
 		       SLSI_WLAN_EID_EXTENSION,
 		       WLAN_EID_VENDOR_SPECIFIC};  /*Vendor IE has to be the last element  */
@@ -2604,6 +2605,8 @@ static int slsi_mlme_connect_info_elems_ie_prep(struct slsi_dev *sdev, const u8 
 		ie_pos = cfg80211_find_ie(ie_eid[i], connect_ie, connect_ie_len);
 		while (ie_pos) {
 			curr_ie_len = *(ie_pos + 1) + 2;
+			if (ie_eid[i] == SLSI_WLAN_EID_EXTENSION && ie_pos[2] == SLSI_WLAN_EID_EXT_OWE_DH_PARAM)
+				ndev_vif->sta.owe_group_during_connection = ((ie_pos[4] << 8) | ie_pos[3]);
 			SLSI_DBG2(sdev, SLSI_MLME, "IE[%d] is present having length:%d\n", ie_eid[i], curr_ie_len);
 			if (is_copy) {
 				if (ie_dest_len >= curr_ie_len) {
@@ -2662,7 +2665,7 @@ static int slsi_mlme_connect_info_elements(struct slsi_dev *sdev, struct net_dev
 	int               r = 0;
 	u8                *p;
 
-	info_elem_length = slsi_mlme_connect_info_elems_ie_prep(sdev, sme->ie, sme->ie_len, false, NULL, 0);
+	info_elem_length = slsi_mlme_connect_info_elems_ie_prep(sdev, dev, sme->ie, sme->ie_len, false, NULL, 0);
 
 	/* NO IE required in MLME-ADD-INFO-ELEMENTS */
 	if (info_elem_length <= 0)
@@ -2681,7 +2684,7 @@ static int slsi_mlme_connect_info_elements(struct slsi_dev *sdev, struct net_dev
 		return -EINVAL;
 	}
 
-	(void)slsi_mlme_connect_info_elems_ie_prep(sdev, sme->ie, sme->ie_len, true, p, info_elem_length);
+	(void)slsi_mlme_connect_info_elems_ie_prep(sdev, dev, sme->ie, sme->ie_len, true, p, info_elem_length);
 
 	/* backup ies */
 	if (SLSI_IS_VIF_INDEX_WLAN(ndev_vif)) {
@@ -5935,24 +5938,24 @@ int slsi_mlme_set_multicast_ip(struct slsi_dev *sdev, struct net_device *dev, __
 	return r;
 }
 
-static int slsi_get_twt_error_code(int result_code)
+static int slsi_get_error_code(int result_code)
 {
 	switch (result_code) {
 	case FAPI_RESULTCODE_INVALID_PARAMETERS:
 	case FAPI_RESULTCODE_INVALID_VIRTUAL_INTERFACE_INDEX:
-		result_code = SLSI_TWT_WIFI_ERROR_INVALID_ARGUMENT;
+		result_code = SLSI_WIFI_ERROR_INVALID_ARGUMENT;
 		break;
 	case FAPI_RESULTCODE_NOT_SUPPORTED:
-		result_code = SLSI_TWT_WIFI_ERROR_NOT_SUPPORTED;
+		result_code = SLSI_WIFI_ERROR_NOT_SUPPORTED;
 		break;
 	case FAPI_RESULTCODE_INVALID_STATE:
-		result_code = SLSI_TWT_WIFI_ERROR_BUSY;
+		result_code = SLSI_WIFI_ERROR_BUSY;
 		break;
 	case FAPI_RESULTCODE_NOT_PRESENT:
-		result_code = SLSI_TWT_WIFI_ERROR_NOT_AVAILABLE;
+		result_code = SLSI_WIFI_ERROR_NOT_AVAILABLE;
 		break;
 	default:
-		result_code = SLSI_TWT_WIFI_ERROR_TEMPORAL;
+		result_code = SLSI_WIFI_ERROR_TEMPORAL;
 	}
 	return result_code;
 }
@@ -5988,7 +5991,7 @@ int slsi_mlme_twt_setup(struct slsi_dev *sdev, struct net_device *dev, struct tw
 		return -EIO;
 
 	if (fapi_get_u16(cfm, u.mlme_twt_setup_cfm.result_code) != FAPI_RESULTCODE_SUCCESS) {
-		r = slsi_get_twt_error_code(fapi_get_u16(cfm, u.mlme_twt_setup_cfm.result_code));
+		r = slsi_get_error_code(fapi_get_u16(cfm, u.mlme_twt_setup_cfm.result_code));
 		SLSI_NET_ERR(dev, "mlme_twt_setup_cfm(result:0x%04x) ERROR\n",
 			     fapi_get_u16(cfm, u.mlme_twt_setup_cfm.result_code));
 	}
@@ -6017,39 +6020,11 @@ int slsi_mlme_twt_teardown(struct slsi_dev *sdev, struct net_device *dev, u16 se
 		return -EIO;
 
 	if (fapi_get_u16(cfm, u.mlme_twt_teardown_cfm.result_code) != FAPI_RESULTCODE_SUCCESS) {
-		r = slsi_get_twt_error_code(fapi_get_u16(cfm, u.mlme_twt_teardown_cfm.result_code));
+		r = slsi_get_error_code(fapi_get_u16(cfm, u.mlme_twt_teardown_cfm.result_code));
 		SLSI_NET_ERR(dev, "mlme_twt_teardown_cfm(result:0x%04x) ERROR\n",
 			     fapi_get_u16(cfm, u.mlme_twt_teardown_cfm.result_code));
 	}
 
-	kfree_skb(cfm);
-	return r;
-}
-
-int slsi_mlme_twt_suspend(struct slsi_dev *sdev, struct net_device *dev, u16 setup_id, u32 suspend_duration)
-{
-	struct netdev_vif *ndev_vif = netdev_priv(dev);
-	struct sk_buff    *req;
-	struct sk_buff    *cfm;
-	int               r = 0;
-
-	WLBT_WARN_ON(!SLSI_MUTEX_IS_LOCKED(ndev_vif->vif_mutex));
-	req = fapi_alloc(mlme_twt_suspend_req, MLME_TWT_SUSPEND_REQ, ndev_vif->ifnum, 0);
-	if (!req)
-		return -ENOMEM;
-
-	fapi_set_u16(req, u.mlme_twt_suspend_req.twt_setup_id, setup_id);
-	fapi_set_u32(req, u.mlme_twt_suspend_req.twt_suspend_duration, suspend_duration);
-
-	cfm = slsi_mlme_req_cfm(sdev, dev, req, MLME_TWT_SUSPEND_CFM);
-	if (!cfm)
-		return -EIO;
-
-	if (fapi_get_u16(cfm, u.mlme_twt_suspend_cfm.result_code) != FAPI_RESULTCODE_SUCCESS) {
-		r = slsi_get_twt_error_code(fapi_get_u16(cfm, u.mlme_twt_suspend_cfm.result_code));
-		SLSI_NET_ERR(dev, "mlme_twt_suspend_cfm(result:0x%04x) ERROR\n",
-			     fapi_get_u16(cfm, u.mlme_twt_suspend_cfm.result_code));
-	}
 	kfree_skb(cfm);
 	return r;
 }
@@ -6074,7 +6049,7 @@ int slsi_mlme_twt_status_query(struct slsi_dev *sdev, struct net_device *dev, ch
 		return -EIO;
 
 	if (fapi_get_u16(cfm, u.mlme_twt_status_query_cfm.result_code) != FAPI_RESULTCODE_SUCCESS) {
-		r = slsi_get_twt_error_code(fapi_get_u16(cfm, u.mlme_twt_status_query_cfm.result_code));
+		r = slsi_get_error_code(fapi_get_u16(cfm, u.mlme_twt_status_query_cfm.result_code));
 		SLSI_NET_ERR(dev, "mlme_twt_status_query_cfm(result:0x%04x) ERROR\n",
 			     fapi_get_u16(cfm, u.mlme_twt_status_query_cfm.result_code));
 	}
@@ -6148,9 +6123,12 @@ int slsi_mlme_sched_pm_setup(struct slsi_dev *sdev, struct net_device *dev,
 	if (!cfm)
 		return -EIO;
 
-	r = fapi_get_u16(cfm, u.mlme_scheduled_pm_setup_cfm.result_code);
-	if (r != FAPI_RESULTCODE_SUCCESS)
-		SLSI_NET_ERR(dev, "mlme_scheduled_pm_setup_cfm(result:0x%04x) ERROR\n", r);
+	if (fapi_get_u16(cfm, u.mlme_scheduled_pm_setup_cfm.result_code) != FAPI_RESULTCODE_SUCCESS) {
+		r = slsi_get_error_code(fapi_get_u16(cfm, u.mlme_scheduled_pm_setup_cfm.result_code));
+		SLSI_NET_ERR(dev, "mlme_scheduled_pm_setup_cfm(result:0x%04x) ERROR\n",
+			     fapi_get_u16(cfm, u.mlme_scheduled_pm_setup_cfm.result_code));
+	}
+
 	kfree_skb(cfm);
 	return r;
 }
@@ -6170,9 +6148,13 @@ int slsi_mlme_sched_pm_teardown(struct slsi_dev *sdev, struct net_device *dev)
 	cfm = slsi_mlme_req_cfm(sdev, dev, req, MLME_SCHEDULED_PM_TEARDOWN_CFM);
 	if (!cfm)
 		return -EIO;
-	r = fapi_get_u16(cfm, u.mlme_scheduled_pm_teardown_cfm.result_code);
-	if (r != FAPI_RESULTCODE_SUCCESS)
-		SLSI_NET_ERR(dev, "mlme_scheduled_pm_teardown_cfm(result:0x%04x) ERROR\n", r);
+
+	if (fapi_get_u16(cfm, u.mlme_scheduled_pm_teardown_cfm.result_code) != FAPI_RESULTCODE_SUCCESS) {
+		r = slsi_get_error_code(fapi_get_u16(cfm, u.mlme_scheduled_pm_teardown_cfm.result_code));
+		SLSI_NET_ERR(dev, "mlme_scheduled_pm_teardown_cfm(result:0x%04x) ERROR\n",
+			     fapi_get_u16(cfm, u.mlme_scheduled_pm_teardown_cfm.result_code));
+	}
+
 	kfree_skb(cfm);
 	return r;
 }
@@ -7030,3 +7012,75 @@ void slsi_mlme_tas_deinit(struct slsi_dev *sdev)
 }
 #endif
 
+bool slsi_mlme_set_max_bw_cfm_validate(struct slsi_dev *sdev, struct net_device *dev, struct sk_buff *cfm)
+{
+	int  result = fapi_get_u16(cfm, u.mlme_set_bss_max_channel_width_cfm.result_code);
+	bool r = false;
+
+	SLSI_UNUSED_PARAMETER(sdev);
+	SLSI_UNUSED_PARAMETER(dev);
+
+	if (result == FAPI_RESULTCODE_SUCCESS)
+		r = true;
+	else
+		SLSI_ERR_NODEV("mlme_set_max_bw_cfm(result:0x%04x) ERROR\n", result);
+
+	kfree_skb(cfm);
+	return r;
+}
+
+int slsi_mlme_set_max_bw(struct slsi_dev *sdev, struct net_device *dev, u16 protection_scope,
+			 u16 announce_validate, u16 bandwidth)
+{
+	struct sk_buff		*req;
+	struct sk_buff		*rx;
+	struct netdev_vif	*ndev_vif = netdev_priv(dev);
+	int			r = 0;
+
+	WLBT_WARN_ON(!SLSI_MUTEX_IS_LOCKED(ndev_vif->vif_mutex));
+
+	SLSI_NET_DBG1(dev, SLSI_MLME, "vif:%u, protection_scope:%d announce_validate:%d bandwidth:%d\n",
+		      ndev_vif->ifnum, protection_scope, announce_validate, bandwidth);
+
+	req = fapi_alloc(mlme_set_bss_max_channel_width_req, MLME_SET_BSS_MAX_CHANNEL_WIDTH_REQ, ndev_vif->ifnum, 0);
+	if (!req) {
+		SLSI_ERR(sdev, "fapi_alloc failed\n");
+		return -ENOMEM;
+	}
+
+	fapi_set_u16(req, u.mlme_set_bss_max_channel_width_req.protection_scope, protection_scope);
+	fapi_set_u16(req, u.mlme_set_bss_max_channel_width_req.channel_information, bandwidth);
+	fapi_set_u16(req, u.mlme_set_bss_max_channel_width_req.spare_1, announce_validate);
+
+	if (announce_validate == 0) {
+		rx = slsi_mlme_req_cfm(sdev, NULL, req, MLME_SET_BSS_MAX_CHANNEL_WIDTH_CFM);
+		if (rx) {
+			if (fapi_get_u16(rx, u.mlme_set_bss_max_channel_width_cfm.result_code) !=
+			    FAPI_RESULTCODE_SUCCESS) {
+				SLSI_NET_ERR(dev, "mlme_set_bss_max_channel_width_cfm(result:0x%04x) ERROR\n",
+					     fapi_get_u16(rx, u.mlme_set_bss_max_channel_width_cfm.result_code));
+				r = -EINVAL;
+			}
+		} else {
+			SLSI_NET_ERR(dev, "slsi_mlme_req_cfm() ERROR\n");
+			return -EIO;
+		}
+	} else {
+		rx = slsi_mlme_req_cfm_ind(sdev, dev, req, MLME_SET_BSS_MAX_CHANNEL_WIDTH_CFM,
+					   MLME_SET_BSS_MAX_CHANNEL_WIDTH_IND, slsi_mlme_set_max_bw_cfm_validate);
+		if (rx) {
+			if (fapi_get_u16(rx, u.mlme_set_bss_max_channel_width_ind.result_code) !=
+			    FAPI_RESULTCODE_HOST_REQUEST_SUCCESS) {
+				SLSI_NET_ERR(dev, "mlme_set_bss_max_channel_width_ind(result:0x%04x) ERROR\n",
+					     fapi_get_u16(rx, u.mlme_set_bss_max_channel_width_ind.result_code));
+				r = -EINVAL;
+			}
+		} else {
+			SLSI_NET_ERR(dev, "slsi_mlme_req_cfm_ind() ERROR\n");
+			return -EIO;
+		}
+	}
+
+	kfree_skb(rx);
+	return r;
+}

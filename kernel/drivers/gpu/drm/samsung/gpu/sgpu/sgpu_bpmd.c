@@ -524,7 +524,7 @@ uint32_t sgpu_bpmd_dump_to_userptr(struct amdgpu_device *sdev, uint8_t __user *d
 		.user_data = data
 	};
 
-	if (clear_user(&sbo.user_data, sbo.data_size)) {
+	if (clear_user(sbo.user_data, sbo.data_size)) {
 		DRM_ERROR("failed to clear userptr\n");
 	}
 
@@ -552,7 +552,7 @@ uint32_t sgpu_bpmd_dump_to_kmem(struct amdgpu_device *sdev, uint8_t *data,
 		.kernel_data = data
 	};
 
-	memset(&sbo.kernel_data, 0U, sbo.data_size);
+	memset(sbo.kernel_data, 0U, sbo.data_size);
 
 	sgpu_bpmd_dump_core(sdev, &sbo);
 	return sbo.offset;

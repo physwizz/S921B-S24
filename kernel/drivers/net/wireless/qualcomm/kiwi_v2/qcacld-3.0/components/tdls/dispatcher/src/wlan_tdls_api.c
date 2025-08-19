@@ -30,6 +30,23 @@
 #include <wlan_objmgr_cmn.h>
 #include "wlan_tdls_cfg_api.h"
 #include "wlan_policy_mgr_api.h"
+#include "wlan_mlo_mgr_sta.h"
+#include "wlan_tdls_peer.h"
+
+void wlan_tdls_register_lim_callbacks(struct wlan_objmgr_psoc *psoc,
+				      struct tdls_callbacks *cbs)
+{
+	struct tdls_soc_priv_obj *soc_obj;
+
+	soc_obj = wlan_objmgr_psoc_get_comp_private_obj(psoc,
+							WLAN_UMAC_COMP_TDLS);
+	if (!soc_obj) {
+		tdls_err("Failed to get tdls psoc component");
+		return;
+	}
+
+	soc_obj->tdls_cb.delete_all_tdls_peers = cbs->delete_all_tdls_peers;
+}
 
 static QDF_STATUS tdls_teardown_flush_cb(struct scheduler_msg *msg)
 {
@@ -285,6 +302,50 @@ wlan_tdls_handle_sap_start(struct wlan_objmgr_psoc *psoc)
 {}
 #endif
 
+#ifdef WLAN_FEATURE_11BE_MLO
+static QDF_STATUS
+wlan_mlo_is_tdls_session_present(struct wlan_objmgr_vdev *vdev)
+{
+	uint8_t i;
+	struct wlan_mlo_dev_context *ml_dev = vdev->mlo_dev_ctx;
+
+	if (!ml_dev) {
+		tdls_err("MLO dev ctx is null");
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	for (i = 0; i < ml_dev->wlan_vdev_count; i++) {
+		vdev = ml_dev->wlan_vdev_list[i];
+		if (tdls_get_connected_peer_count_from_vdev(vdev) > 0) {
+			tdls_debug("TDLS session is present");
+			return QDF_STATUS_SUCCESS;
+		}
+	}
+
+	return QDF_STATUS_E_INVAL;
+}
+#else
+static QDF_STATUS
+wlan_mlo_is_tdls_session_present(struct wlan_objmgr_vdev *vdev)
+{
+	return QDF_STATUS_E_INVAL;
+}
+#endif
+
+QDF_STATUS
+wlan_is_tdls_session_present(struct wlan_objmgr_vdev *vdev)
+{
+	if (mlo_is_mld_sta(vdev))
+		return wlan_mlo_is_tdls_session_present(vdev);
+
+	if (tdls_get_connected_peer_count_from_vdev(vdev) > 0) {
+		tdls_debug("TDLS session is present");
+		return QDF_STATUS_SUCCESS;
+	}
+
+	return QDF_STATUS_E_INVAL;
+}
+
 void wlan_tdls_notify_start_bss(struct wlan_objmgr_psoc *psoc,
 				struct wlan_objmgr_vdev *vdev)
 {
@@ -469,4 +530,62 @@ void wlan_tdls_update_rx_pkt_cnt(struct wlan_objmgr_vdev *vdev,
 				 struct qdf_mac_addr *dest_mac_addr)
 {
 	tdls_update_rx_pkt_cnt(vdev, mac_addr, dest_mac_addr);
+}
+
+static
+struct tdls_peer *wlan_tdls_find_peer(struct tdls_vdev_priv_obj *vdev_obj,
+				      const uint8_t *macaddr)
+{
+	return tdls_find_peer(vdev_obj, macaddr);
+}
+
+bool wlan_tdls_is_addba_request_allowed(struct wlan_objmgr_vdev *vdev,
+					struct qdf_mac_addr *mac_addr)
+{
+	struct tdls_vdev_priv_obj *vdev_obj;
+	struct tdls_peer *curr_peer;
+
+	vdev_obj = wlan_vdev_get_tdls_vdev_obj(vdev);
+	if (!vdev_obj) {
+		tdls_err("vdev_obj: %pK is null", vdev_obj);
+		return false;
+	}
+
+	curr_peer = wlan_tdls_find_peer(vdev_obj, mac_addr->bytes);
+	if (!curr_peer) {
+		tdls_err("tdls peer is null");
+		return false;
+	}
+
+	if (curr_peer->valid_entry &&
+	    curr_peer->link_status ==  TDLS_LINK_CONNECTED)
+		return true;
+
+	return false;
+}
+
+void wlan_tdls_delete_all_peers(struct wlan_objmgr_vdev *vdev)
+{
+	struct wlan_objmgr_psoc *psoc;
+	struct tdls_soc_priv_obj *soc_obj;
+
+	psoc = wlan_vdev_get_psoc(vdev);
+	if (!psoc)
+		return;
+
+	soc_obj = wlan_objmgr_psoc_get_comp_private_obj(psoc,
+							WLAN_UMAC_COMP_TDLS);
+	if (!soc_obj) {
+		tdls_err("Failed to get tdls psoc component");
+		return;
+	}
+
+	if (soc_obj->tdls_cb.delete_all_tdls_peers)
+		soc_obj->tdls_cb.delete_all_tdls_peers(vdev);
+}
+
+QDF_STATUS wlan_tdls_update_peer_kickout_count(struct wlan_objmgr_vdev *vdev,
+					       uint8_t *macaddr)
+{
+	return tdls_update_peer_kickout_count(vdev, macaddr);
 }

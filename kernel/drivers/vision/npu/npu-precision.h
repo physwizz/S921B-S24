@@ -38,7 +38,7 @@ struct npu_precision_model_info {
 	struct hlist_node hlist;
 };
 
-void npu_precision_hash_check(struct npu_session *session);
+int npu_precision_hash_check(struct npu_session *session);
 void npu_precision_hash_update(struct npu_session *session, u32 type);
 void npu_precision_active_hash_delete(struct npu_session *session);
 int npu_precision_open(struct npu_system *system);

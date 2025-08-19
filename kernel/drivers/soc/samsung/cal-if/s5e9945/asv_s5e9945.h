@@ -29,8 +29,13 @@
 #define T6_ADDR		(0x10000018)
 #define T6_OFFSET	(16)
 #define T6_MASK		(0xff)
+#define T7_ADDR		(0x1000002C)
+#define T7_OFFSET	(8)
+#define T7_MASK		(0xff)
 
+#if IS_ENABLED(CONFIG_SEC_FACTORY)
 static struct dentry *rootdir;
+#endif
 
 struct asv_tbl_info {
 	unsigned bigcpu_asv_group:4;
@@ -71,12 +76,15 @@ struct id_tbl_info {
 
 	unsigned int chip_id_2;
 
-	unsigned chip_id_1:12;
-	unsigned reserved_2_1:4;
+	unsigned chip_id_1:13;
+	unsigned reserved_2_1:3;
 
 	unsigned char chip_id_reserved0:8;
-	unsigned char chip_id_reserved1:8;
-	unsigned char chip_id_reserved2:8;
+	unsigned char chip_id_reserved1:2;
+	unsigned char root_dev:2;
+	unsigned char asb_cnt:4;
+	unsigned char asb_test_version_sub1:4;
+	unsigned char asb_test_version_sub2:4;
 	
 	unsigned char asb_test_version:8;
 	unsigned char scam_scale_reserved1:8;
@@ -87,14 +95,14 @@ struct id_tbl_info {
 	unsigned short sub_rev:4;
 	unsigned short main_rev:4;
 	unsigned char lp4x_pkg_revision:4;
-	unsigned char lp5_pkg_revision:4;
+	unsigned char g2_g3:1;
+	unsigned char lp5_pkg_revision:3;
 	unsigned char eds_test_year:8;
 	unsigned char eds_test_month:8;
 	unsigned char eds_test_day:8;
 	unsigned char chip_id_reserved3:8;
 };
 
-#if IS_ENABLED(CONFIG_SEC_FACTORY)
 struct power_info {
 	unsigned int t0;
 	unsigned int t1;
@@ -103,8 +111,8 @@ struct power_info {
 	unsigned int t4;
 	unsigned int t5;
 	unsigned int t6;
+	unsigned int t7;
 } power_info;
-#endif
 
 #define ASV_INFO_ADDR_CNT	(sizeof(struct asv_tbl_info) / 4)
 #define ID_INFO_ADDR_CNT	(sizeof(struct id_tbl_info) / 4)
@@ -194,11 +202,10 @@ int id_get_product_line(void)
 
 int id_get_asb_ver(void)
 {
-	return id_tbl.asb_test_version;
+	return id_tbl.asb_test_version + id_tbl.asb_test_version_sub1 + id_tbl.asb_test_version_sub2;
 }
 EXPORT_SYMBOL(id_get_asb_ver);
 
-#if IS_ENABLED(CONFIG_SEC_FACTORY)
 int print_asv_table(char *buf)
 {
 	ssize_t size = 0;
@@ -224,7 +231,7 @@ int print_asv_table(char *buf)
 	size += sprintf(buf + size, "  npu1 grp : %d\n", asv_tbl.npu1_asv_group);
 	size += sprintf(buf + size, "  cp grp : %d\n", asv_tbl.cp_asv_group);
 	size += sprintf(buf + size, "\n");
-	size += sprintf(buf + size, "  asb_version : %d\n", id_tbl.asb_test_version);
+	size += sprintf(buf + size, "  asb_version : %d\n", id_get_asb_ver());
 	size += sprintf(buf + size, "\n");
 
 	return size;
@@ -301,14 +308,36 @@ static ssize_t show_t6(struct kobject *kobj, struct kobj_attribute *attr, char *
 static struct kobj_attribute t6 =
 __ATTR(t6, 0444, show_t6, NULL);
 
+static ssize_t show_t7(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", power_info.t7);
+}
+static struct kobj_attribute t7 =
+__ATTR(t7, 0444, show_t7, NULL);
+
 static ssize_t show_asb_ver(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-	return sprintf(buf, "%d\n", id_tbl.asb_test_version);
+	return sprintf(buf, "%d\n", id_get_asb_ver());
 }
 static struct kobj_attribute asb_ver =
 __ATTR(asb_ver, 0444, show_asb_ver, NULL);
 
+static ssize_t show_root_dev(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", id_tbl.root_dev);
+}
+static struct kobj_attribute root_dev =
+__ATTR(root_dev, 0444, show_root_dev, NULL);
+
+static ssize_t show_g2_g3(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", id_tbl.g2_g3);
+}
+static struct kobj_attribute g2_g3 =
+__ATTR(g2_g3, 0444, show_g2_g3, NULL);
+
 static struct attribute *asv_info_attrs[] = {
+#if IS_ENABLED(CONFIG_SEC_FACTORY)
 	&t0.attr,
 	&t1.attr,
 	&t2.attr,
@@ -316,20 +345,23 @@ static struct attribute *asv_info_attrs[] = {
 	&t4.attr,
 	&t5.attr,
 	&t6.attr,
+	&t7.attr,
 	&asb_ver.attr,
+	&root_dev.attr,
+#endif
+	&g2_g3.attr,
 	NULL,
 };
 
 static const struct attribute_group asv_info_grp = {
 	.attrs = asv_info_attrs,
 };
-#endif
 
-#if IS_ENABLED(CONFIG_SEC_FACTORY)
 int asv_debug_init(void)
 {
-	struct dentry *d;
 	struct kobject *kobj;
+#if IS_ENABLED(CONFIG_SEC_FACTORY)
+	struct dentry *d;
 
 	rootdir = debugfs_create_dir("asv", NULL);
 	if (!rootdir)
@@ -338,6 +370,7 @@ int asv_debug_init(void)
 	d = debugfs_create_file("asv_info", 0600, rootdir, NULL, &asv_info_fops);
 	if (!d)
 		return -ENOMEM;
+#endif
 
 	kobj = kobject_create_and_add("asv", kernel_kobj);
 	if (!kobj)
@@ -348,7 +381,6 @@ int asv_debug_init(void)
 
 	return 0;
 }
-#endif
 
 int asv_table_init(void)
 {
@@ -370,7 +402,6 @@ int asv_table_init(void)
 	for (i = 0; i < ID_INFO_ADDR_CNT; i++)
 		*(p_table + i) = __raw_readl(regs + 0x4 * i);
 
-#if IS_ENABLED(CONFIG_SEC_FACTORY)
 	exynos_smc_readsfr((unsigned long)T0_ADDR, &tmp);
 	power_info.t0 = (tmp >> T0_OFFSET) & T0_MASK;
 	exynos_smc_readsfr((unsigned long)T1_ADDR, &tmp);
@@ -378,7 +409,9 @@ int asv_table_init(void)
 
 	regs = ioremap(T2_ADDR, sizeof(int));
 	tmp = __raw_readl(regs);
-	power_info.t2 = ((tmp >> T2_OFFSET) & T2_MASK) * 2;
+	power_info.t2 = ((tmp >> T2_OFFSET) & T2_MASK);
+	if (id_tbl.asb_test_version < 9)
+		power_info.t2 *= 2;
 	regs = ioremap(T3_ADDR, sizeof(int));
 	tmp = __raw_readl(regs);
 	power_info.t3 = ((tmp >> T3_OFFSET) & T3_MASK) * 2;
@@ -393,8 +426,15 @@ int asv_table_init(void)
 	tmp = __raw_readl(regs);
 	power_info.t6 = (tmp >> T6_OFFSET) & T6_MASK;
 
+	if (id_tbl.asb_test_version < 9)
+		power_info.t7 = 0;
+	else {
+		regs = ioremap(T7_ADDR, sizeof(int));
+		tmp = __raw_readl(regs);
+		power_info.t7 = (tmp >> T7_OFFSET) & T7_MASK;
+	}
+
 	asv_debug_init();
-#endif
 
 	if (asv_tbl.asv_table_version == 0)
 		asv_tbl.asv_table_version = 3;

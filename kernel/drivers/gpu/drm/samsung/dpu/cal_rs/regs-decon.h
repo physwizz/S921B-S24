@@ -250,6 +250,7 @@ enum decon_regs_type {
 #define ENHANCE_DQE_ON				ENHANCE_PATH_F(2)
 #define ENHANCE_DQE_ON_ENH_8BPC			ENHANCE_PATH_F(3)
 // 7 is also valid, since last bit is dont care
+#define ENHANCE_RCD_ON				ENHANCE_PATH_F(4)
 #define ENHANCE_DQE_ON_RCD_ON			ENHANCE_PATH_F(6)
 #define ENHANCE_PATH_MASK			(0x7 << 12)
 #define ENHANCE_PATH_GET(_v)			(((_v) >> 12) & 0x7)

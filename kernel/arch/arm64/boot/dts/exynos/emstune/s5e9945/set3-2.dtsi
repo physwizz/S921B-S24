@@ -4,8 +4,8 @@
 		cpu-dsu-table-index = <0>;
 
 		tex {
-			top-app		= <110>;
-			foreground	= <110>;
+			top-app = <110>;
+			foreground = <110>;
 		};
 
 		cgroup_boost {

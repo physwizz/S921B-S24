@@ -52,6 +52,8 @@ struct ssg_bt_tags_iter_data {
 	bool reserved;
 };
 
+typedef bool (ssg_tag_iter_fn)(struct sbitmap *, unsigned int, void *);
+
 static unsigned int byte_to_index(unsigned int byte)
 {
 	unsigned int idx;
@@ -77,19 +79,22 @@ static unsigned int nsec_to_index(u64 nsec)
 static void update_io_latency(struct ssg_data *ssg, struct request *rq,
 		unsigned int data_size, u64 now)
 {
-	struct ssg_stats *stats = this_cpu_ptr(ssg->stats);
-	int type, byte_idx, ns_idx;
+	struct ssg_stats *stats;
+	int type = req_op(rq);
+	int byte_idx, ns_idx;
 
-	if (req_op(rq) > REQ_OP_DISCARD)
+	if (type > REQ_OP_DISCARD)
 		return;
 
 	if (rq->io_start_time_ns > now)
 		return;
 
-	type = req_op(rq);
 	byte_idx = byte_to_index(data_size);
 	ns_idx = nsec_to_index(now - rq->io_start_time_ns);
+
+	stats = get_cpu_ptr(ssg->stats);
 	stats->io_latency_cnt[type][byte_idx][ns_idx]++;
+	put_cpu_ptr(stats);
 }
 
 void ssg_stat_account_io_done(struct ssg_data *ssg, struct request *rq,
@@ -144,6 +149,19 @@ IO_LATENCY_SHOW_FUNC(ssg_stat_write_latency_show, REQ_OP_WRITE);
 IO_LATENCY_SHOW_FUNC(ssg_stat_flush_latency_show, REQ_OP_FLUSH);
 IO_LATENCY_SHOW_FUNC(ssg_stat_discard_latency_show, REQ_OP_DISCARD);
 
+static void ssg_all_tag_iter(struct blk_mq_tags *tags, ssg_tag_iter_fn *fn, struct ssg_bt_tags_iter_data *iter_data)
+{
+	iter_data->tags = tags;
+
+	if (tags->nr_reserved_tags) {
+		iter_data->reserved = true;
+		sbitmap_for_each_set(&tags->breserved_tags.sb, fn, iter_data);
+	}
+
+	iter_data->reserved = false;
+	sbitmap_for_each_set(&tags->bitmap_tags.sb, fn, iter_data);
+}
+
 static bool ssg_count_inflight(struct sbitmap *bitmap, unsigned int bitnr, void *data)
 {
 	struct ssg_bt_tags_iter_data *iter_data = data;
@@ -169,25 +187,13 @@ static bool ssg_count_inflight(struct sbitmap *bitmap, unsigned int bitnr, void 
 static void get_ssg_inflight(struct request_queue *q, unsigned int *inflight)
 {
 	struct blk_mq_hw_ctx *hctx;
-	struct blk_mq_tags *tags;
 	unsigned long i;
 	struct ssg_bt_tags_iter_data iter_data = {
 		.data = inflight,
 	};
 
 	if (blk_mq_is_shared_tags(q->tag_set->flags)) {
-		tags = q->sched_shared_tags;
-		iter_data.tags = tags;
-
-		if (tags->nr_reserved_tags) {
-			iter_data.reserved = true;
-			sbitmap_for_each_set(&tags->breserved_tags.sb,
-					ssg_count_inflight, &iter_data);
-		}
-
-		iter_data.reserved = false;
-		sbitmap_for_each_set(&tags->bitmap_tags.sb,
-				ssg_count_inflight, &iter_data);
+		ssg_all_tag_iter(q->sched_shared_tags, ssg_count_inflight, &iter_data);
 	} else {
 		queue_for_each_hw_ctx(q, hctx, i) {
 			/*
@@ -197,18 +203,7 @@ static void get_ssg_inflight(struct request_queue *q, unsigned int *inflight)
 			if (!blk_mq_hw_queue_mapped(hctx))
 				continue;
 
-			tags = hctx->sched_tags;
-			iter_data.tags = tags;
-
-			if (tags->nr_reserved_tags) {
-				iter_data.reserved = true;
-				sbitmap_for_each_set(&tags->breserved_tags.sb,
-						ssg_count_inflight, &iter_data);
-			}
-
-			iter_data.reserved = false;
-			sbitmap_for_each_set(&tags->bitmap_tags.sb,
-					ssg_count_inflight, &iter_data);
+			ssg_all_tag_iter(hctx->sched_tags, ssg_count_inflight, &iter_data);
 		}
 	}
 }
@@ -254,25 +249,13 @@ static bool print_ssg_rq_info(struct sbitmap *bitmap, unsigned int bitnr, void *
 static void print_ssg_rqs(struct request_queue *q, char *page)
 {
 	struct blk_mq_hw_ctx *hctx;
-	struct blk_mq_tags *tags;
 	unsigned long i;
 	struct ssg_bt_tags_iter_data iter_data = {
 		.data = page,
 	};
 
 	if (blk_mq_is_shared_tags(q->tag_set->flags)) {
-		tags = q->sched_shared_tags;
-		iter_data.tags = tags;
-
-		if (tags->nr_reserved_tags) {
-			iter_data.reserved = true;
-			sbitmap_for_each_set(&tags->breserved_tags.sb,
-					print_ssg_rq_info, &iter_data);
-		}
-
-		iter_data.reserved = false;
-		sbitmap_for_each_set(&tags->bitmap_tags.sb,
-				print_ssg_rq_info, &iter_data);
+		ssg_all_tag_iter(q->sched_shared_tags, print_ssg_rq_info, &iter_data);
 	} else {
 		queue_for_each_hw_ctx(q, hctx, i) {
 			/*
@@ -282,18 +265,7 @@ static void print_ssg_rqs(struct request_queue *q, char *page)
 			if (!blk_mq_hw_queue_mapped(hctx))
 				continue;
 
-			tags = hctx->sched_tags;
-			iter_data.tags = tags;
-
-			if (tags->nr_reserved_tags) {
-				iter_data.reserved = true;
-				sbitmap_for_each_set(&tags->breserved_tags.sb,
-						print_ssg_rq_info, &iter_data);
-			}
-
-			iter_data.reserved = false;
-			sbitmap_for_each_set(&tags->bitmap_tags.sb,
-					print_ssg_rq_info, &iter_data);
+			ssg_all_tag_iter(hctx->sched_tags, print_ssg_rq_info, &iter_data);
 		}
 	}
 }

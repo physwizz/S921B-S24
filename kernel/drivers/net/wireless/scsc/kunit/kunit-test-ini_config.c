@@ -98,7 +98,7 @@ static void test_encode_mib_gen_with_two_psids(struct kunit *test)
 	s8 index1 = 0;
 	s8 index2 = 0;
 	u16 psid1 = SLSI_PSID_UNIFI_TDLS_IN_P2P_ACTIVATED;
-	u16 psid2 = SLSI_PSID_UNIFI_TDLS_BASIC_HT_MCS_SET;
+	u16 psid2 = SLSI_PSID_UNIFI_TDLS_RSSI_THRESHOLD;
 	u32 value_int = 1;
 
 	KUNIT_EXPECT_EQ(test, 0,

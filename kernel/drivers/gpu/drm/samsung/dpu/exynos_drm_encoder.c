@@ -15,6 +15,7 @@
 #include <drm/drm_print.h>
 #include <drm/drm_modeset_helper_vtables.h>
 #include <exynos_drm_encoder.h>
+#include <exynos_drm_bridge.h>
 #include <exynos_drm_crtc.h>
 #include <exynos_drm_writeback.h>
 #include <dpu_trace.h>
@@ -228,5 +229,20 @@ void exynos_drm_encoder_set_possible_mask(struct drm_device *dev)
 		pr_info("encoder[%d] type(0x%x) possible_clones(0x%x)\n",
 				encoder->index, encoder->encoder_type,
 				encoder->possible_clones);
+	}
+}
+
+void exynos_drm_encoder_lastclose(struct drm_device *dev)
+{
+	struct drm_encoder *encoder;
+	struct drm_bridge *bridge;
+
+	drm_for_each_encoder(encoder, dev) {
+		if (encoder->encoder_type == DRM_MODE_ENCODER_DSI) {
+			bridge = list_first_entry_or_null(&encoder->bridge_chain,
+					struct drm_bridge, chain_node);
+
+			drm_bridge_chain_post_disable(bridge);
+		}
 	}
 }

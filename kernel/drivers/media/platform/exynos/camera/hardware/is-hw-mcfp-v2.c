@@ -105,6 +105,7 @@ static int is_hw_mcfp_handle_interrupt(u32 id, void *context)
 			& mcfp_hw_g_int_mask(get_base(hw_ip), irq_index);
 
 
+	is_hw_trace_logger(hw_ip, status);
 	msdbg_hw(2, "MCFP interrupt%d status(0x%x)\n", instance, hw_ip, id, status);
 
 	if (!test_bit(HW_OPEN, &hw_ip->state)) {
@@ -1210,7 +1211,9 @@ static int __is_hw_mcfp_set_size_regs(struct is_hw_ip *hw_ip, struct mcfp_param_
 						MCFP_COMP_BLOCK_WIDTH * 2);
 		crop_margin_for_align = strip_start_pos + param_set->stripe_input.left_margin -
 						 crop_img_start_x;
-		crop_img_x = param_set->stripe_input.left_margin - crop_margin_for_align;
+		crop_img_x = param_set->stripe_input.left_margin > crop_margin_for_align ?
+				param_set->stripe_input.left_margin - crop_margin_for_align : 0;
+
 		crop_img_width = dma_width - param_set->stripe_input.left_margin -
 				param_set->stripe_input.right_margin + crop_margin_for_align;
 
@@ -2078,6 +2081,9 @@ static int is_hw_mcfp_notify_timeout(struct is_hw_ip *hw_ip, u32 instance)
 	}
 
 	mcfp_hw_dump(hw_ip->pmio, HW_DUMP_DBG_STATE);
+
+	print_hex_dump(KERN_INFO, "MCFP config:", DUMP_PREFIX_OFFSET, 16, 1,
+			(u32 *)&hw_mcfp->config[instance], sizeof(struct is_mcfp_config), true);
 
 	return CALL_HW_HELPER_OPS(hw_ip, notify_timeout, instance, &hw_mcfp->lib[instance]);
 }

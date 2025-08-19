@@ -47,6 +47,7 @@
 #define IS_TOF_CAL_CAL_RESULT_OK	0x11
 
 #define AF_CAL_MAX 9
+#define AF_CAL_DISTANCE_MAX 10
 #define CROSSTALK_CAL_MAX (3 * 13)
 #define TOF_CAL_SIZE_MAX 10
 #define TOF_CAL_VALID_MAX 10
@@ -103,6 +104,8 @@ struct is_vendor_rom {
 	bool skip_header_loading;
 	bool ignore_cal_crc_error;
 	bool check_dualize;
+	char const *dualized_sensorInfo;
+	bool allow_q_module;
 
 	u32 crc_retry_cnt;
 	u32 rom_type;
@@ -145,6 +148,8 @@ struct is_vendor_rom {
 	int32_t rom_awb_module_addr;
 	int32_t rom_af_cal_addr[AF_CAL_MAX];
 	int32_t rom_af_cal_addr_len;
+	int32_t rom_af_distance_cal_addr[AF_CAL_DISTANCE_MAX];
+	int32_t rom_af_distance_cal_addr_len;
 	int32_t rom_paf_cal_start_addr;
 
 	/* dualized cal */
@@ -166,6 +171,8 @@ struct is_vendor_rom {
 	int32_t rom_sensor2_awb_module_addr;
 	int32_t rom_sensor2_af_cal_addr[AF_CAL_MAX];
 	int32_t rom_sensor2_af_cal_addr_len;
+	int32_t rom_sensor2_af_distance_cal_addr[AF_CAL_DISTANCE_MAX];
+	int32_t rom_sensor2_af_distance_cal_addr_len;
 	int32_t rom_sensor2_paf_cal_start_addr;
 
 	int32_t rom_dualcal_slave0_start_addr;

@@ -578,7 +578,7 @@ void exynos_flexpmu_dbg_mif_req(void)
 		mif_req.total_time_us =
 			mif_req.total_time_tick * rtc.tick2us;
 
-		if (mif_req.last_rel_tick > mif_req.active_req_tick) {
+		if (mif_req.last_rel_tick >= mif_req.active_req_tick) {
 			mif_req.active_since_us = 0;
 		} else {
 			mif_req.active_since_us =

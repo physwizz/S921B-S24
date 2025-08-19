@@ -135,7 +135,7 @@ void dp_logger_hex_dump(void *buf, void *pref, size_t size)
 		len = snprintf(ptmp, 4, "%02x ", *ptr++);
 		ptmp = ptmp + len;
 		if (((i+1)%16) == 0) {
-			dp_logger_print("%s%s\n", pref, tmp);
+			dp_logger_print("%s%s\n", (char *)pref, tmp);
 			ptmp = tmp;
 		}
 	}

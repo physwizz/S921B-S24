@@ -19,6 +19,7 @@
 #define MAX_PIO_NODE_NUM	10000
 #define SORT_PIO_NODE_NUM	100
 #define PIO_HASH_SIZE		100
+#define MAX_PIO_DURATION_MS	10000
 
 #define GET_HASH_KEY(tgid) ((unsigned int)(tgid) % PIO_HASH_SIZE)
 #define RESET_PIO_IO(pio) \
@@ -285,8 +286,8 @@ static ssize_t pio_duration_ms_store(struct kobject *kobj, struct kobj_attribute
 	if (ret)
 		return ret;
 
-	if (pio_duration_ms > 10000)
-		pio_duration_ms = 10000;
+	if (pio_duration_ms > MAX_PIO_DURATION_MS)
+		pio_duration_ms = MAX_PIO_DURATION_MS;
 
 	return count;
 }

@@ -61,6 +61,7 @@ void dbg_dump_mbox(void);
 		if (!(timeout % 100))						\
 			npu_warn("Mailbox %d delayed for %d\n", cmdType,	\
 				MAILBOX_CLEAR_CHECK_TIMEOUT - timeout);		\
+		udelay(1);							\
 	}									\
 										\
 	if (!timeout) {								\
@@ -89,6 +90,7 @@ static int __send_interrupt(u32 cmdType, struct command *cmd, u32 type)
 	case COMMAND_MODE:
 	case COMMAND_FW_TEST:
 	case COMMAND_CORE_CTL:
+	case COMMAND_SUSPEND:
 #if IS_ENABLED(CONFIG_NPU_USE_IMB_ALLOCATOR)
 		/* fallthrough */
 	case COMMAND_IMB_SIZE:
@@ -284,50 +286,11 @@ static irqreturn_t mailbox_report(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-#if !IS_ENABLED(CONFIG_SOC_S5E8845)
-static irqreturn_t mailbox_fence(int irq, void *data)
-{
-#if IS_ENABLED(CONFIG_NPU_USE_FENCE_SYNC)
-	/* fence */
-	u32 val;
-	int i = 0;
-	u32 out_fence, gnpu0_info, gnpu1_info;
-	struct npu_device *device;
-	unsigned long flags;
-
-	val = interface.sfr3->grp[MAILBOX_SWI_F2H].ms & 1;
-	if (val)
-		interface.sfr3->grp[MAILBOX_SWI_F2H].c = val;
-
-	device = container_of(interface.system, struct npu_device, system);
-
-	gnpu0_info = npu_read_hw_reg(interface.gnpu0, 0x20B0, 0xFFFFFFFF, 0);
-	gnpu1_info = npu_read_hw_reg(interface.gnpu1, 0x20B0, 0xFFFFFFFF, 0);
-	out_fence = gnpu0_info | gnpu1_info;
-
-	/* Check the bit and call the fence connected to the session where the operation is finished. */
-	local_irq_save(flags);
-	for (i = 0; i < NPU_MAX_SESSION; i++) {
-		if (out_fence & (1 << i) && device->sessionmgr.session[i]) {
-			device->sessionmgr.session[i]->out_fence_exe_value++;
-			npu_sync_timeline_signal(device->sessionmgr.session[i]->out_fence, device->sessionmgr.session[i]->out_fence_exe_value);
-		}
-	}
-	local_irq_restore(flags);
-#endif
-
-	return IRQ_HANDLED;
-}
-#endif
-
 static irqreturn_t (*mailbox_isr_list[])(int, void *) = {
 	mailbox_high_prio_response,
 	mailbox_normal_prio_response,
 	mailbox_imb_req,
 	mailbox_report,
-#if !IS_ENABLED(CONFIG_SOC_S5E8845)
-	mailbox_fence,
-#endif
 };
 
 void dbg_dump_mbox(void)
@@ -479,6 +442,7 @@ static int check_interruptable(u32 cmdType, u32 type){
 	case COMMAND_MODE:
 	case COMMAND_FW_TEST:
 	case COMMAND_CORE_CTL:
+	case COMMAND_SUSPEND:
 #if IS_ENABLED(CONFIG_NPU_USE_IMB_ALLOCATOR)
 		/* fallthrough */
 	case COMMAND_IMB_SIZE:
@@ -567,7 +531,7 @@ static int npu_interface_probe(struct device *dev, void *regs1, void *regs2, voi
 
 	interface.sfr = (volatile struct mailbox_sfr *)regs1;
 	interface.sfr2 = (volatile struct mailbox_sfr *)regs2;
-#if IS_ENABLED(CONFIG_NPU_USE_FENCE_SYNC)
+#if IS_ENABLED(CONFIG_SOC_S5E9945)
 	interface.sfr3 = (volatile struct mailbox_sfr *)regs3;
 #endif
 
@@ -578,39 +542,20 @@ static int npu_interface_probe(struct device *dev, void *regs1, void *regs2, voi
 	return ret;
 }
 
-static int npu_interface_open(struct npu_system *system)
+int npu_interface_irq_set(struct device *dev, struct npu_system *system)
 {
 	int i, ret = 0, irq_num;
-	const char *buf;
-	struct npu_device *device;
-	struct device *dev = &system->pdev->dev;
 	struct cpumask cpu_mask;
+	const char *buf;
 
-	BUG_ON(!system);
-	device = container_of(system, struct npu_device, system);
-	interface.mbox_hdr = system->mbox_hdr;
 	irq_num = MAILBOX_IRQ_CNT;
-	interface.system = &device->system;
-	interface.dhcp = device->system.dhcp;
-	interface.mbox_hdr->hw_info = npu_get_hw_info();
-#if IS_ENABLED(CONFIG_NPU_USE_FENCE_SYNC)
-	interface.gnpu0 = npu_get_io_area(interface.system, "sfrgnpu0");
-	interface.gnpu1 = npu_get_io_area(interface.system, "sfrgnpu1");
-	if (device->sched->mode != NPU_PERF_MODE_NPU_BOOST_BLOCKING)
-		interface.sfr3->grp[MAILBOX_SWI_F2H].e = 0x0;
-	else
-		interface.sfr3->grp[MAILBOX_SWI_F2H].e = 0x1;
-#endif
-
-	if ((sizeof(mailbox_isr_list)/sizeof(mailbox_isr_list[0])) != MAILBOX_IRQ_CNT)
-		goto err_exit;
 
 	for (i = 0; i < irq_num; i++) {
 		ret = devm_request_irq(dev, system->irq[i], mailbox_isr_list[i],
 				IRQF_TRIGGER_HIGH, "exynos-npu", NULL);
 		if (ret) {
 			npu_err("fail(%d) in devm_request_irq(%d)\n", ret, i);
-			goto err_probe_irq;
+			goto err_exit;
 		}
 	}
 
@@ -618,7 +563,7 @@ static int npu_interface_open(struct npu_system *system)
 	if (ret) {
 		npu_info("set the CPU affinity of ISR to 5\n");
 		cpumask_set_cpu(5, &cpu_mask);
-	}	else {
+	} else {
 		npu_info("set the CPU affinity of ISR to %s\n", buf);
 		cpulist_parse(buf, &cpu_mask);
 	}
@@ -628,15 +573,48 @@ static int npu_interface_open(struct npu_system *system)
 		ret = irq_set_affinity_hint(system->irq[i], &cpu_mask);
 		if (ret) {
 			npu_err("fail(%d) in irq_set_affinity_hint(%d)\n", ret, i);
-			goto err_probe_irq;
+			goto err_exit;
 		}
 	}
+
+err_exit:
+	return ret;
+}
+static int npu_interface_open(struct npu_system *system)
+{
+	int i, ret = 0, irq_num;
+	struct npu_device *device;
+	struct device *dev = &system->pdev->dev;
+
+	BUG_ON(!system);
+	device = container_of(system, struct npu_device, system);
+	interface.mbox_hdr = system->mbox_hdr;
+	irq_num = MAILBOX_IRQ_CNT;
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+	system->interface = &interface;
+#endif
+	interface.system = &device->system;
+	interface.dhcp = device->system.dhcp;
+	interface.mbox_hdr->hw_info = npu_get_hw_info();
+
+	if ((sizeof(mailbox_isr_list)/sizeof(mailbox_isr_list[0])) != MAILBOX_IRQ_CNT)
+		goto err_exit;
+
+	ret = npu_interface_irq_set(dev, system);
+	if (ret)
+		goto err_probe_irq;
 
 	wq = alloc_workqueue("rprt_manager", __WQ_LEGACY | __WQ_ORDERED, 0);
 	if (!wq) {
 		npu_err("err in alloc_worqueue.\n");
 		goto err_exit;
 	}
+
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+	system->wq = wq;
+	system->work_report = work_report;
+#endif
+
 	ret = mailbox_init(interface.mbox_hdr, system);
 	if (ret) {
 		npu_err("error(%d) in npu_mailbox_init\n", ret);
@@ -696,17 +674,16 @@ static int npu_interface_close(struct npu_system *system)
 		flush_workqueue(wq);
 		destroy_workqueue(wq);
 		wq = NULL;
-	}
-
-#if IS_ENABLED(CONFIG_NPU_USE_FENCE_SYNC)
-if (device->sched->mode != NPU_PERF_MODE_NPU_BOOST_BLOCKING)
-	interface.sfr3->grp[MAILBOX_SWI_F2H].e = 0x0;
-else
-	interface.sfr3->grp[MAILBOX_SWI_F2H].e = 0x1;
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+		system->wq = NULL;
 #endif
+	}
 
 	interface.addr = NULL;
 	interface.mbox_hdr = NULL;
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+	system->interface = NULL;
+#endif
 	return 0;
 }
 
@@ -861,6 +838,12 @@ int nw_req_manager(int msgid, struct npu_nw *nw)
 		msg.length = (u32)sizeof(struct command);
 		break;
 #endif
+	case NPU_NW_CMD_SUSPEND:
+		cmd.c.suspend.flags = 0;
+		cmd.payload = 0;
+		msg.command = COMMAND_SUSPEND;
+		msg.length = (u32)sizeof(struct command);
+		break;
 	case NPU_NW_CMD_END:
 		break;
 	default:

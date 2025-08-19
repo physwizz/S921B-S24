@@ -226,9 +226,8 @@ static const uint8_t s2mpu16_mask_reg[] = {
 static int s2mpu16_unmask_interrupt(struct s2mpu16_dev *s2mpu16)
 {
 	int ret;
-	/* unmask IRQM interrupt */
-	ret = s2mpu16_update_reg(s2mpu16->i2c, S2MPU16_COMMON_TX_MASK,
-				 0x00, S2MPU16_PM_IRQM_MASK);
+	/* Unmask IRQM, Enable TX_IRQ interrupt */
+	ret = s2mpu16_write_reg(s2mpu16->i2c, S2MPU16_COMMON_TX_MASK, 0x86);
 	if (ret)
 		goto err;
 
@@ -269,11 +268,6 @@ static int s2mpu16_set_interrupt(struct s2mpu16_dev *s2mpu16)
 		if (ret)
 			goto err;
 	}
-
-	//ret = s2mpu16_update_reg(s2mpu16->i2c, S2MPU16_COMMON_TX_MASK,
-	//			 S2MPU16_PM_IRQM_MASK, S2MPU16_PM_IRQM_MASK);
-	//if (ret)
-	//	goto err;
 
 	/* Unmask interrupt sources */
 	ret = s2mpu16_unmask_interrupt(s2mpu16);

@@ -24,7 +24,9 @@
 #define SHA256_BLOCK_SIZE       64
 #define SHA256_DIGEST_LENGTH  SHA256_DIGEST_SIZE
 
+#if IS_ENABLED(CONFIG_SEC_REBOOT)
 extern void sec_set_reboot_magic(int magic, int offset, int mask);
+#endif
 
 static unsigned int dump_sink;
 
@@ -48,11 +50,13 @@ static int sec_sdcard_ramdump(const char *val, const struct kernel_param *kp)
 	if (!initialized)
 		return 0;
 
+#if IS_ENABLED(CONFIG_SEC_REBOOT)
 	if (dump_sink == ENABLE_SDCARD_RAMDUMP) {
 		sec_set_reboot_magic(MAGIC_SDR_FOR_MINFORM, OFFSET_SDR_FOR_MINFORM, MASK_SDR_FOR_MINFORM);
 	} else if (dump_sink == ENABLE_STORAGE_RAMDUMP) {
 		sec_set_reboot_magic(MAGIC_STR_FOR_MINFORM, OFFSET_SDR_FOR_MINFORM, MASK_SDR_FOR_MINFORM);
 	}
+#endif
 	return 0;
 }
 
@@ -314,11 +318,13 @@ int sec_dump_sink_init(void)
 	}
 	pr_info("%s: success to create proc entry\n", __func__);
 	initialized = 1;
+#if IS_ENABLED(CONFIG_SEC_REBOOT)
 	if (dump_sink == ENABLE_SDCARD_RAMDUMP) {
 		sec_set_reboot_magic(MAGIC_SDR_FOR_MINFORM, OFFSET_SDR_FOR_MINFORM, MASK_SDR_FOR_MINFORM);
 	} else if (dump_sink == ENABLE_STORAGE_RAMDUMP) {
 		sec_set_reboot_magic(MAGIC_STR_FOR_MINFORM, OFFSET_SDR_FOR_MINFORM, MASK_SDR_FOR_MINFORM);
 	}
+#endif
 	pr_info("%s: dump_sink set to 0x%x\n", __func__, dump_sink);
 
 	return 0;

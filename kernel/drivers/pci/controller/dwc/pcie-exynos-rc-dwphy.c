@@ -201,11 +201,29 @@ static void exynos_pcie_dma_unmap_page_attrs(struct device *dev,
 	pcie_iommu_unmap(dev_addr, size, ch_num);
 }
 
+static void exynos_pcie_dma_sync_single_for_cpu(struct device *dev, dma_addr_t addr,
+				size_t size, enum dma_data_direction dir)
+{
+	int ch_num = 0;
+	struct pci_dev *epdev = to_pci_dev_from_dev(dev);
+	struct exynos_pcie *exynos_pcie;
+
+	if (unlikely(dev == NULL)) {
+		pr_err("EP device is NULL!!!\n");
+		return;
+	}
+	ch_num = pci_domain_nr(epdev->bus);
+
+	exynos_pcie = &g_pcie_rc[ch_num];
+	dma_sync_single_for_cpu(&exynos_pcie->dup_ep_dev, addr, size, dir);
+}
+
 static struct dma_map_ops exynos_pcie_dma_ops = {
 	.alloc = exynos_pcie_dma_alloc_attrs,
 	.free = exynos_pcie_dma_free_attrs,
 	.map_page = exynos_pcie_dma_map_page_attrs,
 	.unmap_page = exynos_pcie_dma_unmap_page_attrs,
+	.sync_single_for_cpu = exynos_pcie_dma_sync_single_for_cpu,
 };
 
 static void exynos_pcie_set_dma_ops(struct device *dev)
@@ -1098,25 +1116,7 @@ void exynos_pcie_rc_print_msi_register(int ch_num)
 }
 EXPORT_SYMBOL(exynos_pcie_rc_print_msi_register);
 
-void exynos_pcie_rc_register_dump(int ch_num)
-{
-	struct exynos_pcie *exynos_pcie = &g_pcie_rc[ch_num];
-
-	if (!exynos_pcie->probe_done) {
-		pr_err("%s: RC%d has not been probed yet\n", __func__, ch_num);
-		return;
-	}
-
-	if (exynos_pcie->state == STATE_LINK_DOWN) {
-		pcie_info("SKIP register dump(Link-down state!)\n");
-	} else {
-		exynos_pcie_dbg_print_link_history(exynos_pcie);
-		exynos_pcie_dbg_register_dump(exynos_pcie);
-	}
-}
-EXPORT_SYMBOL(exynos_pcie_rc_register_dump);
-
-void exynos_pcie_rc_all_dump(int ch_num)
+void exynos_pcie_rc_register_dump(int ch_num, int full_dump)
 {
 	struct exynos_pcie *exynos_pcie = &g_pcie_rc[ch_num];
 	struct dw_pcie *pci;
@@ -1130,15 +1130,20 @@ void exynos_pcie_rc_all_dump(int ch_num)
 	dev = pci->dev;
 
 	pm_runtime_get_sync(dev);
+
 	exynos_pcie_dbg_print_link_history(exynos_pcie);
 	exynos_pcie_dbg_dump_link_down_status(exynos_pcie);
-	if (exynos_pcie->state == STATE_LINK_DOWN)
+
+	if (exynos_pcie->state == STATE_LINK_DOWN) {
 		pcie_info("SKIP register dump(Link-down state!)\n");
-	else
-		exynos_pcie_dbg_register_dump(exynos_pcie);
+	} else {
+		if (full_dump == 1)
+			exynos_pcie_dbg_register_dump(exynos_pcie);
+	}
+
 	pm_runtime_put_sync(dev);
 }
-EXPORT_SYMBOL(exynos_pcie_rc_all_dump);
+EXPORT_SYMBOL(exynos_pcie_rc_register_dump);
 
 static void exynos_pcie_rc_dislink_work(struct work_struct *work)
 {
@@ -1148,7 +1153,7 @@ static void exynos_pcie_rc_dislink_work(struct work_struct *work)
 	if (exynos_pcie->state == STATE_LINK_DOWN)
 		return;
 
-	exynos_pcie_rc_all_dump(exynos_pcie->ch_num);
+	exynos_pcie_rc_register_dump(exynos_pcie->ch_num, 1);
 	exynos_pcie->pcie_is_linkup = 0;
 	exynos_pcie->linkdown_cnt++;
 	pcie_info("link down and recovery cnt: %d\n",
@@ -1165,7 +1170,7 @@ static void exynos_pcie_rc_cpl_timeout_work(struct work_struct *work)
 
 	pcie_err("[%s] +++\n", __func__);
 
-	exynos_pcie_rc_all_dump(exynos_pcie->ch_num);
+	exynos_pcie_rc_register_dump(exynos_pcie->ch_num, 1);
 
 	if (!exynos_pcie->ep_cfg->linkdn_callback_direct) {
 		pcie_info("[%s] call PCIE_CPL_TIMEOUT callback func.\n", __func__);
@@ -2634,6 +2639,27 @@ int exynos_pcie_rc_speed_change(int ch_num, int req_speed)
 }
 EXPORT_SYMBOL(exynos_pcie_rc_speed_change);
 
+int exynos_pcie_rc_speed_check(int ch_num)
+{
+	struct exynos_pcie *exynos_pcie = &g_pcie_rc[ch_num];
+	struct dw_pcie *pci;
+	struct dw_pcie_rp *pp;
+	u32 current_speed;
+
+	if (exynos_pcie == NULL || exynos_pcie->state != STATE_LINK_UP)
+		return -EINVAL;
+
+	pci = exynos_pcie->pci;
+	pp = &pci->pp;
+
+	exynos_pcie_rc_rd_own_conf(pp, exynos_pcie->pci_dev->pcie_cap +
+			PCI_EXP_LNKCTL, 4, &current_speed);
+	current_speed = (current_speed >> 16) & PCI_EXP_LNKSTA_CLS;
+
+	return current_speed;
+}
+EXPORT_SYMBOL(exynos_pcie_rc_speed_check);
+
 int exynos_pcie_rc_lane_change(int ch_num, int req_lane)
 {
 	struct exynos_pcie *exynos_pcie = &g_pcie_rc[ch_num];
@@ -2703,6 +2729,29 @@ int exynos_pcie_rc_lane_change(int ch_num, int req_lane)
 	return 0;
 }
 EXPORT_SYMBOL(exynos_pcie_rc_lane_change);
+
+int exynos_pcie_rc_lane_check(int ch_num)
+{
+	struct exynos_pcie *exynos_pcie = &g_pcie_rc[ch_num];
+	struct dw_pcie *pci;
+	struct dw_pcie_rp *pp;
+	u32 current_lane;
+	u32 val;
+
+	if (exynos_pcie == NULL || exynos_pcie->state != STATE_LINK_UP)
+		return -EINVAL;
+
+	pci = exynos_pcie->pci;
+	pp = &pci->pp;
+
+	/* Check current lane state */
+	exynos_pcie_rc_rd_own_conf(pp, exynos_pcie->pci_dev->pcie_cap +
+			PCI_EXP_LNKCTL, 4, &val);
+	current_lane = (val >> 20) & PCI_EXP_LNKSTA_NEGO_LANE;
+
+	return current_lane;
+}
+EXPORT_SYMBOL(exynos_pcie_rc_lane_check);
 
 int exynos_pcie_host_v1_poweron(int ch_num, int spd)
 {
@@ -3207,7 +3256,7 @@ int exynos_pcie_rc_itmon_notifier(struct notifier_block *nb,
 		if (!val)
 			return NOTIFY_DONE;
 
-		exynos_pcie_rc_all_dump(exynos_pcie->ch_num);
+		exynos_pcie_rc_register_dump(exynos_pcie->ch_num, 1);
 	}
 
 	return NOTIFY_DONE;
@@ -3504,7 +3553,7 @@ void exynos_pcie_rc_check_function_validity(struct exynos_pcie *exynos_pcie)
 	exynos_pcie_rc_get_cpl_timeout_state(exynos_pcie->ch_num);
 	exynos_pcie_rc_set_cpl_timeout_state(exynos_pcie->ch_num, 0);
 	exynos_pcie_msi_set_wake(NULL, 0);
-	exynos_pcie_rc_register_dump(exynos_pcie->ch_num);
+	exynos_pcie_rc_register_dump(exynos_pcie->ch_num, 1);
 	exynos_pcie_rc_set_affinity(exynos_pcie->ch_num, 0);
 	exynos_pcie_rc_cpl_timeout_work(&exynos_pcie->cpl_timeout_work.work);
 
@@ -3879,7 +3928,7 @@ static int exynos_pcie_rc_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&exynos_pcie->dislink_work, exynos_pcie_rc_dislink_work);
 	INIT_DELAYED_WORK(&exynos_pcie->cpl_timeout_work, exynos_pcie_rc_cpl_timeout_work);
 
-	pcie_sysmmu_add_pcie_fault_handler(exynos_pcie_rc_all_dump);
+	pcie_sysmmu_add_pcie_fault_handler(exynos_pcie_rc_register_dump);
 
 #if IS_ENABLED(CONFIG_EXYNOS_ITMON) || IS_ENABLED(CONFIG_EXYNOS_ITMON_V2)
 	exynos_pcie->itmon_nb.notifier_call = exynos_pcie_rc_itmon_notifier;

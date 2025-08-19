@@ -111,6 +111,7 @@ static ssize_t extended_control_show(struct device *dev,
 	struct hts_data *data = dev_get_drvdata(dev);
 
 	for_each_online_cpu(cpu) {
+		value = 0;
 		if (cpumask_test_cpu(cpu, &data->hts_reg[REG_CTRL1].support_cpu)) {
 			ret = smp_call_function_single(cpu, read_ectlr, &value, 1);
 			if (ret)
@@ -159,6 +160,7 @@ static ssize_t extended_control2_show(struct device *dev,
 	struct hts_data *data = dev_get_drvdata(dev);
 
 	for_each_online_cpu(cpu) {
+		value = ULONG_MAX;
 		if (cpumask_test_cpu(cpu, &data->hts_reg[REG_CTRL2].support_cpu)) {
 			ret = smp_call_function_single(cpu, read_ectlr2, &value, 1);
 			if (ret)
@@ -207,86 +209,6 @@ static struct attribute *hts_knob_attrs[] = {
 static struct attribute_group hts_knob_group = {
 	.name = "knob",
 	.attrs = hts_knob_attrs,
-};
-
-static ssize_t applaunch_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	int written = 0;
-	int enable;
-	struct hts_data *dev_data = dev_get_drvdata(dev);
-
-	enable = (atomic_read(&dev_data->req_value) == REQ_LAUNCH);
-	written += scnprintf(buf + written, PAGE_SIZE - written,
-			"Applaunch: %d\n", enable);
-
-	return written;
-}
-
-static ssize_t applaunch_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
-	int enable;
-	int reqValue = REQ_NONE;
-	struct task_struct *target_task;
-	struct hts_data *data = dev_get_drvdata(dev);
-	struct hts_config_control *handle;
-	unsigned long flags;
-
-	if (sscanf(buf, "%d", &enable) != 1) {
-		pr_err("HTS: %s(): invalid input\n", __func__);
-		return -EINVAL;
-	}
-
-	target_task = get_pid_task(find_vpid(current->pid), PIDTYPE_PID);
-	if (target_task == NULL)
-		return -EINVAL;
-
-	handle = hts_get_or_alloc_task_config(target_task);
-
-	if (enable) {
-		reqValue = REQ_LAUNCH;
-
-		spin_lock_irqsave(&data->app_event_lock, flags);
-		if (handle->app_event == NULL) {
-			handle->app_event = kzalloc(sizeof(struct hts_app_event_data), GFP_KERNEL);
-
-			if (handle->app_event == NULL) {
-				spin_unlock_irqrestore(&data->app_event_lock, flags);
-				pr_err("HTS: fail to alloc app_event\n");
-				return -ENOMEM;
-			}
-
-			handle->app_event->data = data;
-			plist_node_init(&handle->app_event->req, reqValue);
-		}
-
-		hts_update_request(&handle->app_event->req, handle->app_event->data, reqValue);
-		spin_unlock_irqrestore(&data->app_event_lock, flags);
-	}
-	else {
-		spin_lock_irqsave(&data->app_event_lock, flags);
-		if (handle->app_event != NULL) {
-			hts_remove_request(&handle->app_event->req, handle->app_event->data);
-
-			kfree(handle->app_event);
-			handle->app_event = NULL;
-		}
-		spin_unlock_irqrestore(&data->app_event_lock, flags);
-	}
-
-	return count;
-}
-DEVICE_ATTR_RW(applaunch);
-
-static struct attribute *hts_event_attrs[] = {
-	&dev_attr_applaunch.attr,
-	NULL,
-};
-
-static struct attribute_group hts_event_group = {
-	.name = "event",
-	.attrs = hts_event_attrs,
 };
 
 #if IS_ENABLED(CONFIG_HTS_DEBUG)
@@ -415,11 +337,6 @@ int initialize_hts_sysfs(struct platform_device *pdev)
 
 	if (sysfs_create_group(&pdev->dev.kobj, &hts_knob_group)) {
 		pr_err("HTS : Couldn't create knob sysfs");
-		return -EINVAL;
-	}
-
-	if (sysfs_create_group(&pdev->dev.kobj, &hts_event_group)) {
-		pr_err("HTS : Couldn't create sysfs");
 		return -EINVAL;
 	}
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2013-2019 TRUSTONIC LIMITED
+ * Copyright (c) 2013-2023 TRUSTONIC LIMITED
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -30,7 +30,7 @@
 #define MC_LOG_VERSION			3
 
 /* Default length of the log ring buffer 256KiB */
-#define LOG_BUF_ORDER			6
+#define LOG_BUF_ORDER			(18 - PAGE_SHIFT)
 
 /* Max Len of a log line for printing */
 #define LOG_LINE_SIZE			256

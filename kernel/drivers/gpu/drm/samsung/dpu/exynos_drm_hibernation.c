@@ -78,6 +78,22 @@ static bool is_dim_operating(struct exynos_hibernation *hiber)
 	return decon->dimming;
 }
 
+static bool is_queueing_work(struct exynos_hibernation *hiber)
+{
+	const struct decon_device *decon = hiber->decon;
+	struct exynos_drm_crtc *exynos_crtc;
+
+	if (!decon)
+		return false;
+
+	exynos_crtc = decon->crtc;
+
+	if (atomic_read(&exynos_crtc->hibernation->trig_cnt) > 1)
+		return false;
+
+	return drm_modeset_is_locked(&exynos_crtc->base.mutex);
+}
+
 int exynos_hibernation_queue_exit_work(struct exynos_drm_crtc *exynos_crtc)
 {
 	if (!exynos_crtc->hibernation || !exynos_crtc->hibernation->early_wakeup_enable)
@@ -140,7 +156,8 @@ static bool exynos_hibernation_check(struct exynos_hibernation *hiber)
 	hiber_debug("+\n");
 
 	return (!is_hibernaton_blocked(hiber) && !is_dsr_operating(hiber) &&
-		!is_dim_operating(hiber) && atomic_dec_and_test(&hiber->trig_cnt));
+		!is_dim_operating(hiber) && !is_queueing_work(hiber) &&
+		atomic_dec_and_test(&hiber->trig_cnt));
 }
 
 static bool needs_self_refresh_change(struct drm_crtc_state *old_crtc_state, bool sr_active)

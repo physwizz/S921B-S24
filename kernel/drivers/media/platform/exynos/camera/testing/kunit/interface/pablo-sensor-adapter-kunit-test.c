@@ -152,7 +152,7 @@ static void pablo_sensor_adt_v1_get_sensor_info_kunit_test(struct kunit *test)
 	ret = CALL_SS_ADT_OPS(sensor_adt, open, instance, test_ctx->sensor_interface);
 	KUNIT_EXPECT_EQ(test, 0, ret);
 
-	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, &pcsi);
+	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, &pcsi, 0);
 	KUNIT_EXPECT_EQ(test, 0, ret);
 
 	ret = CALL_SS_ADT_OPS(sensor_adt, close);
@@ -170,13 +170,13 @@ static void pablo_sensor_adt_v1_get_sensor_info_negative_kunit_test(struct kunit
 	sensor_adt = &test_ctx->sensor_adt;
 	instance = 0;
 
-	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, NULL);
+	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, NULL, 0);
 	KUNIT_EXPECT_EQ(test, -ENODEV, ret);
 
 	ret = CALL_SS_ADT_OPS(sensor_adt, open, instance, test_ctx->sensor_interface);
 	KUNIT_EXPECT_EQ(test, 0, ret);
 
-	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, NULL);
+	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, NULL, 0);
 	KUNIT_EXPECT_EQ(test, -EINVAL, ret);
 
 	ret = CALL_SS_ADT_OPS(sensor_adt, close);
@@ -1233,7 +1233,7 @@ static void pablo_sensor_adt_v1_set_mainflash_duration_kunit_test(struct kunit *
 	ret = CALL_SS_ADT_OPS(sensor_adt, open, instance, test_ctx->sensor_interface);
 	KUNIT_EXPECT_EQ(test, 0, ret);
 
-	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, &pcsi);
+	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, &pcsi, 0);
 	KUNIT_EXPECT_EQ(test, 0, ret);
 
 	ret = CALL_SS_ADT_OPS(sensor_adt, register_control_sensor_callback,
@@ -1295,7 +1295,7 @@ static void pablo_sensor_adt_v1_request_direct_flash_kunit_test(struct kunit *te
 	ret = CALL_SS_ADT_OPS(sensor_adt, open, instance, test_ctx->sensor_interface);
 	KUNIT_EXPECT_EQ(test, 0, ret);
 
-	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, &pcsi);
+	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, &pcsi, 0);
 	KUNIT_EXPECT_EQ(test, 0, ret);
 
 	ret = CALL_SS_ADT_OPS(sensor_adt, register_control_sensor_callback,
@@ -1423,7 +1423,7 @@ static void pablo_sensor_adt_v1_set_position_kunit_test(struct kunit *test)
 			      test, pablo_sensor_adt_v1_callback);
 	KUNIT_EXPECT_EQ(test, 0, ret);
 
-	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, &pcsi);
+	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, &pcsi, 0);
 	KUNIT_EXPECT_EQ(test, 0, ret);
 
 	ret = CALL_SS_ADT_OPS(sensor_adt, start);
@@ -1486,7 +1486,7 @@ static void pablo_sensor_adt_v1_set_soft_landing_config_kunit_test(struct kunit 
 			      test, pablo_sensor_adt_v1_callback);
 	KUNIT_EXPECT_EQ(test, 0, ret);
 
-	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, &pcsi);
+	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, &pcsi, 0);
 	KUNIT_EXPECT_EQ(test, 0, ret);
 
 	ret = CALL_SS_ADT_OPS(sensor_adt, start);
@@ -1550,7 +1550,7 @@ static void pablo_sensor_adt_v1_request_flash_kunit_test(struct kunit *test)
 			      test, pablo_sensor_adt_v1_callback);
 	KUNIT_EXPECT_EQ(test, 0, ret);
 
-	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, &pcsi);
+	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, &pcsi, 0);
 	KUNIT_EXPECT_EQ(test, 0, ret);
 
 	ret = CALL_SS_ADT_OPS(sensor_adt, start);
@@ -1615,7 +1615,7 @@ static void pablo_sensor_adt_v1_request_flash_expo_gain_kunit_test(struct kunit 
 			      test, pablo_sensor_adt_v1_callback);
 	KUNIT_EXPECT_EQ(test, 0, ret);
 
-	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, &pcsi);
+	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, &pcsi, 0);
 	KUNIT_EXPECT_EQ(test, 0, ret);
 
 	ret = CALL_SS_ADT_OPS(sensor_adt, start);
@@ -1707,7 +1707,7 @@ static void pablo_sensor_adt_v1_set_aperture_value_kunit_test(struct kunit *test
 			      test, pablo_sensor_adt_v1_callback);
 	KUNIT_EXPECT_EQ(test, 0, ret);
 
-	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, &pcsi);
+	ret = CALL_SS_ADT_OPS(sensor_adt, get_sensor_info, &pcsi, 0);
 	KUNIT_EXPECT_EQ(test, 0, ret);
 
 	ret = CALL_SS_ADT_OPS(sensor_adt, start);

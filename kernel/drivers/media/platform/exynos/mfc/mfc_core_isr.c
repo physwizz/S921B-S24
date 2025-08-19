@@ -519,8 +519,6 @@ static struct mfc_buf *__mfc_handle_frame_output_del(struct mfc_core *core,
 			mutex_lock(&ctx->drc_wait_mutex);
 			ctx->wait_state = WAIT_G_FMT;
 			mfc_core_get_img_size(core, ctx, MFC_GET_RESOL_SIZE);
-			dec->disp_res_change++;
-			mfc_ctx_debug(2, "[DRC] disp_res_change %d\n", dec->disp_res_change);
 			mfc_set_mb_flag(dst_mb, MFC_FLAG_DISP_RES_CHANGE);
 			mutex_unlock(&ctx->drc_wait_mutex);
 		}
@@ -1093,6 +1091,7 @@ static void __mfc_handle_frame(struct mfc_core *core, struct mfc_ctx *ctx,
 			unsigned int reason, unsigned int err)
 {
 	struct mfc_dev *dev = ctx->dev;
+	struct mfc_core *subcore;
 	struct mfc_dec *dec = ctx->dec_priv;
 	struct mfc_core_ctx *core_ctx = core->core_ctx[ctx->num];
 	unsigned int dst_frame_status, sei_avail_frame_pack;
@@ -1137,14 +1136,6 @@ static void __mfc_handle_frame(struct mfc_core *core, struct mfc_ctx *ctx,
 			mfc_core_get_display_frame_cnt());
 	qos_update = mfc_qos_mb_calculate(core, core_ctx, mfc_core_get_processing_cycle(),
 			mfc_core_get_dec_frame_type());
-	/*
-	 * QoS update should be notified to butler by resource manager,
-	 * because mode1 does not have a sub core interrupt.
-	 */
-	if (qos_update && IS_TWO_MODE1(ctx))
-		ctx->dynamic_weight_mb = core_ctx->dynamic_weight_mb;
-	else
-		ctx->dynamic_weight_mb = 0;
 
 	if (core_ctx->state == MFCINST_RES_CHANGE_INIT)
 		mfc_change_state(core_ctx, MFCINST_RES_CHANGE_FLUSH);
@@ -1154,9 +1145,10 @@ static void __mfc_handle_frame(struct mfc_core *core, struct mfc_ctx *ctx,
 		mutex_lock(&ctx->drc_wait_mutex);
 		mfc_change_state(core_ctx, MFCINST_RES_CHANGE_INIT);
 		if (!IS_SINGLE_MODE(ctx)) {
+			ctx->handle_drc_multi_mode = 1;
 			if (!ctx->wait_state) {
 				/* The core that detects DRC must be switched to single */
-				ctx->op_core_type = (core->id == MFC_OP_CORE_FIXED_1) ?
+				ctx->op_core_type = (core->id == MFC_OP_CORE_FIXED_0) ?
 					MFC_OP_CORE_FIXED_0 : MFC_OP_CORE_FIXED_1;
 				ctx->wait_state = WAIT_G_FMT | WAIT_STOP;
 				mfc_debug(2, "[2CORE][DRC] MFC-%d op_core_type: %d\n",
@@ -1164,6 +1156,7 @@ static void __mfc_handle_frame(struct mfc_core *core, struct mfc_ctx *ctx,
 			}
 			mfc_debug(2, "[2CORE][DRC] wait_state: %d\n", ctx->wait_state);
 		} else {
+			ctx->handle_drc_multi_mode = 0;
 			ctx->wait_state = WAIT_G_FMT | WAIT_STOP;
 		}
 		mfc_debug(2, "[DRC] Decoding waiting! : %d\n", ctx->wait_state);
@@ -1212,7 +1205,12 @@ static void __mfc_handle_frame(struct mfc_core *core, struct mfc_ctx *ctx,
 		if (core_ctx->state == MFCINST_RES_CHANGE_FLUSH) {
 			mfc_debug(2, "[DRC] Last frame received after resolution change\n");
 			__mfc_handle_frame_all_extracted(core, ctx);
-			mfc_change_state(core_ctx, MFCINST_RES_CHANGE_END);
+
+			/* In the case of 2core DRC, state must be changed at subcore deinit. */
+			if (ctx->handle_drc_multi_mode)
+				mfc_change_state(core_ctx, MFCINST_RES_CHANGE_FLUSH_FINISHED);
+			if (IS_SINGLE_MODE(ctx) && !ctx->handle_drc_multi_mode)
+				mfc_change_state(core_ctx, MFCINST_RES_CHANGE_END);
 
 			if (IS_MULTI_CORE_DEVICE(dev))
 				mfc_rm_load_balancing(ctx, MFC_RM_LOAD_DELETE);
@@ -1242,8 +1240,16 @@ static void __mfc_handle_frame(struct mfc_core *core, struct mfc_ctx *ctx,
 		qos_update = true;
 	}
 
-	if (qos_update)
-		mfc_qos_on(core, ctx);
+	if (qos_update) {
+ 		mfc_qos_on(core, ctx);
+		if (IS_TWO_MODE1(ctx)) {
+			subcore = mfc_get_sub_core(dev, ctx);
+			if (subcore) {
+				subcore->core_ctx[ctx->num]->dynamic_weight_mb = core_ctx->dynamic_weight_mb;
+				mfc_qos_on(subcore, ctx);
+			}
+		}
+	}
 
 	/* copy decoded timestamp */
 	if (mfc_dec_status_decoding(dst_frame_status))
@@ -1607,11 +1613,12 @@ static int __mfc_handle_stream(struct mfc_core *core, struct mfc_ctx *ctx, unsig
 
 	/* buffer full handling */
 	if (enc->buf_full) {
+		core_ctx->prev_state = core_ctx->state;
 		mfc_change_state(core_ctx, MFCINST_ABORT_INST);
 		return 0;
 	}
 	if (core_ctx->state == MFCINST_RUNNING_BUF_FULL)
-		mfc_change_state(core_ctx, MFCINST_RUNNING);
+		mfc_change_state(core_ctx, core_ctx->prev_state);
 
 	/* set encoded frame type */
 	enc->frame_type = slice_type;
@@ -2143,7 +2150,7 @@ static inline int __mfc_nal_q_irq(struct mfc_core *core,
 
 		mfc_core_clear_int();
 
-		if (!nal_q_handle->nal_q_exception)
+		if (!nal_q_handle->nal_q_exception && nal_q_handle->nal_q_state != NAL_Q_STATE_STOPPED)
 			mfc_core_nal_q_clock_off(core, nal_q_handle);
 
 		if (ctx_num < 0) {

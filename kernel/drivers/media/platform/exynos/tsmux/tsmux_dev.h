@@ -84,8 +84,7 @@ struct tsmux_device {
 
 	spinlock_t device_spinlock;
 
-	int ctx_cnt;
-	int ctx_cur;
+	atomic_t ctx_num;
 
 #ifdef CONFIG_EXYNOS_ITMON
 	struct notifier_block itmon_nb;
@@ -128,8 +127,6 @@ struct tsmux_context {
 	uint64_t video_frame_count;
 	uint64_t otf_job_queued_count;
 	uint64_t otf_job_done_count;
-
-	int ctx_num;
 
 	uint64_t blending_start_stamp[MAX_SHARED_BUFFER_NUM];
 	uint64_t blending_end_stamp[MAX_SHARED_BUFFER_NUM];

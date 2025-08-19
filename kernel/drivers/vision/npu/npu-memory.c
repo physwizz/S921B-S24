@@ -105,6 +105,7 @@ static int npu_memory_create_sgt(struct npu_memory_buffer *buffer, u64 size)
 	int ret = 0;
 	int i, j, k;
 	int order;
+	gfp_t gfp;
 
 	if (size) {
 		nr_pages = DIV_ROUND_UP(size, PAGE_SIZE);
@@ -126,11 +127,19 @@ static int npu_memory_create_sgt(struct npu_memory_buffer *buffer, u64 size)
 	i = 0;
 	while (nr_pages > 0) {
 		order = min(get_order(nr_pages * PAGE_SIZE), max_order);
+
 		while (1) {
-			pages[i] = alloc_pages(GFP_HIGHUSER | __GFP_COMP |
-					       __GFP_NOWARN | __GFP_ZERO |
-					       (order ? __GFP_NORETRY : __GFP_RETRY_MAYFAIL),
-					       order);
+			gfp = GFP_HIGHUSER | __GFP_COMP | __GFP_NOWARN | __GFP_ZERO | __GFP_NORETRY;
+			if (order)
+				gfp = gfp & ~__GFP_RECLAIM;
+			else
+				gfp = (gfp | __GFP_RETRY_MAYFAIL) & ~__GFP_NORETRY;
+			gfp = GFP_HIGHUSER | __GFP_COMP | __GFP_NOWARN | __GFP_ZERO | __GFP_NORETRY;
+			if (order)
+				gfp = gfp & ~__GFP_RECLAIM;
+			else
+				gfp = (gfp | __GFP_RETRY_MAYFAIL) & ~__GFP_NORETRY;
+			pages[i] = alloc_pages(gfp, order);
 			if (pages[i])
 				break;
 			if (!order--) {
@@ -570,7 +579,7 @@ void npu_memory_alloc_dbg_info(struct npu_memory *memory, struct dma_buf *dmabuf
 	if (skip)
 		goto done;
 
-	dbg_info = kzalloc(sizeof(struct npu_memory_debug_info), GFP_KERNEL);
+	dbg_info = kzalloc(sizeof(struct npu_memory_debug_info), GFP_ATOMIC);
 	if (!dbg_info) {
 		npu_err("there is no memory for npu_memory_debug_info\n");
 		goto p_err;
@@ -639,6 +648,7 @@ void npu_memory_unmap(struct npu_memory *memory, struct npu_memory_buffer *buffe
 	}
 
 	buffer->attachment = NULL;
+	buffer->dma_buf = NULL;
 	buffer->sgt = NULL;
 	buffer->daddr = 0;
 	buffer->vaddr = NULL;
@@ -1051,7 +1061,7 @@ int npu_memory_alloc_from_heap(struct platform_device *pdev,
 
 		ret = npu_memory_create_sgt(buffer, size);
 		if (ret) {
- 			probe_err("fail(err %d) in npu_memory_create_sgt\n", ret);
+			probe_err("fail(err %d) in npu_memory_create_sgt\n", ret);
 			ret = -ENOMEM;
 			goto p_err;
 		}

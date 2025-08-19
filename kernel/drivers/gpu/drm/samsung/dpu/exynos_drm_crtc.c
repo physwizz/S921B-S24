@@ -230,12 +230,6 @@ static void exynos_crtc_atomic_begin(struct drm_crtc *crtc,
 	struct exynos_drm_crtc *exynos_crtc = to_exynos_crtc(crtc);
 
 	DPU_ATRACE_BEGIN(__func__);
-#if IS_ENABLED(CONFIG_DRM_MCD_COMMON)
-	if (mcd_drm_check_commit_skip(exynos_crtc, __func__)) {
-		DPU_ATRACE_END(__func__);
-		return;
-	}
-#endif
 	if (exynos_crtc->ops->atomic_begin)
 		exynos_crtc->ops->atomic_begin(exynos_crtc, old_state);
 

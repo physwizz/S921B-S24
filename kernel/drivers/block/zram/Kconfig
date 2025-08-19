@@ -87,9 +87,24 @@ config ZRAM_RAMPLUS
 	help
 	  This feature supports RAM Plus.
 
+config ZRAM_LRU_WRITEBACK
+	bool
+	depends on ZRAM_RAMPLUS
+	default n
+	help
+	  This feature supports lru-based writeback.
+
 config ZRAM_LRU_WRITEBACK_LIMIT
 	int "Limit zram lru writeback"
 	default 5120
-	depends on ZRAM_RAMPLUS
+	depends on ZRAM_LRU_WRITEBACK
 	help
 	  This limits the amount of lru-based writeback.
+
+config ZRAM_PERF_STAT
+	bool
+	depends on ZRAM_RAMPLUS
+	default y
+	help
+	  With this feature, read/write performance of RAM Plus will
+	  be shown via /sys/block/zram0/perf_stat.

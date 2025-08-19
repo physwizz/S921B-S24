@@ -788,13 +788,21 @@ EXPORT_SYMBOL_GPL(esca_ipc_send_data);
 bool is_acpm_ipc_busy(unsigned ch_id)
 {
 	struct acpm_ipc_ch *channel;
-	unsigned int tx_front, rx_front;
+	unsigned int tx_front, tx_rear, rx_front;
+	bool ret;
 
 	channel = &acpm_ipc->channel[ch_id];
 	tx_front = __raw_readl(channel->tx_ch.front);
+	tx_rear = __raw_readl(channel->tx_ch.rear);
 	rx_front = __raw_readl(channel->rx_ch.front);
 
-	return (tx_front != rx_front);
+	/* tx_front == tx_rear --> ACPM fetch all request from Kernel */
+	/* tx_front == rx_front --> ACPM finish all requests from kernel */
+	/* If ret is true, there has no any request to handle (IDLE) */
+	ret = (tx_front == tx_rear) && (tx_front == rx_front);
+
+	/* Return true if ACPM IPC is busy */
+	return !ret;
 }
 EXPORT_SYMBOL_GPL(is_acpm_ipc_busy);
 
@@ -802,7 +810,8 @@ EXPORT_SYMBOL_GPL(is_acpm_ipc_busy);
 bool is_esca_ipc_busy(unsigned ch_id)
 {
 	struct acpm_ipc_ch *channel;
-	unsigned int tx_front, rx_front;
+	unsigned int tx_front, tx_rear, rx_front;
+	bool ret;
 
 	if (esca_ipc)
 		channel = &esca_ipc->channel[ch_id];
@@ -810,9 +819,16 @@ bool is_esca_ipc_busy(unsigned ch_id)
 		channel = &acpm_ipc->channel[ch_id];
 
 	tx_front = __raw_readl(channel->tx_ch.front);
+	tx_rear = __raw_readl(channel->tx_ch.rear);
 	rx_front = __raw_readl(channel->rx_ch.front);
 
-	return (tx_front != rx_front);
+	/* tx_front == tx_rear --> ACPM fetches all request from Kernel */
+	/* tx_front == rx_front --> ACPM finishes all requests from kernel */
+	/* If ret is true, there has no any request to handle (IDLE) */
+	ret = (tx_front == tx_rear) && (tx_front == rx_front);
+
+	/* Return true if ACPM IPC is busy */
+	return !ret;
 }
 EXPORT_SYMBOL_GPL(is_esca_ipc_busy);
 #endif

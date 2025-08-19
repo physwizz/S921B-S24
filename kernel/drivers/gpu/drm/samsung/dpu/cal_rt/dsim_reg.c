@@ -2526,8 +2526,8 @@ void dsim_reg_set_datalane_state(u32 id)
 static enum dsim_wide_freq_hop_range
 dsim_check_wide_freq_hop_range(u32 center_clk, u32 hs_clk)
 {
-	u64 narrow_hs_clk_min = center_clk * (1000 - NARROW_FRE_HOP_MARGIN);
-	u64 narrow_hs_clk_max = center_clk * (1000 + NARROW_FRE_HOP_MARGIN);
+	u64 narrow_hs_clk_min = (u64)center_clk * (1000 - NARROW_FRE_HOP_MARGIN);
+	u64 narrow_hs_clk_max = (u64)center_clk * (1000 + NARROW_FRE_HOP_MARGIN);
 
 	if ((u64)hs_clk * 1000 < narrow_hs_clk_min)
 		return DSIM_WIDE_FRE_HOP_LOW;

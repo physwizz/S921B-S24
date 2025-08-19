@@ -13,6 +13,7 @@ extern ssize_t (*fp_client_test_dev_read)(struct file *filp, char *buffer, size_
 extern int (*fp_client_test_dev_release)(struct inode *inode, struct file *file);
 extern int (*fp_scsc_client_test_module_init)(void);
 extern void (*fp_scsc_client_test_module_exit)(void);
+extern void (*fp_delay_start_func)(struct work_struct *work);
 
 static void test_client_test_all(struct kunit *test)
 {
@@ -22,6 +23,7 @@ static void test_client_test_all(struct kunit *test)
 	struct fwhdr_if *fw_if;
 	char *data = "TESTDATA";
 	size_t data_sz = sizeof(data);
+	struct work_struct *work;
 
 	enum scsc_subsystem sub = SCSC_SUBSYSTEM_WLAN;
 
@@ -51,14 +53,14 @@ static void test_client_test_all(struct kunit *test)
 
 	fp_client_test_dev_open(NULL, NULL);
 
-	// fp_client_test_dev_write(NULL, "1", 1, NULL);
-	// fp_client_test_dev_write(NULL, "0", 1, NULL);
+	fp_client_test_dev_write(NULL, "1", 1, NULL);
+	fp_client_test_dev_write(NULL, "0", 1, NULL);
 
 	fp_client_test_dev_read(NULL, NULL, 0, NULL);
 
 	fp_client_test_dev_release(NULL, NULL);
 
-	//fp_scsc_client_test_module_init();
+	fp_scsc_client_test_module_init();
 
 	fp_scsc_client_test_module_exit();
 
@@ -76,7 +78,9 @@ static void test_client_test_all(struct kunit *test)
 	client_module_remove(NULL, scscmx, 0);
 
 	scsc_log_in_dram_class = NULL;
-	
+
+	fp_delay_start_func(work);
+
 	KUNIT_EXPECT_STREQ(test, "OK", "OK");
 }
 

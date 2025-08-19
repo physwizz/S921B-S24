@@ -39,6 +39,7 @@
 
 #include "exynos-otg.h"
 #include "dwc3-exynos.h"
+#include "dwc3_kret.h"
 #ifdef CONFIG_OF
 #include <linux/of_device.h>
 #endif
@@ -68,6 +69,8 @@ EXPORT_SYMBOL_GPL(xhci_pre_alloc);
 void __iomem		*usb3_portsc;
 EXPORT_SYMBOL_GPL(usb3_portsc);
 
+bool g_vbus_active;
+EXPORT_SYMBOL_GPL(g_vbus_active);
 /* -------------------------------------------------------------------------- */
 /*struct dwc3_exynos_rsw {
 	struct otg_fsm		*fsm;
@@ -653,6 +656,8 @@ int dwc3_exynos_vbus_event(struct device *dev, bool vbus_active)
 		return -ENOENT;
 	}
 
+	g_vbus_active = vbus_active;
+
 	if (!exynos->usb_data_enabled) {
 		dev_info(exynos->dev, "skip the notification due to USB enumeration disabled\n");
 		return NOTIFY_OK;
@@ -1009,12 +1014,17 @@ static int dwc3_exynos_get_properties(struct dwc3_exynos *exynos)
  *
  * extern module can check dwc3 core link state  This function will
  * return 1 link is on compliance of loopback mode else 0.
+ * add: when usb_data_enabled is set to false , return 1 to stay on usb cable.
  */
 static int dwc3_gadget_get_cmply_link_state(void *dev)
 {
 	struct dwc3 *dwc = (struct dwc3 *)dev;
+	struct dwc3_exynos *exynos = dwc3_exynos_match(dwc->dev->parent);
 	u32 reg;
 	u32 ret = -ENODEV;
+
+	if (!dwc->softconnect || (exynos && !exynos->usb_data_enabled))
+		return 1;
 
 	if (dwc->pullups_connected) {
 		reg = dwc3_otg_get_link_state(dwc);
@@ -1221,6 +1231,8 @@ static int dwc3_exynos_probe(struct platform_device *pdev)
 	struct phy		*temp_usb_phy;
 	int 			wait_counter;
 
+	dwc3_kretprobe_init();
+
 	temp_usb_phy = devm_phy_get(dev, "usb2-phy");
 	if (IS_ERR(temp_usb_phy)) {
 		pr_info("USB phy is not probed - defered return!\n");
@@ -1313,6 +1325,12 @@ static int dwc3_exynos_probe(struct platform_device *pdev)
 		ret = -EPROBE_DEFER;
 		goto populate_err;
 	}
+
+	/*
+	 * Set default ep0state to SETUP PHASE
+	 * This will prevent WARN in dwc3_ep0_out_start
+	 */
+	exynos->dwc->ep0state = EP0_SETUP_PHASE;
 
 	/* dwc3 core configurations */
 	pm_runtime_allow(exynos->dwc->dev);
@@ -1408,6 +1426,7 @@ static int dwc3_exynos_remove(struct platform_device *pdev)
 
 	pr_info("%s\n", __func__);
 
+	dwc3_kretprobe_exit();
 	pm_runtime_get_sync(&pdev->dev);
 
 	pm_runtime_put_sync(&pdev->dev);

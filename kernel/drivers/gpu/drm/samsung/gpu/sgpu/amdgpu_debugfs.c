@@ -1519,6 +1519,104 @@ pro_end:
 DEFINE_SIMPLE_ATTRIBUTE(fops_ib_preempt, NULL,
 			amdgpu_debugfs_ib_preempt, "%llu\n");
 
+#if defined(CONFIG_DRM_SGPU_EXYNOS) && defined(CONFIG_DEBUG_FS)
+static int sgpu_pagefault_to_panic_get(void *data, u64 *val)
+{
+	struct amdgpu_device *adev = (struct amdgpu_device *)data;
+
+	*val = adev->sgpu_debug.pagefault_to_panic ? 1 : 0;
+
+	return 0;
+}
+
+static int sgpu_pagefault_to_panic_set(void *data, u64 val)
+{
+	struct amdgpu_device *adev = (struct amdgpu_device *)data;
+
+	if (val == 1)
+		adev->sgpu_debug.pagefault_to_panic = true;
+	else if (val == 0)
+		adev->sgpu_debug.pagefault_to_panic = false;
+	else
+		return -EINVAL;
+
+	return 0;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(sgpu_debugfs_pagefault_to_panic_fops,
+		sgpu_pagefault_to_panic_get,
+		sgpu_pagefault_to_panic_set, "%llu\n");
+
+static int sgpu_debugfs_pagefault_to_panic_init(struct drm_minor *minor)
+{
+	struct drm_device *drm = minor->dev;
+	struct amdgpu_device *adev = drm_to_adev(drm);
+	struct dentry *ent, *root = minor->debugfs_root;
+
+	ent = debugfs_create_file("pagefault_to_panic", 0644, root, adev,
+					&sgpu_debugfs_pagefault_to_panic_fops);
+	if (!ent) {
+		DRM_ERROR("unable to create pagefault_to_panic debugfs file\n");
+		return -EIO;
+	}
+	adev->sgpu_debug.debugfs_pagefault_to_panic = ent;
+
+	return 0;
+}
+#else /* CONFIG_DRM_SGPU_EXYNOS && CONFIG_DEBUG_FS */
+static int sgpu_debugfs_pagefault_to_panic_init(struct drm_minor *minor)
+{
+	return 0;
+}
+#endif  /* CONFIG_DRM_SGPU_EXYNOS && CONFIG_DEBUG_FS */
+
+#if defined(CONFIG_DRM_SGPU_EXYNOS) && defined(CONFIG_DEBUG_FS)
+static int sgpu_power_state_show(struct seq_file *m, void *p)
+{
+	struct amdgpu_device *adev = m->private;
+	struct sgpu_pm_stats pm_stats;
+	int i;
+	char *power_states[SGPU_POWER_STATE_NR] = {"Active",
+							"IFPO power off",
+							"Device suspend"};
+
+	sgpu_pm_monitor_get_stats(adev, &pm_stats);
+
+	seq_printf(m, "Accumulated SGPU power time\n");
+	seq_printf(m, "STATE            TIME(ns)\n");
+
+	for (i = 0; i < SGPU_POWER_STATE_NR; ++i)
+		seq_printf(m, "%16s %llu\n", power_states[i],
+				pm_stats.state_time[i]);
+
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(sgpu_power_state);
+
+static int sgpu_debugfs_power_state_init(struct amdgpu_device *adev)
+{
+	struct drm_minor *minor = adev_to_drm(adev)->render;
+	struct dentry *ent, *root = minor->debugfs_root;
+
+	ent = debugfs_create_file("sgpu_power_state", 0444, root, adev,
+				  &sgpu_power_state_fops);
+	if (!ent) {
+		DRM_ERROR("unable to create sgpu_power_state debugfs file\n");
+		return -EIO;
+	}
+
+	adev->pm_monitor.debugfs_power_state = ent;
+
+	return 0;
+}
+
+#else /* CONFIG_DRM_SGPU_EXYNOS && CONFIG_DEBUG_FS */
+static int sgpu_debugfs_power_state_init(struct amdgpu_device *adev)
+{
+	return 0;
+}
+#endif  /* CONFIG_DRM_SGPU_EXYNOS && CONFIG_DEBUG_FS */
+
 void amdgpu_debugfs_init(struct drm_minor *minor)
 {
 	struct drm_device *drm = minor->dev;
@@ -1586,6 +1684,12 @@ void amdgpu_debugfs_init(struct drm_minor *minor)
 
 	amdgpu_debugfs_autodump_init(adev);
 	sgpu_debugfs_jobtimeout_to_panic_init(minor);
+
+	if (sgpu_debugfs_pagefault_to_panic_init(minor) != 0)
+		DRM_ERROR("Unable to create pagefault_to_panic debugfs file\n");
+
+	if (sgpu_debugfs_power_state_init(adev) != 0)
+		return;
 
 	if (sgpu_debugfs_bpmd_init(adev) != 0) {
 		DRM_ERROR("unable to create sgpu_bpmd debugsfs file\n");

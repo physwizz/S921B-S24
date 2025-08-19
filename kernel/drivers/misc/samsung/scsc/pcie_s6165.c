@@ -41,6 +41,7 @@
 #define PCI_MSI_CAP_OFF_10H_REG 0x60
 
 static bool fw_compiled_in_kernel;
+static void *ramrp_buff;
 module_param(fw_compiled_in_kernel, bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(fw_compiled_in_kernel, "Use FW compiled in kernel");
 
@@ -52,6 +53,10 @@ MODULE_PARM_DESC(enable_pcie_mif_arm_reset, "Enables ARM cores reset");
 static bool wake_pmu = true;
 module_param(wake_pmu, bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(wake_pmu, "Write wakeup to PMU when in deep sleep");
+
+static bool enable_linkdown_cb_panic = false;
+module_param(enable_linkdown_cb_panic, bool, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(enable_linkdown_cb_panic, "Enables linkdown callback gose to panic");
 
 static DEFINE_RWLOCK(pcie_on_lock);
 
@@ -86,6 +91,10 @@ extern void exynos_pcie_rc_print_msi_register(int ch_num);
 #define NUM_TO_HOST_IRQ_TOTAL (NUM_TO_HOST_IRQ_PMU + NUM_TO_HOST_IRQ_WLAN + NUM_TO_HOST_IRQ_WPAN)
 #define NUM_TO_HOST_IRQ_MAX_CAP 32
 
+#define CEILING(x,y) (((x) + (y) - 1) / (y))
+#define MAX_RAMRP_SZ			33 * 1024
+#define MAX_RAMRP_SZ_ALIGNED	((CEILING(MAX_RAMRP_SZ, PAGE_SIZE)) * (PAGE_SIZE))	/* Maximum memory for ramrp, note that it has to be page aligned*/
+
 /* Types */
 struct msi_emul {
 	u8 msi_bit;
@@ -94,7 +103,6 @@ struct msi_emul {
 };
 
 struct pcie_mif {
-	struct scsc_mif_abs interface;
 	struct pci_dev *pdev;
 	int dma_using_dac; /* =1 if 64-bit DMA is used, =0 otherwise. */
 	__iomem void *registers_pert;
@@ -153,6 +161,9 @@ struct pcie_mif {
 
 	int ch_num;
 	struct exynos_pcie_register_event pcie_link_down_event;
+
+	/* This variable is used to check if scan2mem dump is in progress */
+	bool scan2mem_mode;
 };
 
 static DEFINE_MUTEX(pci_link_lock);
@@ -448,12 +459,12 @@ void pcie_irq_bit_set(struct pcie_mif *pcie, int bit_num, enum scsc_mif_abs_targ
 		return;
 	}
 
-	if (target == SCSC_MIF_ABS_TARGET_WLAN) {
-		target_off = WLAN_INTERRUPT_FROM_HOST_PENDING_BIT_ARRAY_SET;
-		wake = PMU_INT_FROM_HOST_WAKE_WLAN_MASK;
-	} else {
+	if (target == SCSC_MIF_ABS_TARGET_WPAN) {
 		target_off = WPAN_INTERRUPT_FROM_HOST_INTGR;
 		wake = PMU_INT_FROM_HOST_WAKE_WPAN_MASK;
+	} else {
+		target_off = WLAN_INTERRUPT_FROM_HOST_PENDING_BIT_ARRAY_SET;
+		wake = PMU_INT_FROM_HOST_WAKE_WLAN_MASK;
 	}
 
 	writel(1 << bit_num, pcie->registers_pert + target_off);
@@ -617,6 +628,12 @@ int pcie_set_mbox_pmu(struct pcie_mif *pcie, u32 val)
 	if (!pcie_is_on(pcie))
 		return -EFAULT;
 
+#ifdef CONFIG_SCSC_XO_CDAC_CON
+	if (val == PMU_AP_MSG_DCXO_CONFIG)
+		// 384 is test value. Have to get dynamically later.
+		writel(384, pcie->registers_ramrp + RAMRP_HOSTIF_XO_CDAC_CON);
+#endif
+
 	writel(val, pcie->registers_ramrp + RAMRP_HOSTIF_PMU_MBOX_FROM_HOST_PTR);
 
 	SCSC_TAG_INFO_DEV(PCIE_MIF, pcie->dev, "TRIGGER IRQ : PMU_INTERRUPT_FROM_HOST_INTGR\n");
@@ -651,6 +668,21 @@ int pcie_set_mbox_pmu_pcie_off(struct pcie_mif *pcie, u32 val)
 	writel(PMU_INT_FROM_HOST_PCIE_MBOX_REQ_MASK, pcie->registers_pert + PMU_INTERRUPT_FROM_HOST_INTGR);
 
 	return 0;
+}
+
+u32 pcie_get_s2m_size_octets(struct pcie_mif *pcie)
+{
+	u32 s2m_size_octets, s2m_dram_offset;
+
+	s2m_size_octets = readl(pcie->registers_ramrp + RAMRP_HOSTIF_S2M_SIZE_OCTETS);
+	s2m_dram_offset = readl(pcie->registers_ramrp + RAMRP_HOSTIF_S2M_DRAM_OFFSET);
+	SCSC_TAG_INFO_DEV(PCIE_MIF, pcie->dev, "s2m_size_octets : 0x%x, s2m_dram_offset : 0x%x\n", s2m_size_octets, s2m_dram_offset);
+	return readl(pcie->registers_ramrp + RAMRP_HOSTIF_S2M_SIZE_OCTETS);
+}
+
+void pcie_set_s2m_dram_offset(struct pcie_mif *pcie, u32 val)
+{
+	writel(val, pcie->registers_ramrp + RAMRP_HOSTIF_S2M_DRAM_OFFSET);
 }
 
 int pcie_get_mbox_pmu_error(struct pcie_mif *pcie)
@@ -834,7 +866,10 @@ static void wlbt_pcie_linkdown_cb(struct exynos_pcie_notify *noti)
 
 	SCSC_TAG_INFO_DEV(PCIE_MIF, pcie->dev, "wlbt Link-Down notification callback function!!!\n");
 
-	dbg_snapshot_do_dpm_policy(GO_S2D_ID);
+	if (pcie->scan2mem_mode)
+		SCSC_TAG_INFO_DEV(PCIE_MIF, pcie->dev, "wlbt try to get scan2mem dump. Ignore it.\n");
+	else if (enable_linkdown_cb_panic)
+		dbg_snapshot_do_dpm_policy(GO_S2D_ID);
 }
 
 irqreturn_t pcie_mif_pmu_isr(int irq, void *data)
@@ -951,33 +986,46 @@ u32 pcie_irq_get(struct pcie_mif *pcie, enum scsc_mif_abs_target target)
 	return val;
 }
 
-__iomem void *pcie_get_scoreboard(struct pcie_mif *pcie)
+__iomem void *pcie_get_ramrp_ptr(struct pcie_mif *pcie)
 {
-	SCSC_TAG_INFO_DEV(PCIE_MIF, pcie->dev, "Getting address of scoreboard 0x%lx\n", RAMRP_HOSTIF_PMU_PCIE_CONFIG_SCOREBOARD);
 	SCSC_TAG_INFO_DEV(PCIE_MIF, pcie->dev, "base 0x%lx\n", (uintptr_t)pcie->registers_ramrp);
-	return pcie->registers_ramrp + RAMRP_HOSTIF_PMU_PCIE_CONFIG_SCOREBOARD;
-}
-
-const __iomem void *pcie_get_ramrp_ref(void)
-{
-	if (!pcie_is_on(pcie))
-		return NULL;
-
 	return pcie->registers_ramrp;
 }
-EXPORT_SYMBOL(pcie_get_ramrp_ref);
 
-
-int pcie_get_scoreboard_ref(struct pcie_mif *pcie, __iomem void *addr, uintptr_t *addr_ref)
+int pcie_get_ramrp_buff(struct pcie_mif *pcie, void** buff, int count, u64 offset)
 {
-	SCSC_TAG_INFO_DEV(PCIE_MIF, pcie->dev, "base 0x%lx\n", (uintptr_t)pcie->registers_ramrp);
+	int i = 0;
+	if (!pcie_is_on(pcie))
+		return -EPERM;
 
-	if (addr < pcie->registers_ramrp)
-		return -EIO;
+	/* Adjust the 'count' */
+	if((offset + count) > MAX_RAMRP_SZ)
+		count = MAX_RAMRP_SZ - offset;
 
-	*addr_ref = (uintptr_t)addr - (uintptr_t)pcie->registers_ramrp;
+	if (count % 4)
+		count = ((count/4) + 1) * 4;
 
-	return 0;
+	if ((offset % 4) && (offset > 4))
+		offset = ((offset/4) - 1) * 4;
+	else if (offset <= 3)
+		offset = 0;
+
+	if (pcie->registers_ramrp == NULL)
+		return -EPERM;
+
+	if (*buff == NULL) {
+		*buff = kzalloc(MAX_RAMRP_SZ_ALIGNED, GFP_KERNEL);
+		if (*buff == NULL)
+			return -ENOMEM;
+		else
+			ramrp_buff = *buff;
+	}
+
+	for (i = 0; i < (count / 4); i++) {
+		((u32 *)*buff)[i] = readl((pcie->registers_ramrp) + (4 * i) + (offset));
+		udelay(10);
+	}
+	return count;
 }
 
 static int pcie_mif_enable_msi(struct pcie_mif *pcie)
@@ -1133,6 +1181,7 @@ extern int exynos_pcie_deregister_event(struct exynos_pcie_register_event *reg);
 static int pcie_mif_module_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	int rc = 0;
+	int ret = 0;
 	u16 cmd;
 #if 0
 	u16 val16;
@@ -1176,7 +1225,11 @@ static int pcie_mif_module_probe(struct pci_dev *pdev, const struct pci_device_i
 	}
 	pci_set_master(pdev);
 	pci_set_drvdata(pdev, pcie);
-	pcie_mif_enable_msi(pcie);
+	ret = pcie_mif_enable_msi(pcie);
+	if(ret){
+		SCSC_TAG_ERR(PCIE_MIF, "failed to set msi\n");
+		return ret;
+	}
 
 	/* Access iomap allocation table */
 	/* return __iomem * const * */
@@ -1317,6 +1370,8 @@ void pcie_init(void)
 void pcie_deinit(void)
 {
 	wake_lock_destroy(&pcie->pcie_link_wakelock);
+	if (ramrp_buff)
+		kfree(ramrp_buff);
 }
 
 struct pcie_mif *pcie_get_instance(void)
@@ -1439,6 +1494,18 @@ static void pcie_mif_restore_state(struct pci_dev *pdev, int ch_num)
 	/* pci_pme_active(pdev, 1); */
 }
 
+bool pcie_mif_get_scan2mem_mode(struct pcie_mif *pcie)
+{
+	return pcie->scan2mem_mode;
+}
+EXPORT_SYMBOL(pcie_mif_get_scan2mem_mode);
+
+void pcie_mif_set_scan2mem_mode(struct pcie_mif *pcie, bool enable)
+{
+	pcie->scan2mem_mode = enable;
+}
+EXPORT_SYMBOL(pcie_mif_set_scan2mem_mode);
+
 /* Entering L0 state through link up
  * If the previous state was L2.0, it restores configurations to enter L0 state
  */
@@ -1478,6 +1545,12 @@ void pcie_mif_poweroff(struct pcie_mif *pcie)
 	SCSC_TAG_DEBUG(PCIE_MIF, "start\n");
 
 	mutex_lock(&pci_link_lock);
+
+	if(!pcie_is_on(pcie)){
+		SCSC_TAG_ERR(PCIE_MIF, "PCIe is not on, reject poweroff\n");
+		mutex_unlock(&pci_link_lock);
+		return;
+	}
 
 	/* mask the interrupts */
 	if(pcie->pdev)

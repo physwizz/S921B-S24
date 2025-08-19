@@ -29221,7 +29221,7 @@ const u16 sensor_gn3_setfile_A_4080x3060_30fps_CROP_R10_load_sram[] = {
 	IXC_BURST_DATA(0x0350),
 	IXC_BURST_DATA(0x0000),
 	IXC_BURST_DATA(0x0352),
-	IXC_BURST_DATA(0x0030),
+	IXC_BURST_DATA(0x0026),
 	IXC_BURST_DATA(0x0342),
 	IXC_BURST_DATA(0x2AC0),
 	IXC_BURST_DATA(0x0112),
@@ -29405,7 +29405,7 @@ const u16 sensor_gn3_setfile_A_4080x3060_30fps_CROP_R12_load_sram[] = {
 	IXC_BURST_DATA(0x0350),
 	IXC_BURST_DATA(0x0000),
 	IXC_BURST_DATA(0x0352),
-	IXC_BURST_DATA(0x0030),
+	IXC_BURST_DATA(0x0026),
 	IXC_BURST_DATA(0x0342),
 	IXC_BURST_DATA(0x2AC0),
 	IXC_BURST_DATA(0x0112),
@@ -35645,7 +35645,7 @@ const u16 sensor_gn3_flip_mode_horizontal_vertical_A_19p2[] = {
 
 static const struct sensor_cis_info sensor_gn3_info_A_19p2 = {
 	.name = "GN3",
-	.version = "GN3_EVT0_Setfile_ver5.4",
+	.version = "GN3_EVT0_Setfile_ver5.5",
 	.max_width = 8160,
 	.max_height = 6120,
 	.min_analog_gain = 0x20,

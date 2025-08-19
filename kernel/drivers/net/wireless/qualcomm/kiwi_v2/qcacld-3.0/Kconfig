@@ -13,6 +13,9 @@ if QCA_CLD_WLAN != n
 # Temporary disable under configs because it make kernel config generation problem on S5E9945.
 # Even if the configs are blocked here, it will be configured propery by including configs/xxx_defconfig.
 #
+config WLAN_CTRL_NAME
+    string "Enable CONFIG_WLAN_CTRL_NAME"
+    default "wlan"
 if 0
 config WLAN_FEATURE_NO_STA_SAP_CONCURRENCY
 	bool "Enable WLAN_FEATURE_NO_STA_SAP_CONCURRENCY"
@@ -1955,4 +1958,9 @@ config WLAN_SAMSUNG_FEATURE
 	default n
 
 endif
+
+config DP_RX_PEEK_MSDU_DONE_WAR
+	bool "Enable DP_RX_PEEK_MSDU_DONE_WAR"
+	default n
+
 endif # QCA_CLD_WLAN

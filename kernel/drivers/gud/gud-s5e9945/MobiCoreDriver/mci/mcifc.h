@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) 2013-2021 TRUSTONIC LIMITED
+ * Copyright (c) 2013-2023 TRUSTONIC LIMITED
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -47,6 +47,10 @@
 #define MC_FC_MEM_TRACE		MC_FC_STD32(10)
 /**< CPU is removed from system */
 #define MC_FC_CPU_OFF		MC_FC_STD32(60)
+
+/**< VM setup */
+#define MC_FC_VM_CREATE		MC_FC_STD32(98)
+#define MC_FC_VM_DESTROY	MC_FC_STD32(99)
 
 /** @} */
 

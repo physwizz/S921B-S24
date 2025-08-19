@@ -197,6 +197,7 @@ static const char *NW_CMD_NAMES[NPU_NW_CMD_END - NPU_NW_CMD_BASE] = {
 	"CLEAR_CB",
 	"MODE",
 	"IMB_SIZE",
+	"SUSPENDE",
 };
 /* Convinient function to get stringfy name of command */
 static const char *__cmd_name(const u32 cmd)
@@ -266,6 +267,7 @@ static int is_belong_session(const struct npu_nw *nw)
 		/* fallthrough */
 	case NPU_NW_CMD_IMB_SIZE:
 #endif
+	case NPU_NW_CMD_SUSPEND:
 		return 0;
 	default:
 		return 1;
@@ -1404,18 +1406,23 @@ static int __mbox_frame_ops_put(struct proto_req_frame *entry)
 int proto_drv_handler_frame_requested(struct npu_frame *frame)
 {
 	int ret = 0;
+	int mbox_result = 0;
 	struct proto_req_frame *entry, *opposite_entry;
+	struct npu_queue_list *incl;
 	npu_uid_t uid;
 	lsm_list_type_e prev_state;
-	s64 now = get_time_ns();
 	uid = frame->uid; // session ID
+	incl = frame->input;
 
 	switch (frame->cmd)
 	{
 		case NPU_FRAME_CMD_Q:
 			entry = &req_frames[uid];
 			if (entry->state != FREE) {
-				ret = -EINVAL;
+				npu_uferr("entry->state[%d] is not FREE",
+					&entry->frame, entry->frame.session->hids, entry->state);
+					entry->frame.result_code = NPU_ERR_DRIVER(NPU_ERR_INVALID_STATE);
+				ret = -EINPROGRESS;
 				goto error_no_entry;
 			}
 			break;
@@ -1423,7 +1430,10 @@ int proto_drv_handler_frame_requested(struct npu_frame *frame)
 		case NPU_FRAME_CMD_Q_CANCEL:
 			entry = &req_frames_cancel[uid];
 			if (entry->state != FREE) {
-				ret = -EINVAL;
+				npu_uferr("entry->state[%d] is not FREE",
+					&entry->frame, entry->frame.session->hids, entry->state);
+					entry->frame.result_code = NPU_ERR_DRIVER(NPU_ERR_INVALID_STATE);
+				ret = -EINPROGRESS;
 				goto error_no_entry;
 			}
 
@@ -1433,38 +1443,51 @@ int proto_drv_handler_frame_requested(struct npu_frame *frame)
 			}
 			break;
 		default:
-			npu_uerr("cannot support frame cmd = %d\n", frame, frame->cmd);
+			npu_err("[uid %d][frame_id %d] cannot support frame cmd = %d\n",
+							uid, incl->index, frame->cmd);
 			ret = -EINVAL;
 			goto error_no_entry;
 			break;
 	}
 
 	/* Is request available ? */
-	if (npu_queue_op_get_request_pair(entry, frame)) {
-		/* Save the request and put it to REQUESTED state */
-		entry->ts.init = now;
+	if (npu_queue_op_get_request_pair(entry, frame) == 0) {
+		npu_err("[uid %d][frame_id %d] failed to get frame request\n",
+			uid, incl->index);
+		ret = -EFAULT;
+		goto error_no_entry;
+	}
 
-		npu_ufnotice("(REQ)FRAME: cmd:%u / req_id:%u / frame_id:%u\n",
-			&entry->frame, entry->frame.cmd, entry->frame.npu_req_id, entry->frame.frame_id);
-		/* Link to the session reference */
-		if (unlikely(link_session_frame(entry))) {
-			npu_uerr("cannot link session\n", &entry->frame);
+	/* Save the request and put it to REQUESTED state */
+	npu_ufnotice("(REQ)FRAME: cmd:%u / req_id:%u / frame_id:%u\n",
+		&entry->frame, entry->frame.session->hids, entry->frame.cmd, entry->frame.npu_req_id, entry->frame.frame_id);
+	/* Link to the session reference */
+	ret = link_session_frame(entry);
+	if (unlikely(ret)) {
+		npu_uferr("cannot link session (ret=%d)\n", &entry->frame, entry->frame.session->hids, ret);
 			entry->frame.result_code = NPU_ERR_DRIVER(NPU_ERR_INVALID_UID);
-			ret = -EINVAL;
-			goto error_linking;
-		}
+		goto error_linking;
 	}
 
 	prev_state = entry->state;
 	entry->state = PROCESSING;
-	if (__mbox_frame_ops_put(entry) <= 0) {
+	mbox_result = __mbox_frame_ops_put(entry);
+	if (unlikely(mbox_result <= 0)) {
 		entry->state = prev_state;
-		npu_ufwarn("REQUESTED %s cannot be queued to mbox [frame_id=%u, npu_req_id=%u]\n",
-			&entry->frame, TYPE_NAME_FRAME, entry->frame.frame_id, entry->frame.npu_req_id);
+		npu_uferr("REQUESTED %s cannot be queued to mbox [frame_id=%u, npu_req_id=%u]\n",
+			&entry->frame, entry->frame.session->hids, TYPE_NAME_FRAME, entry->frame.frame_id, entry->frame.npu_req_id);
+		npu_uferr("MBOX failed (mbox_result=%d)\n",
+			&entry->frame, entry->frame.session->hids, mbox_result);
+		entry->frame.result_code = NPU_ERR_DRIVER(NPU_ERR_INVALID_UID);
+		ret = -ECOMM;
+		goto error_mbox;
 	}
 
-error_no_entry:
+	return 0;
+
+error_mbox:
 error_linking:
+error_no_entry:
 		return ret;
 }
 
@@ -1538,6 +1561,7 @@ static int  npu_protodrv_handler_nw_requested(void)
 			}
 			break;
 		case NPU_NW_CMD_POWER_CTL:
+		case NPU_NW_CMD_SUSPEND:
 			/* Publish if no session is active */
 			if (likely(__mbox_nw_ops_put(entry) > 0)) {
 				/* Success */
@@ -1819,6 +1843,7 @@ static int npu_protodrv_handler_nw_completed(void)
 				case NPU_NW_CMD_PROFILE_START:
 				case NPU_NW_CMD_PROFILE_STOP:
 				case NPU_NW_CMD_CORE_CTL:
+				case NPU_NW_CMD_SUSPEND:
 					/* Should be processed on above if clause */
 				default:
 					npu_uerr("invalid command(%u)\n", &entry->nw, entry->nw.cmd);

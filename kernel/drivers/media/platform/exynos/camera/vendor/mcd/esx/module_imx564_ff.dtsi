@@ -60,7 +60,7 @@
 				};
 
 				flash {
-					product_name = <100>;  /* NOTHING product_name = <11>; FLASH_GPIO */
+					product_name = <11>; /* FLASH_GPIO */
 				};
 
 				preprocessor {

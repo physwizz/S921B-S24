@@ -102,6 +102,8 @@ enum is_dvfs_scenario_vendor {
 	IS_DVFS_SCENARIO_VENDOR_SUPER_STEADY = 4,
 	IS_DVFS_SCENARIO_VENDOR_LOW_POWER = 5,
 	IS_DVFS_SCENARIO_VENDOR_PIP = 6,
+	IS_DVFS_SCENARIO_VENDOR_SENSING_CAMERA = 7,
+	IS_DVFS_SCENARIO_VENDOR_PSM = 8,
 };
 
 enum is_dvfs_state {
@@ -170,6 +172,11 @@ struct is_dvfs_rnr_mode {
 	u32 rnr;
 };
 
+struct is_dvfs_psm_mode {
+	u32 changed;
+	bool psm;
+};
+
 struct is_dvfs_ctrl {
 	struct mutex lock;
 	u32 cur_lv[IS_DVFS_END];
@@ -183,6 +190,7 @@ struct is_dvfs_ctrl {
 	struct is_dvfs_dt_info dvfs_info;
 	struct is_dvfs_iteration_mode *iter_mode;
 	struct is_dvfs_rnr_mode rnr_mode;
+	struct is_dvfs_psm_mode psm_mode;
 	struct is_dvfs_scenario_ctrl *static_ctrl;
 	struct is_dvfs_scenario_ctrl *dynamic_ctrl;
 
@@ -209,7 +217,8 @@ int is_set_dvfs_m2m(struct is_dvfs_ctrl *dvfs_ctrl, int scenario_id, bool reproc
 int is_set_dvfs_otf(struct is_dvfs_ctrl *dvfs_ctrl, int scenario_id);
 int pablo_set_static_dvfs(struct is_dvfs_ctrl *dvfs_ctrl, const char *suffix, int scenario_id,
 			  int path, bool reprocessing_mode);
-int is_set_static_dvfs(struct is_dvfs_ctrl *dvfs_ctrl, int scenario_id, bool stream_on);
+int is_set_static_dvfs(
+	struct is_dvfs_ctrl *dvfs_ctrl, int scenario_id, bool stream_on, bool fast_launch);
 unsigned int is_get_bit_count(unsigned long bits);
 int is_dvfs_ems_init(void);
 int is_dvfs_ems_reset(struct is_dvfs_ctrl *dvfs_ctrl);
@@ -227,7 +236,7 @@ int pablo_register_change_dvfs_cb(u32 dvfs_t, pablo_clock_change_cb cb);
 #define is_set_dvfs_m2m(d, i, r) ({ 0; })
 #define is_set_dvfs_otf(d, i) ({ 0; })
 #define pablo_set_static_dvfs(d, s, i, p, r) ({ 0; })
-#define is_set_static_dvfs(d, i, s) ({ 0; })
+#define is_set_static_dvfs(d, i, s, f) ({ 0; })
 #define is_get_bit_count(b) ({ 0; })
 #define is_dvfs_ems_init() ({ 0; })
 #define is_dvfs_ems_reset(d) ({ 0; })

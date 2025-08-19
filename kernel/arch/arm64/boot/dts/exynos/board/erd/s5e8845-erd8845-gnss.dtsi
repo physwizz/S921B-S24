@@ -141,6 +141,13 @@
 						baaw,ap_start = <0x118F0000>;
 						baaw,authority = <ID_AW_AR>;
 					};
+					 window_8 { /* CHUB SRAM */
+						baaw,offset = <0x80>;
+						baaw,start = <0xB1A0F000>;
+						baaw,end = <0xB1A0FFFF>;
+						baaw,ap_start = <0x11267000>;
+						baaw,authority = <ID_AW_AR>;
+					};
 				}; /* end of BAAW configuration */
 			}; /* end of gnssif */
 

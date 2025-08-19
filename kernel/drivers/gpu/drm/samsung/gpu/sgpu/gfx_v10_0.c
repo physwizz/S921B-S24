@@ -3569,8 +3569,17 @@ static const struct soc15_reg_golden golden_settings_gc_10_3_mb0[] = {
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmVGT_MAX_VTX_INDX,	0x00000000, 0xFFFFFFFF),
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmPA_SC_RASTER_CONFIG,	0x00000000, 0x00),
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmCB_PERFCOUNTER0_SELECT1,0x00000000, 0x00),
-	SOC15_REG_GOLDEN_VALUE(GC, 0, mmDB_DEBUG2, 0xffffffff, 0x00000421),
 	SOC15_REG_GOLDEN_VALUE(GC, 0, mmDB_DEBUG3, 0x00000200, 0x00000200),
+
+	/*
+	 * [VOYAGERSW-1566]: Couple of games hang during the game play.
+	 * Setting the DISABLE_PREZL_FIFO_STALL = 0
+	 * Reason being,DB has a limitation to handle concurrent z flush & request,
+	 * due to shared resource (Z plane decompress),
+	 * the problem disappears with removal of DB flush cache,
+	 * Added SWA only for M1 ,M2 and M3 as per recommendation from HW team.
+	 */
+	SOC15_REG_GOLDEN_VALUE(GC, 0, mmDB_DEBUG2, 0xffffffff, 0x00000401),
 };
 
 #define DEFAULT_SH_MEM_CONFIG \
@@ -9670,6 +9679,11 @@ static bool gfx_v10_0_ring_hang_detect(void *handle, unsigned long flags)
 			ft_gfx_state.max_retry_cnt = GFX_FAULT_MAX_RETRY_CNT;
 			fault = true;
 		}
+
+#ifdef CONFIG_SEC_GPUINFO
+		if ((fault == false) && (diff_cnt == 0))
+			sgpu_hqm_log_event(adev, GPU_RETRY_HANG_DETECT);
+#endif
 	}
 
 	ft_gfx_state.isActive = isGfxOn;

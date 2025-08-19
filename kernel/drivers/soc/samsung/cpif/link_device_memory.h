@@ -353,6 +353,10 @@ struct mem_link_device {
 	unsigned int rx_poll_count;
 	unsigned long long rx_int_disabled_time;
 
+#if IS_ENABLED(CONFIG_CLO)
+	struct timespec64 flush_time;
+#endif
+
 	/* Location for arguments in shared memory */
 	u32 __iomem *ap_version;
 	u32 __iomem *cp_version;
@@ -431,6 +435,7 @@ struct mem_link_device {
 #define MEM_CRASH_MAGIC		0xDEADDEAD
 #define MEM_BOOT_MAGIC		0x424F4F54
 #define MEM_DUMP_MAGIC		0x44554D50
+#define MEM_MINIDUMP_MAGIC	0x4D494E49
 
 #define MAX_TABLE_COUNT 8
 

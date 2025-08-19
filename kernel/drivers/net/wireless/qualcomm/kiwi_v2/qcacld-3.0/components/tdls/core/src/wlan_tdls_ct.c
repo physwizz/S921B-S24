@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -32,6 +32,7 @@
 #include "wlan_reg_services_api.h"
 #include "wlan_policy_mgr_api.h"
 #include "wlan_tdls_tgt_api.h"
+#include "wlan_mlo_mgr_link_switch.h"
 
 bool tdls_is_vdev_authenticated(struct wlan_objmgr_vdev *vdev)
 {
@@ -482,6 +483,12 @@ void tdls_implicit_send_discovery_request(
 		return;
 	}
 
+	if (mlo_mgr_is_link_switch_in_progress(tdls_vdev_obj->vdev)) {
+		tdls_notice("vdev:%d Link Switch in progress. TDLS discovery not allowed",
+			    wlan_vdev_get_id(tdls_vdev_obj->vdev));
+		return;
+	}
+
 	curr_peer = tdls_vdev_obj->curr_candidate;
 
 	if (!curr_peer) {
@@ -653,10 +660,11 @@ void tdls_indicate_teardown(struct tdls_vdev_priv_obj *tdls_vdev,
 		return;
 	}
 
-	tdls_set_peer_link_status(curr_peer,
-				  TDLS_LINK_TEARING,
+	tdls_set_peer_link_status(curr_peer, TDLS_LINK_TEARING,
 				  TDLS_LINK_UNSPECIFIED);
-	tdls_notice("Teardown reason %d", reason);
+	tdls_notice("vdev:%d Teardown reason %d peer:" QDF_MAC_ADDR_FMT,
+		    wlan_vdev_get_id(tdls_vdev->vdev), reason,
+		    QDF_MAC_ADDR_REF(curr_peer->peer_mac.bytes));
 
 	if (tdls_soc->tdls_dp_vdev_update)
 		tdls_soc->tdls_dp_vdev_update(
@@ -1545,13 +1553,14 @@ void tdls_disable_offchan_and_teardown_links(
 		tdls_indicate_teardown(tdls_vdev, curr_peer,
 				       TDLS_TEARDOWN_PEER_UNSPEC_REASON);
 
+		tdls_decrement_peer_count(vdev, tdls_soc);
+
 		/*
 		 * Del Sta happened already as part of tdls_delete_all_tdls_peers
 		 * Hence clear tdls vdev data structure.
 		 */
 		tdls_reset_peer(tdls_vdev, curr_peer->peer_mac.bytes);
 
-		tdls_decrement_peer_count(vdev, tdls_soc);
 		tdls_soc->tdls_conn_info[staidx].valid_entry = false;
 		tdls_soc->tdls_conn_info[staidx].session_id = 255;
 		tdls_soc->tdls_conn_info[staidx].index =

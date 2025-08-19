@@ -127,21 +127,25 @@ static inline int ego_reset_adaptive_freq(unsigned int cpu) { return -ENODEV; };
 /*
  * EXTERN for IDLE SELECTION
  */
+enum ecs_type {
+	ECS_MIN = 0,
+	ECS_MAX = 1,
+};
 #ifdef CONFIG_SCHED_EMS_IDLE_SELECT
-extern int ecs_request_register(char *name, const struct cpumask *mask);
-extern int ecs_request_unregister(char *name);
-extern int ecs_request(char *name, const struct cpumask *mask);
+extern int ecs_request_register(char *name, const struct cpumask *mask, enum ecs_type type);
+extern int ecs_request_unregister(char *name, enum ecs_type type);
+extern int ecs_request(char *name, const struct cpumask *mask, enum ecs_type type);
 extern void halo_register_periodic_irq(int irq_num, const char *name, struct cpumask *cpus, void (*fn)(u64 *cnt, ktime_t *time));
 extern void halo_update_periodic_irq(int irq_num, u64 cnt, ktime_t last_update_ns, ktime_t period_ns);
 extern void halo_unregister_periodic_irq(int irq_num);
 #else /* CONFIG_SCHED_EMS_IDLE_SELECT */
-static inline int ecs_request_register(char *name, const struct cpumask *mask) {
+static inline int ecs_request_register(char *name, const struct cpumask *mask, enum ecs_type type) {
 	return exynos_cpuhp_add_request(name, mask);
 };
-static inline int ecs_request_unregister(char *name) {
-	return exynos_cpuhp_remove_request(name);
+static inline int ecs_request_unregister(char *name, enum ecs_type type) {
+	return exynos_cpuhp_remove_request(name, enum ecs_type type);
 };
-static inline int ecs_request(char *name, const struct cpumask *mask) {
+static inline int ecs_request(char *name, const struct cpumask *mask, enum ecs_type type) {
 	return exynos_cpuhp_update_request(name, mask);
 };
 static inline void halo_register_periodic_irq(int irq_num, const char *name, struct cpumask *cpus, void (*fn)(u64 *cnt, ktime_t *time)) { };

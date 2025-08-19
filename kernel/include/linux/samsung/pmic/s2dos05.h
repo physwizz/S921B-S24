@@ -18,21 +18,17 @@
 
 #define MFD_DEV_NAME "s2dos05"
 
-/**
- * sec_regulator_data - regulator data
- * @id: regulator id
- * @initdata: regulator init data (contraints, supplies, ...)
- */
-
 struct s2dos05_dev {
 	struct device *dev;
 	struct i2c_client *i2c; /* 0xB2; PMIC, Flash LED */
 	struct mutex i2c_lock;
+	int device_type;
 
 	int type;
 	u8 rev_num; /* pmic Rev */
 	bool wakeup;
 	int dp_pmic_irq;
+	char dp_irq_name[32];
 	int		adc_mode;
 	int		adc_sync_mode;
 	u8 adc_en_val;
@@ -70,6 +66,13 @@ struct s2dos05_platform_data {
 
 struct s2dos05 {
 	struct regmap *regmap;
+};
+
+enum s2dos05_types {
+	TYPE_S2DOS05_1,
+	TYPE_S2DOS05_2,
+
+	TYPE_S2DOS05_NR,
 };
 
 /* S2DOS05 registers */

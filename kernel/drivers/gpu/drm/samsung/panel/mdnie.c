@@ -33,6 +33,7 @@
 #ifdef CONFIG_USDM_PANEL_TESTMODE
 #include "panel_testmode.h"
 #endif
+#include "panel_wrapper.h"
 
 #ifdef MDNIE_SELF_TEST
 int g_coord_x = MIN_WCRD_X;
@@ -180,6 +181,11 @@ static struct panel_prop_enum_item mdnie_anti_glare_enum_items[ANTI_GLARE_MAX] =
 	__PANEL_PROPERTY_ENUM_ITEM_INITIALIZER(ANTI_GLARE_ON),
 };
 
+static struct panel_prop_enum_item mdnie_adaptive_mode_enum_items[ADAPTIVE_MODE_MAX] = {
+	__PANEL_PROPERTY_ENUM_ITEM_INITIALIZER(ADAPTIVE_MODE_OFF),
+	__PANEL_PROPERTY_ENUM_ITEM_INITIALIZER(ADAPTIVE_MODE_ON),
+};
+
 static struct panel_prop_enum_item mdnie_color_lens_enum_items[COLOR_LENS_MAX] = {
 	__PANEL_PROPERTY_ENUM_ITEM_INITIALIZER(COLOR_LENS_OFF),
 	__PANEL_PROPERTY_ENUM_ITEM_INITIALIZER(COLOR_LENS_ON),
@@ -280,6 +286,8 @@ static struct panel_prop_list mdnie_property_array[] = {
 			NIGHT_MODE_OFF, mdnie_night_mode_enum_items),
 	__PANEL_PROPERTY_ENUM_INITIALIZER(MDNIE_ANTI_GLARE_PROPERTY,
 			ANTI_GLARE_OFF, mdnie_anti_glare_enum_items),
+	__PANEL_PROPERTY_ENUM_INITIALIZER(MDNIE_ADAPTIVE_MODE_PROPERTY,
+			ADAPTIVE_MODE_OFF, mdnie_adaptive_mode_enum_items),
 	__PANEL_PROPERTY_ENUM_INITIALIZER(MDNIE_COLOR_LENS_PROPERTY,
 			COLOR_LENS_OFF, mdnie_color_lens_enum_items),
 	__PANEL_PROPERTY_ENUM_INITIALIZER(MDNIE_COLOR_LENS_COLOR_PROPERTY,
@@ -356,6 +364,8 @@ __visible_for_testing int mdnie_set_property(struct mdnie_info *mdnie,
 		propname = MDNIE_NIGHT_LEVEL_PROPERTY;
 	else if (property == &mdnie->props.anti_glare)
 		propname = MDNIE_ANTI_GLARE_PROPERTY;
+	else if (property == &mdnie->props.adaptive_mode)
+		propname = MDNIE_ADAPTIVE_MODE_PROPERTY;
 	else if (property == &mdnie->props.color_lens)
 		propname = MDNIE_COLOR_LENS_PROPERTY;
 	else if (property == &mdnie->props.color_lens_color)
@@ -1514,6 +1524,37 @@ static ssize_t anti_glare_store(struct device *dev,
 	return count;
 }
 
+static ssize_t adaptive_mode_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct mdnie_info *mdnie = dev_get_drvdata(dev);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", mdnie->props.adaptive_mode);
+}
+
+static ssize_t adaptive_mode_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct mdnie_info *mdnie = dev_get_drvdata(dev);
+	int enable, ret;
+
+	ret = sscanf(buf, "%d", &enable);
+	if (ret != 1)
+		return -EINVAL;
+
+	if (enable < ADAPTIVE_MODE_OFF || enable >= ADAPTIVE_MODE_MAX)
+		return -EINVAL;
+
+	panel_info("adaptive_mode %s\n", enable ? "on" : "off");
+
+	panel_mutex_lock(&mdnie->lock);
+	mdnie_set_property(mdnie, &mdnie->props.adaptive_mode, enable);
+	panel_mutex_unlock(&mdnie->lock);
+	// mdnie_update(mdnie);
+
+	return count;
+}
+
 static ssize_t extra_dim_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -1809,6 +1850,7 @@ struct panel_device_attr mdnie_dev_attrs[] = {
 	__MDNIE_ATTR_RW(night_mode, 0664, PA_DEFAULT),
 	__MDNIE_ATTR_RW(vividness, 0664, PA_DEFAULT),
 	__MDNIE_ATTR_RW(anti_glare, 0664, PA_DEFAULT),
+	__MDNIE_ATTR_RW(adaptive_mode, 0664, PA_DEFAULT),
 	__MDNIE_ATTR_RW(extra_dim, 0664, PA_DEFAULT),
 	__MDNIE_ATTR_RW(color_lens, 0664, PA_DEFAULT),
 	__MDNIE_ATTR_RW(hdr, 0664, PA_DEFAULT),
@@ -2083,7 +2125,7 @@ __visible_for_testing int mdnie_create_class(struct mdnie_info *mdnie)
 	if (!mdnie)
 		return -EINVAL;
 
-	mdnie->class = class_create(THIS_MODULE, mdnie_get_name(mdnie));
+	mdnie->class = class_create_wrapper(THIS_MODULE, mdnie_get_name(mdnie));
 	if (IS_ERR_OR_NULL(mdnie->class)) {
 		panel_err("failed to create mdnie class\n");
 		return -EINVAL;

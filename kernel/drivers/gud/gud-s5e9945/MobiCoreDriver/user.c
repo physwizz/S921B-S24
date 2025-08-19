@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2013-2020 TRUSTONIC LIMITED
+ * Copyright (c) 2013-2023 TRUSTONIC LIMITED
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -330,6 +330,7 @@ static long user_ioctl(struct file *file, unsigned int id, unsigned long arg)
 
 		/* Create object from user-space binary */
 		if (session.ta_len) {
+			/* coverity[tainted_data] trust user data */
 			obj = tee_object_read(session.ta, session.ta_len);
 			if (IS_ERR(obj)) {
 				ret = PTR_ERR(obj);

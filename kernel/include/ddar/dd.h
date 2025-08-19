@@ -9,17 +9,15 @@
 #ifndef INCLUDE_DDAR_DD_H_
 #define INCLUDE_DDAR_DD_H_
 
-#include <linux/spinlock.h>
-#include <linux/sched.h>
-#include <linux/time.h>
-
-//#include <linux/fs.h>
-#include <linux/fscrypt.h>
-#include <linux/mempool.h>
 #include <crypto/skcipher.h>
 
 #include <ddar/common.h>
 #include <ddar/dd_i.h>
+
+#include <linux/mempool.h>
+#include <linux/sched.h>
+#include <linux/spinlock.h>
+#include <linux/time.h>
 
 struct dd_crypt_context {
 	struct dd_policy policy;

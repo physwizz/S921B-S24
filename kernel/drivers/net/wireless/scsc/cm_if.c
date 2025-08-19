@@ -311,10 +311,12 @@ void slsi_wlan_service_probe(struct scsc_mx_module_client *module_client, struct
 		reason = SCSC_MODULE_CLIENT_REASON_RECOVERY;
 #endif
 
-	if (reason == SCSC_MODULE_CLIENT_REASON_RECOVERY && !recovery_in_progress)
+	if ((reason == SCSC_MODULE_CLIENT_REASON_RECOVERY || reason == SCSC_MODULE_CLIENT_REASON_RECOVERY_WLAN) 
+		&& !recovery_in_progress)
 		goto done;
 
-	if (reason == SCSC_MODULE_CLIENT_REASON_RECOVERY) {
+	SLSI_INFO_NODEV("reason: %d, recovery_in_progress : %d\n", reason, recovery_in_progress);
+	if (reason == SCSC_MODULE_CLIENT_REASON_RECOVERY || reason == SCSC_MODULE_CLIENT_REASON_RECOVERY_WLAN) {
 		SLSI_INFO_NODEV("Probe recovery\n");
 		sdev = cm_ctx.sdev;
 		recovery_in_progress = 0;
@@ -373,7 +375,7 @@ void slsi_wlan_service_probe(struct scsc_mx_module_client *module_client, struct
 #endif
 	}
 
-	if (reason != SCSC_MODULE_CLIENT_REASON_RECOVERY)
+	if (reason != SCSC_MODULE_CLIENT_REASON_RECOVERY && reason != SCSC_MODULE_CLIENT_REASON_RECOVERY_WLAN)
 		atomic_set(&sdev->cm_if.cm_if_state, SCSC_WIFI_CM_IF_STATE_PROBED);
 	atomic_set(&sdev->cm_if.reset_level, 0);
 done:
@@ -427,10 +429,12 @@ static void slsi_wlan_service_remove(struct scsc_mx_module_client *module_client
 	if (reason == SCSC_MODULE_CLIENT_REASON_RECOVERY_WLAN)
 		reason = SCSC_MODULE_CLIENT_REASON_RECOVERY;
 #endif
-
-	if (reason == SCSC_MODULE_CLIENT_REASON_RECOVERY && !recovery_in_progress) {
+	SLSI_INFO_NODEV("WLAN service remove - reason %d, recovery_in_progress %d\n", reason, recovery_in_progress);
+	if ((reason == SCSC_MODULE_CLIENT_REASON_RECOVERY || reason == SCSC_MODULE_CLIENT_REASON_RECOVERY_WLAN)
+		&& !recovery_in_progress) {
 		SLSI_INFO_NODEV("WLAN service remove - recovery. Service not active.\n");
-	} else if (reason == SCSC_MODULE_CLIENT_REASON_RECOVERY && recovery_in_progress) {
+	} else if ((reason == SCSC_MODULE_CLIENT_REASON_RECOVERY || reason == SCSC_MODULE_CLIENT_REASON_RECOVERY_WLAN)
+				&& recovery_in_progress) {
 		int r;
 
 		level = atomic_read(&sdev->cm_if.reset_level);

@@ -161,7 +161,18 @@ int __init platform_mif_wifibt_if_reserved_mem_setup(struct reserved_mem *remem)
 }
 RESERVEDMEM_OF_DECLARE(wifibt_if, "exynos,wifibt_if", platform_mif_wifibt_if_reserved_mem_setup);
 #endif
+/*
+static int platform_load_pmu_fw_flags(struct scsc_mif_abs *interface, u32 *ka_patch, size_t ka_patch_len, u32 flags)
+{
+	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
 
+	SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "load_pmu_fw sz %u done, flags 0x%x\n", ka_patch_len, flags);
+
+	pcie_load_pmu_fw_flags(platform->pcie, ka_patch, ka_patch_len, flags);
+
+	return 0;
+}
+*/
 struct scsc_mif_abs *platform_mif_create(struct platform_device *pdev)
 {
 	struct scsc_mif_abs *platform_if;
@@ -200,11 +211,21 @@ struct scsc_mif_abs *platform_mif_create(struct platform_device *pdev)
 #if IS_ENABLED(CONFIG_WLBT_PROPERTY_READ)
 	platform_mif_wlbt_property_read_init(platform_if);
 #endif
+	platform_if->get_ramrp_ptr = platform_get_ramrp_ptr;
+	platform_if->get_ramrp_buff = platform_get_ramrp_buff;
+	platform_if->get_mbox_pmu = platform_mif_get_mbox_pmu;
+	platform_if->set_mbox_pmu = platform_mif_set_mbox_pmu;
+	platform_if->get_mbox_pmu_pcie_off = platform_mif_get_mbox_pmu_pcie_off;
+	platform_if->set_mbox_pmu_pcie_off = platform_mif_set_mbox_pmu_pcie_off;
+	platform_if->get_mbox_pmu_error = platform_mif_get_mbox_pmu_error;
 	platform_if->get_mif_device = platform_mif_get_mif_device;
+	platform_if->mif_dump_registers = platform_mif_dump_register;
 	platform_if->irq_clear = platform_mif_irq_clear;
 	platform_if->mif_cleanup = platform_mif_cleanup;
 	platform_if->mif_restart = platform_mif_restart;
+	platform_if->get_ramrp_buff = platform_get_ramrp_buff;
 	platform_if->load_pmu_fw = platform_load_pmu_fw;
+	//platform_if->load_pmu_fw_flags = platform_load_pmu_fw_flags;
 	platform->irq_dev_pmu = NULL;
 	/* Reset ka_patch pointer & size */
 	platform->ka_patch_fw = NULL;
@@ -226,8 +247,20 @@ struct scsc_mif_abs *platform_mif_create(struct platform_device *pdev)
 	platform_if->hostif_wakeup = platform_mif_hostif_wakeup;
 	platform_if->get_msi_range = platform_mif_get_msi_range;
 
-	register_pm_notifier(&platform->pm_nb);
+#ifdef CONFIG_SCSC_BB_PAEAN
+	platform_if->acpm_write_reg = platform_mif_acpm_write_reg; //SPMI write
 	mutex_init(&platform->acpm_lock);
+#elif CONFIG_SCSC_BB_REDWOOD
+	platform_if->control_suspend_gpio = platform_mif_control_suspend_gpio;
+#endif
+	platform_if->get_scan2mem_mode = platform_mif_get_scan2mem_mode;
+	platform_if->set_scan2mem_mode = platform_mif_set_scan2mem_mode;
+	platform_if->get_s2m_size_octets = platform_mif_get_s2m_size_octets;
+	platform_if->set_s2m_dram_offset = platform_mif_set_s2m_dram_offset;
+	platform_if->get_mem_start = platform_mif_get_mem_start;
+
+	register_pm_notifier(&platform->pm_nb);
+
 #ifdef CONFIG_OF_RESERVED_MEM
 	if (!sharedmem_base) {
 		struct device_node *np;
@@ -291,7 +324,10 @@ struct scsc_mif_abs *platform_mif_create(struct platform_device *pdev)
 			goto error_exit;
 		}
 	}
-
+#if defined(CONFIG_SCSC_BB_REDWOOD)
+	platform->reset_gpio = of_get_named_gpio(platform->dev->of_node, "wlbt,reset_gpio", 0);
+	platform->suspend_gpio = of_get_named_gpio(platform->dev->of_node, "wlbt,suspend_gpio", 0);
+#endif
 	platform->gpio_num = of_get_named_gpio(platform->dev->of_node, "wlbt,wakeup_gpio", 0);
 	platform->wakeup_irq = gpio_to_irq(of_get_named_gpio(platform->dev->of_node,
 				"wlbt,wakeup_gpio", 0));
@@ -334,6 +370,7 @@ struct scsc_mif_abs *platform_mif_create(struct platform_device *pdev)
 	pcie_irq_reg_pmu_error_handler(pcie, platform_mif_pmu_error_isr, (void *)platform);
 	pcie_irq_reg_wlan_handler(pcie, platform_mif_wlan_isr, (void *)platform);
 	pcie_irq_reg_wpan_handler(pcie, platform_mif_wpan_isr, (void *)platform);
+	platform_mif_set_scan2mem_mode(platform_if, false);
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
 	wake_lock_init(NULL, &(platform->wakehash_wakelock.ws), "wakehash_wakelock");

@@ -2076,6 +2076,7 @@ static void __mfc_core_nal_q_handle_frame_copy_timestamp(struct mfc_ctx *ctx,
 static void __mfc_core_nal_q_get_img_size(struct mfc_core *core, struct mfc_ctx *ctx,
 			DecoderOutputStr *pOutStr, enum mfc_get_img_size img_size)
 {
+	struct mfc_dec *dec = ctx->dec_priv;
 	unsigned int w, h;
 	int i;
 
@@ -2096,7 +2097,14 @@ static void __mfc_core_nal_q_get_img_size(struct mfc_core *core, struct mfc_ctx 
 	mfc_ctx_debug(2, "[NALQ][FRAME][DRC] resolution changed, %dx%d => %dx%d (stride: %d)\n", w, h,
 			ctx->img_width, ctx->img_height, ctx->raw_buf.stride[0]);
 
-	if (img_size == MFC_GET_RESOL_DPB_SIZE) {
+	if (img_size == MFC_GET_RESOL_SIZE) {
+		dec->disp_drc.width[dec->disp_drc.push_idx] = ctx->img_width;
+		dec->disp_drc.height[dec->disp_drc.push_idx] = ctx->img_height;
+		dec->disp_drc.disp_res_change++;
+		mfc_ctx_debug(3, "[NALQ][DRC] disp_res_change[%d] count %d\n",
+				dec->disp_drc.push_idx, dec->disp_drc.disp_res_change);
+		dec->disp_drc.push_idx = ++dec->disp_drc.push_idx % MFC_MAX_DRC_FRAME;
+	} else if (img_size == MFC_GET_RESOL_DPB_SIZE) {
 		ctx->scratch_buf_size = mfc_core_get_scratch_size();
 		for (i = 0; i < ctx->dst_fmt->num_planes; i++) {
 			ctx->min_dpb_size[i] = mfc_core_get_min_dpb_size(i);
@@ -2274,8 +2282,6 @@ static struct mfc_buf *__mfc_core_nal_q_handle_frame_output_del(struct mfc_core 
 			mutex_lock(&ctx->drc_wait_mutex);
 			ctx->wait_state = WAIT_G_FMT;
 			__mfc_core_nal_q_get_img_size(core, ctx, pOutStr, MFC_GET_RESOL_SIZE);
-			dec->disp_res_change++;
-			mfc_ctx_debug(2, "[NALQ][DRC] disp_res_change %d\n", dec->disp_res_change);
 			mfc_set_mb_flag(dst_mb, MFC_FLAG_DISP_RES_CHANGE);
 			mutex_unlock(&ctx->drc_wait_mutex);
 		}
@@ -2738,6 +2744,7 @@ void __mfc_core_nal_q_handle_frame(struct mfc_core *core, struct mfc_core_ctx *c
 		mfc_debug(2, "[NALQ][DRC] Resolution change set to %d\n", res_change);
 		mutex_lock(&ctx->drc_wait_mutex);
 		mfc_change_state(core_ctx, MFCINST_RES_CHANGE_INIT);
+		ctx->handle_drc_multi_mode = 0;
 		ctx->wait_state = WAIT_G_FMT | WAIT_STOP;
 		core->nal_q_stop_cause |= (1 << NALQ_EXCEPTION_DRC);
 		core->nal_q_handle->nal_q_exception = 1;

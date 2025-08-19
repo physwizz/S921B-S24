@@ -28,7 +28,9 @@ extern int exynos_pcie_rc_chk_link_status(int ch_num);
 extern int exynos_pcie_l1ss_ctrl(int enable, int id, int ch_num);
 extern int exynos_pcie_get_irq_num(int ch_num);
 extern int exynos_pcie_rc_speed_change(int ch_num, int req_speed);
+extern int exynos_pcie_rc_speed_check(int ch_num);
 extern int exynos_pcie_rc_lane_change(int ch_num, int req_lane);
+extern int exynos_pcie_rc_lane_check(int ch_num);
 extern void exynos_pcie_rc_print_msi_register(int ch_num);
 #else
 static int exynos_pcie_rc_poweron(int ch_num) { return 0; }
@@ -37,7 +39,9 @@ static int exynos_pcie_rc_chk_link_status(int ch_num) {return 0; }
 static int exynos_pcie_l1ss_ctrl(int enable, int id, int ch_num) { return 0; }
 static int exynos_pcie_get_irq_num(int ch_num) { return 0; }
 static int exynos_pcie_rc_speed_change(int ch_num, int req_speed) { return 0; }
+static int exynos_pcie_rc_speed_check(int ch_num) { return 0; }
 static int exynos_pcie_rc_lane_change(int ch_num, int req_lane) { return 0; }
+static int exynos_pcie_rc_lane_check(int ch_num) { return 0; }
 static void exynos_pcie_rc_print_msi_register(int ch_num) { return; }
 #endif
 

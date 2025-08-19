@@ -995,7 +995,8 @@ static inline int csi_g_otf_ch(struct pablo_camif_otf_info *otf_info, struct is_
 	/* Single bayer out or Long bayer out on AEB mode */
 	child = group->child;
 	if (child && child->slot == GROUP_SLOT_PAF) {
-		otf_ch = child->id - GROUP_ID_PAF0;
+		otf_ch = child->id > GROUP_ID_PAF0 ?
+				child->id - GROUP_ID_PAF0 : 0;
 		if (otf_ch >= MAX_NUM_CSIS_OTF_CH)
 			goto err;
 	}
@@ -1006,7 +1007,8 @@ static inline int csi_g_otf_ch(struct pablo_camif_otf_info *otf_info, struct is_
 	/* Short / Mid bayer out on AEB mode */
 	child = group->pnext;
 	while (child && child->slot == GROUP_SLOT_PAF) {
-		otf_ch = child->id - GROUP_ID_PAF0;
+		otf_ch = child->id > GROUP_ID_PAF0 ?
+				child->id - GROUP_ID_PAF0 : 0;
 		if (otf_ch >= MAX_NUM_CSIS_OTF_CH)
 			goto err;
 
@@ -1034,6 +1036,7 @@ static inline void csi_g_otf_lc(struct pablo_camif_otf_info *otf_info,
 		otf_info->otf_lc[otf_ch][CAMIF_VC_IMG] = 0xf;
 		otf_info->otf_lc[otf_ch][CAMIF_VC_HPD] = 0xf;
 		otf_info->otf_lc[otf_ch][CAMIF_VC_VPD] = 0xf;
+		otf_info->otf_lc[otf_ch][CAMIF_VC_EMB] = 0xf;
 
 		otf_info->link_vc[otf_ch][CAMIF_VC_IMG] = sensor_cfg->img_vc[otf_ch];
 
@@ -1052,6 +1055,12 @@ static inline void csi_g_otf_lc(struct pablo_camif_otf_info *otf_info,
 			otf_info->link_vc[otf_ch][CAMIF_VC_VPD] = sensor_cfg->vpd_vc[otf_ch];
 			otf_info->otf_lc[otf_ch][CAMIF_VC_VPD] =
 				otf_info->link_vc[otf_ch][CAMIF_VC_VPD] % CSIS_OTF_CH_LC_NUM;
+		}
+
+		if (sensor_cfg->emb_vc[otf_ch]) {
+			otf_info->link_vc[otf_ch][CAMIF_VC_EMB] = sensor_cfg->emb_vc[otf_ch];
+			otf_info->otf_lc[otf_ch][CAMIF_VC_EMB] =
+				otf_info->link_vc[otf_ch][CAMIF_VC_EMB] % CSIS_OTF_CH_LC_NUM;
 		}
 	}
 }
@@ -1355,11 +1364,6 @@ static void csi_dma_tag(struct v4l2_subdev *subdev, struct is_device_csi *csi,
 			if (frameptr < framemgr->num_frames) {
 				frame = &framemgr->frames[frameptr];
 
-				/* cache invalidate */
-				CALL_BUFOP(dma_subdev->pb_subdev[frame->index], sync_for_cpu,
-					   dma_subdev->pb_subdev[frame->index], 0,
-					   dma_subdev->pb_subdev[frame->index]->size,
-					   DMA_FROM_DEVICE);
 				mdbgd_front("%s, %s[%d] = %d\n", csi, __func__, "VC_EMBEDDED",
 					    frameptr, frame->fcount);
 			}

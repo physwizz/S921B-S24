@@ -162,12 +162,7 @@ static int amdgpu_gem_object_open(struct drm_gem_object *obj,
 	struct amdgpu_fpriv *fpriv = file_priv->driver_priv;
 	struct amdgpu_vm *vm = &fpriv->vm;
 	struct amdgpu_bo_va *bo_va;
-	struct mm_struct *mm;
 	int r;
-
-	mm = amdgpu_ttm_tt_get_usermm(abo->tbo.ttm);
-	if (mm && mm != current->mm)
-		return -EPERM;
 
 	if (abo->flags & AMDGPU_GEM_CREATE_VM_ALWAYS_VALID &&
 	    abo->tbo.base.resv != vm->root.base.bo->tbo.base.resv)
@@ -287,6 +282,12 @@ static int sgpu_gem_create(struct drm_device *dev, union drm_amdgpu_gem_create *
 	if (args->in.domains & ~AMDGPU_GEM_DOMAIN_MASK)
 		return -EINVAL;
 
+	if (!(args->in.domains & AMDGPU_GEM_DOMAIN_GTT)) {
+		DRM_DEV_ERROR(adev->dev, "Failed to create gem,"
+				"a domain amongst the following should be provided: [GTT]");
+		return -EINVAL;
+	}
+
 	if (!amdgpu_is_tmz(adev) && (flags & AMDGPU_GEM_CREATE_ENCRYPTED)) {
 		DRM_NOTE_ONCE("Cannot allocate secure buffer since TMZ is disabled\n");
 		return -EINVAL;
@@ -369,7 +370,7 @@ static int amdgpu_gem_object_mmap(struct drm_gem_object *obj, struct vm_area_str
 	struct amdgpu_bo *bo = gem_to_amdgpu_bo(obj);
 	int r;
 
-	if (amdgpu_ttm_tt_get_usermm(bo->tbo.ttm))
+	if (amdgpu_ttm_tt_is_userptr(bo->tbo.ttm))
 		return -EPERM;
 	if (bo->flags & AMDGPU_GEM_CREATE_NO_CPU_ACCESS)
 		return -EPERM;
@@ -519,7 +520,7 @@ int amdgpu_mode_dumb_mmap(struct drm_file *filp,
 		return -ENOENT;
 	}
 	robj = gem_to_amdgpu_bo(gobj);
-	if (amdgpu_ttm_tt_get_usermm(robj->tbo.ttm) ||
+	if (amdgpu_ttm_tt_is_userptr(robj->tbo.ttm) ||
 	    (robj->flags & AMDGPU_GEM_CREATE_NO_CPU_ACCESS)) {
 		drm_gem_object_put(gobj);
 		return -EPERM;
@@ -913,7 +914,7 @@ int amdgpu_gem_op_ioctl(struct drm_device *dev, void *data,
 			amdgpu_bo_unreserve(robj);
 			break;
 		}
-		if (amdgpu_ttm_tt_get_usermm(robj->tbo.ttm)) {
+		if (amdgpu_ttm_tt_is_userptr(robj->tbo.ttm)) {
 			r = -EPERM;
 			amdgpu_bo_unreserve(robj);
 			break;

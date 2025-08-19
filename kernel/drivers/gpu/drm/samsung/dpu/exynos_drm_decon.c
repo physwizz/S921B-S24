@@ -579,8 +579,7 @@ static void decon_check_display_config(struct exynos_drm_crtc *exynos_crtc,
 	struct decon_device *decon = exynos_crtc->ctx;
 
 	if ((__is_recovery_supported(decon) && __is_recovery_begin(decon)) ||
-			(new_exynos_crtc_state->seamless_modeset &&
-			 new_exynos_crtc_state->modeset_only) ||
+			 new_exynos_crtc_state->modeset_only ||
 			(!crtc_state->planes_changed && (crtc_state->plane_mask != 0)))
 				new_exynos_crtc_state->skip_frameupdate = true;
 
@@ -612,6 +611,8 @@ static void decon_check_display_config(struct exynos_drm_crtc *exynos_crtc,
 			if ((crtc_state->active_changed || !crtc_state->plane_mask) &&
 					crtc_state->active)
 				new_exynos_crtc_state->skip_frameupdate = true;
+		} else if (conn->connector_type == DRM_MODE_CONNECTOR_DisplayPort) {
+			new_exynos_crtc_state->initial_commit_completed = true;
 		}
 
 		if (conn->connector_type != DRM_MODE_CONNECTOR_DSI)
@@ -626,7 +627,8 @@ static void decon_check_display_config(struct exynos_drm_crtc *exynos_crtc,
 		return;
 
 	dsim = decon_get_dsim(decon);
-	if (crtc_needs_colormap(crtc_state) && !dsim_is_fb_reserved(dsim))
+	if (crtc_needs_colormap(crtc_state) && !dsim_is_fb_reserved(dsim) &&
+			new_exynos_crtc_state->initial_commit_completed)
 		new_exynos_crtc_state->need_colormap = true;
 }
 
@@ -728,7 +730,6 @@ static bool decon_is_win_used(const struct drm_crtc_state *crtc_state, int win_i
 static void decon_disable_win(struct decon_device *decon, int win_id)
 {
 	const struct drm_crtc *crtc = &decon->crtc->base;
-	int win_cnt = get_plane_num(crtc->dev);
 
 	decon_debug(decon, "disabling winid:%d\n", win_id);
 
@@ -737,7 +738,7 @@ static void decon_disable_win(struct decon_device *decon, int win_id)
 	 * disabled, not the newly requested one. Only disable the old window if it
 	 * was previously connected and it's not going to be used by any other plane.
 	 */
-	if (win_id < win_cnt && !decon_is_win_used(crtc->state, win_id))
+	if (win_id < MAX_WIN_PER_DECON && !decon_is_win_used(crtc->state, win_id))
 		decon_reg_set_win_enable(decon->id, win_id, 0);
 }
 
@@ -1001,6 +1002,12 @@ static void decon_atomic_begin(struct exynos_drm_crtc *exynos_crtc,
 	if (new_exynos_crtc_state->skip_update)
 		return;
 
+#if IS_ENABLED(CONFIG_DRM_MCD_COMMON)
+	if (mcd_drm_check_commit_skip(exynos_crtc, __func__)) {
+		return;
+	}
+#endif
+
 	if (__is_recovery_supported(decon) && __is_recovery_begin(decon))
 		decon_info(decon, "is skipped(recovery started)\n");
 	else if (decon_reg_wait_update_done_and_mask(decon->id, &decon->config.mode,
@@ -1160,7 +1167,6 @@ static void decon_atomic_flush(struct exynos_drm_crtc *exynos_crtc,
 	}
 
 	decon->config.rcd_en = new_exynos_crtc_state->rcd_enabled;
-	decon_reg_set_rcd_enable(decon->id, decon->config.rcd_en);
 	exynos_dqe_update(exynos_crtc->dqe, new_crtc_state);
 
 	if (decon->config.out_type & DECON_OUT_DSI)
@@ -1168,6 +1174,16 @@ static void decon_atomic_flush(struct exynos_drm_crtc *exynos_crtc,
 
 	if (new_exynos_crtc_state->seamless_modeset)
 		decon_seamless_set_mode(new_crtc_state, old_crtc_state->state);
+
+	if (new_exynos_crtc_state->modeset_only) {
+		int win_id;
+		const unsigned long win_mask =
+			new_exynos_crtc_state->reserved_win_mask;
+
+		for_each_set_bit(win_id, &win_mask, MAX_WIN_PER_DECON)
+			decon_reg_set_win_enable(decon->id, win_id, 0);
+		decon_info(decon, "modeset_only\n");
+	}
 
 	/* only for video mode tui */
 	exynos_tui_sec_win_shadow_update_req(decon,
@@ -1564,16 +1580,6 @@ static void decon_mode_set(struct exynos_drm_crtc *crtc,
 		}
 	}
 #endif
-
-	if (new_exynos_crtc_state->modeset_only) {
-		int win_id;
-		const unsigned long win_mask =
-			new_exynos_crtc_state->reserved_win_mask;
-
-		for_each_set_bit(win_id, &win_mask, MAX_WIN_PER_DECON)
-			decon_reg_set_win_enable(decon->id, win_id, 0);
-		decon_info(decon, "modeset_only\n");
-	}
 }
 
 #if IS_ENABLED(CONFIG_EXYNOS_PD)
@@ -1788,11 +1794,7 @@ static void decon_disable(struct exynos_drm_crtc *crtc)
 		decon_info(decon, "already disabled(%d)\n", decon->state);
 		return;
 	} else if (decon->state == DECON_STATE_HIBERNATION) {
-		if (decon->config.mode.lp_mode == DECON_ENTER_LP) {
-			DPU_EVENT_LOG("DECON_DISABLED_IN_LP", crtc, 0, NULL);
-			_decon_notify_pm_wakeup_signal(decon, false);
-		}
-
+		_decon_notify_pm_wakeup_signal(decon, false);
 		decon->state = DECON_STATE_OFF;
 		return;
 	}
@@ -2541,7 +2543,9 @@ static irqreturn_t sramc_irq_handler(int irq, void *dev_data)
 	if (IS_ENABLED(CONFIG_EXYNOS_BTS))
 		decon->bts.ops->print_info(decon->crtc);
 
-	exynos_drm_report_dpu_fault(decon->crtc);
+	decon_dump(decon->crtc);
+	dbg_snapshot_expire_watchdog();
+	WARN_ON(1);
 
 irq_end:
 	spin_unlock(&decon->slock);

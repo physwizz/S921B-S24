@@ -300,7 +300,7 @@ char* append_string_number_suffix(const char *str, unsigned int length, unsigned
 }
 
 int dsp_graph_add_kernel(struct npu_device *device,
-        struct npu_session *session, void *kernel_name, unsigned int unique_id)
+        struct npu_session *session, void *kernel_name, unsigned int kernel_size, unsigned int unique_id)
 {
 	int ret;
 	struct dsp_kernel_manager *kmgr;
@@ -326,6 +326,11 @@ int dsp_graph_add_kernel(struct npu_device *device,
 	}
 
 	for (idx = 0; idx < kernel_count; ++idx) {
+		if (offset > (unsigned long)((char*)kernel_name + kernel_size)) {
+			ret = -EINVAL;
+			dsp_err("Incorrect offset greater than buffer size (%lu vs %u)", offset - (unsigned long)kernel_name, kernel_size);
+			goto p_err_alloc;
+		}
 		if (unique_id != 0) {
 			session->dl_libs[idx].name =
 				append_string_number_suffix((const char *)offset,
@@ -381,25 +386,27 @@ npu_s_param_ret dsp_kernel_param_handler(struct npu_session *sess, struct vs4l_p
 	switch (param->target) {
 	case NPU_S_PARAM_DSP_KERNEL:
 		sess->kernel_count = param->offset;
+		sess->kernel_param_size = param->size;
 		if (sess->kernel_count > param->size) {
 			ret = S_PARAM_ERROR;
 			dsp_err("Failed to ensure allowed size\n");
 			break;
 		}
 
-		kernel_name = kmalloc(param->size, GFP_KERNEL);
+		kernel_name = kmalloc(param->size + 1, GFP_KERNEL);
 		if (!kernel_name) {
 			ret = S_PARAM_ERROR;
 			dsp_err("Failed to alloc kernel\n");
 			break;
 		}
+		((char*)kernel_name)[param->size] = '\0';
 		if (copy_from_user(kernel_name, (void __user *)param->addr, param->size)) {
 			ret = S_PARAM_ERROR;
 			kfree(kernel_name);
 			dsp_err("Failed to copy from user kernel_name\n");
 			break;
 		}
-		ret = dsp_graph_add_kernel(device, sess, kernel_name, 0);
+		ret = dsp_graph_add_kernel(device, sess, kernel_name, param->size, 0);
 		if (ret) {
 			ret = S_PARAM_ERROR;
 			kfree(kernel_name);
@@ -412,6 +419,7 @@ npu_s_param_ret dsp_kernel_param_handler(struct npu_session *sess, struct vs4l_p
 
 	case NPU_S_PARAM_DSP_USER_KERNEL:
 		sess->kernel_count = param->offset;
+		sess->kernel_param_size = param->size;
 
 		kernel_name = kmalloc(param->size, GFP_KERNEL);
 		if (!kernel_name) {

@@ -42,6 +42,7 @@
 #include <linux/of_gpio.h>
 #include <linux/mmc/slot-gpio.h>
 #include <linux/smc.h>
+#include <linux/sched/clock.h>
 
 #include <soc/samsung/exynos-pmu-if.h>
 //#include <soc/samsung/exynos-powermode.h>
@@ -54,7 +55,7 @@
 /* Common flag combinations */
 #define DW_MCI_DATA_ERROR_FLAGS	(SDMMC_INT_DRTO | SDMMC_INT_DCRC | \
 				 SDMMC_INT_SBE  | \
-				 SDMMC_INT_EBE | SDMMC_INT_HLE)
+				 SDMMC_INT_EBE | SDMMC_INT_HLE | SDMMC_INT_HTO)
 #define DW_MCI_CMD_ERROR_FLAGS	(SDMMC_INT_RTO | SDMMC_INT_RCRC | \
 				 SDMMC_INT_RESP_ERR | SDMMC_INT_HLE)
 #define DW_MCI_ERROR_FLAGS	(DW_MCI_DATA_ERROR_FLAGS | \

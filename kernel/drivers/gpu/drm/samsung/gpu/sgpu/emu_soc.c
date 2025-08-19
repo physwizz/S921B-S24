@@ -141,6 +141,19 @@ int emu_soc_asic_init(struct amdgpu_device *adev)
 	if (AMDGPU_IS_MGFX1_EVT0(adev->grbm_chip_rev))
 		WREG32_SOC15(GC, 0, mmDB_CGTT_CLK_CTRL_0, 0x00001100);
 
+	/*
+	 * [VOYAGERSW-1566]: Couple of games hang during the game play.
+	 * Setting the DISABLE_PREZL_FIFO_STALL = 0
+	 * Reason being,DB has a limitation to handle concurrent z flush & request,
+	 * due to shared resource (Z plane decompress).
+	 * The problem disappears with removal of DB flush cache.
+	 * Added SWA only for M1 ,M2 as per recommendation from HW team.
+	 */
+	if ((AMDGPU_IS_MGFX1(adev->grbm_chip_rev))||
+		(AMDGPU_IS_MGFX2(adev->grbm_chip_rev))) {
+		WREG32_FIELD15(GC, 0, DB_DEBUG2, DISABLE_PREZL_FIFO_STALL, 0);
+	}
+
 	return 0;
 }
 

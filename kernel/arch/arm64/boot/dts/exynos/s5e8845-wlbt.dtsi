@@ -26,6 +26,8 @@
 
 	scsc_wifibt: scsc_wifibt@11B70000 {
 		compatible = "samsung,scsc_wifibt";
+		pinctrl-names = "default";
+		pinctrl-0 = <&fm_spdy_default>;
 		memory-region = <&wifibt_if>;
 		/* Mailbox Registers */
 		reg = <0x0 0x11B70000 0x180>,	/* WLAN MAILBOX */

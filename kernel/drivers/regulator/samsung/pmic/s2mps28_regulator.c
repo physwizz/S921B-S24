@@ -442,7 +442,7 @@ static const struct regulator_desc sub1_regulators[] = {
 	LDO_DESC("LDO2", _LDO(2), &_ldo_ops(), 1, _REG(_LDO2_OUT1), 1, _REG(_LDO2_CTRL), _TIME(_LDO)),
 	//LDO_DESC("LDO3", _LDO(3), &_ldo_ops(), 1, _REG(_LDO3_OUT1), 1, _REG(_LDO3_CTRL), _TIME(_LDO)),
 	//LDO_DESC("LDO4", _LDO(4), &_ldo_ops(), 1, _REG(_LDO4_OUT1), 1, _REG(_LDO4_CTRL), _TIME(_LDO)),
-	//LDO_DESC("LDO5", _LDO(5), &_ldo_ops(), 1, _REG(_LDO5_OUT1), 1, _REG(_LDO5_CTRL), _TIME(_LDO)),
+	LDO_DESC("LDO5", _LDO(5), &_ldo_ops(), 1, _REG(_LDO5_OUT1), 1, _REG(_LDO5_CTRL), _TIME(_LDO)),
 };
 
 static const struct regulator_desc sub2_regulators[] = {
@@ -476,7 +476,7 @@ static const struct regulator_desc sub3_regulators[] = {
 	LDO_DESC("LDO2", _LDO(2), &_ldo_ops(), 1, _REG(_LDO2_OUT1), 1, _REG(_LDO2_CTRL), _TIME(_LDO)),
 	LDO_DESC("LDO3", _LDO(3), &_ldo_ops(), 1, _REG(_LDO3_OUT1), 1, _REG(_LDO3_CTRL), _TIME(_LDO)),
 	//LDO_DESC("LDO4", _LDO(4), &_ldo_ops(), 1, _REG(_LDO4_OUT1), 1, _REG(_LDO4_CTRL), _TIME(_LDO)),
-	//LDO_DESC("LDO5", _LDO(5), &_ldo_ops(), 1, _REG(_LDO5_OUT1), 1, _REG(_LDO5_CTRL), _TIME(_LDO)),
+	LDO_DESC("LDO5", _LDO(5), &_ldo_ops(), 1, _REG(_LDO5_OUT1), 1, _REG(_LDO5_CTRL), _TIME(_LDO)),
 };
 
 static const struct regulator_desc sub4_regulators[] = {
@@ -491,7 +491,7 @@ static const struct regulator_desc sub4_regulators[] = {
 	/* SUB4 LDO 1 ~ 5 */
 	LDO_DESC("LDO1", _LDO(1), &_ldo_ops(), 1, _REG(_LDO1_OUT1), 1, _REG(_LDO1_CTRL), _TIME(_LDO)),
 	LDO_DESC("LDO2", _LDO(2), &_ldo_ops(), 1, _REG(_LDO2_OUT1), 1, _REG(_LDO2_CTRL), _TIME(_LDO)),
-	//LDO_DESC("LDO3", _LDO(3), &_ldo_ops(), 1, _REG(_LDO3_OUT1), 1, _REG(_LDO3_CTRL), _TIME(_LDO)),
+	LDO_DESC("LDO3", _LDO(3), &_ldo_ops(), 1, _REG(_LDO3_OUT1), 1, _REG(_LDO3_CTRL), _TIME(_LDO)),
 	LDO_DESC("LDO4", _LDO(4), &_ldo_ops(), 1, _REG(_LDO4_OUT1), 1, _REG(_LDO4_CTRL), _TIME(_LDO)),
 	LDO_DESC("LDO5", _LDO(5), &_ldo_ops(), 1, _REG(_LDO5_OUT1), 1, _REG(_LDO5_CTRL), _TIME(_LDO)),
 };
@@ -567,8 +567,6 @@ static int s2mps28_pmic_dt_parse_pdata(struct s2mps28_dev *iodev,
 	pdata->num_rdata = 0;
 
 	rinfo = &regulators[dev_type];
-	if (!rinfo)
-		return -ENODEV;
 
 	for_each_child_of_node(regulators_np, reg_np) {
 		for (i = 0; i < rinfo->count; i++)

@@ -27,12 +27,26 @@
 		samsung,pin-pud = <0>;
 		samsung,pin-drv = <0>;
 	};
+
+	dp_pmic_2_irq: dp-pmic-2-irq {
+		samsung,pins = "gpa2-7";
+		samsung,pin-function = <0>;
+		samsung,pin-pud = <0>;
+		samsung,pin-drv = <0>;
+	};
 };
 
 &pinctrl_7 {
 	dp_pmic_bus: dp-pmic-bus {
 		samsung,pins = "gpp0-0", "gpp0-1";
 		samsung,pin-function = <2>;
+		samsung,pin-pud = <3>;
+		samsung,pin-drv = <0>;
+	};
+
+	dp_pmic_2_bus: dp-pmic-2-bus {
+		samsung,pins = "gpp0-2", "gpp0-3";
+		samsung,pin-function = <3>;
 		samsung,pin-pud = <3>;
 		samsung,pin-drv = <0>;
 	};
@@ -260,6 +274,7 @@
 				regulator-always-on;
 				regulator-boot-on;
 			};
+
 			dp_ldo1: s2dos05-ldo1 {
 				regulator-name = "vdd2";
 				regulator-min-microvolt = <1500000>;
@@ -267,17 +282,20 @@
 				regulator-always-on;
 				regulator-boot-on;
 			};
+
 			dp_ldo2: s2dos05-ldo2 {
 				regulator-name = "vdd3";
 				regulator-min-microvolt = <1500000>;
 				regulator-max-microvolt = <2000000>;
 			};
-			dp_ldo3: s2dos05-ldo3{
+
+			dp_ldo3: s2dos05-ldo3 {
 				regulator-name = "vdd4";
 				regulator-min-microvolt = <2700000>;
 				regulator-max-microvolt = <3775000>;
 			};
-			dp_ldo4: s2dos05-ldo4{
+
+			dp_ldo4: s2dos05-ldo4 {
 				regulator-name = "vdd5";
 				regulator-min-microvolt = <2700000>;
 				regulator-max-microvolt = <3775000>;
@@ -288,4 +306,57 @@
 	};
 };
 
+&hsi2c_1 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "disabled";
+	pinctrl-names = "default";
+	pinctrl-0 = <&dp_pmic_2_bus>;
+	s2dos05_pmic@60 {
+		compatible = "samsung,s2dos05pmic_2";
+		reg = <0x60>;
+		s2dos05,wakeup;
+		pinctrl-names = "default";
+		pinctrl-0 = <&dp_pmic_2_irq>;
+		s2dos05,s2dos05_int = <&gpa2 7 0>;
+		adc_mode = <1>; /* 0 : disable, 1 : current meter, 2 : power meter */
+		adc_sync_mode = <2>; /* 1 : sync mode, 2 : async mode */
+		regulators {
+			dp2_buck: s2dos05-buck1 {
+				regulator-name = "vdd1d2";
+				regulator-min-microvolt = <850000>;
+				regulator-max-microvolt = <2100000>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
 
+			dp2_ldo1: s2dos05-ldo1 {
+				regulator-name = "vdd2d2";
+				regulator-min-microvolt = <1500000>;
+				regulator-max-microvolt = <2000000>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
+
+			dp2_ldo2: s2dos05-ldo2 {
+				regulator-name = "vdd3d2";
+				regulator-min-microvolt = <1500000>;
+				regulator-max-microvolt = <2000000>;
+			};
+
+			dp2_ldo3: s2dos05-ldo3 {
+				regulator-name = "vdd4d2";
+				regulator-min-microvolt = <2700000>;
+				regulator-max-microvolt = <3775000>;
+			};
+
+			dp2_ldo4: s2dos05-ldo4 {
+				regulator-name = "vdd5d2";
+				regulator-min-microvolt = <2700000>;
+				regulator-max-microvolt = <3775000>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
+		};
+	};
+};

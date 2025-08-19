@@ -54,9 +54,47 @@ void cpif_page_init_tmp_page(struct cpif_page_pool *pool)
 }
 EXPORT_SYMBOL(cpif_page_init_tmp_page);
 
+int cpif_page_pool_continue(u64 page_size, struct cpif_page_pool *pool)
+{
+	int i = pool->rpage_arr_len;
+	u64 num_page = pool->rpage_arr_baselen * CPIF_PAGE_POOL_MULT;
+
+	mif_info("Continue allocate page pool %u -> %llu\n", pool->rpage_arr_len, num_page);
+
+	for (; i < num_page; i++) {
+		struct cpif_page *cur = kvzalloc(sizeof(struct cpif_page), GFP_KERNEL);
+
+		if (unlikely(!cur)) {
+			mif_err_limited("failed to alloc cpif_page\n");
+			goto fail;
+		}
+		cur->page = __dev_alloc_pages(GFP_KERNEL | CPIF_GFP_MASK, pool->page_order);
+		if (unlikely(!cur->page)) {
+			mif_err_limited("failed to get page\n");
+			kvfree(cur);
+			goto fail;
+		}
+		cur->usable = true;
+		cur->offset = 0;
+		pool->recycling_page_arr[i] = cur;
+	}
+
+	pool->rpage_arr_len = num_page;
+	pool->page_alloc_complete = true;
+
+	mif_info("Page pool alloc retry complete. rpage_arr_len: %u\n", pool->rpage_arr_len);
+	return 0;
+fail:
+	pool->rpage_arr_len = i;
+	mif_err_limited("Page pool alloc retry failed. rpage_arr_len: %u\n", pool->rpage_arr_len);
+
+	return 0;
+}
+EXPORT_SYMBOL(cpif_page_pool_continue);
+
 struct cpif_page_pool *cpif_page_pool_create(u64 num_page, u64 page_size)
 {
-	int i;
+	int i = 0;
 	struct cpif_page_pool *pool;
 	struct cpif_page **rpage_arr;
 	struct cpif_page *tmp_page;
@@ -66,36 +104,13 @@ struct cpif_page_pool *cpif_page_pool_create(u64 num_page, u64 page_size)
 		mif_err("failed to create page pool\n");
 		return NULL;
 	}
+	pool->rpage_arr_baselen = num_page;
+	num_page *= CPIF_PAGE_POOL_MULT; /* reserve twice as large of the least required */
 
-	num_page *= 2; /* reserve twice as large of the least required */
 	rpage_arr = kvzalloc(sizeof(struct cpif_page *) * num_page, GFP_KERNEL);
 	if (unlikely(!rpage_arr)) {
 		mif_err("failed to alloc recycling_page_arr\n");
 		goto fail;
-	}
-
-	pool->page_size = page_size;
-	pool->page_order = get_order(page_size);
-
-	mif_info("num_page: %llu page_size: %llu page_order: %llu\n",
-			num_page, page_size, pool->page_order);
-
-	for (i = 0; i < num_page; i++) {
-		struct cpif_page *cur = kvzalloc(sizeof(struct cpif_page), GFP_KERNEL);
-
-		if (unlikely(!cur)) {
-			mif_err("failed to alloc cpif_page\n");
-			goto fail;
-		}
-		cur->page = __dev_alloc_pages(GFP_KERNEL | CPIF_GFP_MASK, pool->page_order);
-		if (unlikely(!cur->page)) {
-			mif_err("failed to get page\n");
-			cur->usable = false;
-			goto fail;
-		}
-		cur->usable = true;
-		cur->offset = 0;
-		rpage_arr[i] = cur;
 	}
 
 	tmp_page = kvzalloc(sizeof(struct cpif_page), GFP_KERNEL);
@@ -106,10 +121,40 @@ struct cpif_page_pool *cpif_page_pool_create(u64 num_page, u64 page_size)
 	tmp_page->offset = 0;
 	tmp_page->usable = false;
 
+	pool->page_size = page_size;
+	pool->page_order = (u64) get_order(page_size);
 	pool->recycling_page_arr = rpage_arr;
-	pool->tmp_page = tmp_page;
 	pool->rpage_arr_idx = 0;
 	pool->rpage_arr_len = num_page;
+	pool->tmp_page = tmp_page;
+
+	mif_info("num_page: %llu page_size: %llu page_order: %llu\n",
+			num_page, page_size, pool->page_order);
+
+	for (i = 0; i < num_page; i++) {
+		struct cpif_page *cur = kvzalloc(sizeof(struct cpif_page), GFP_KERNEL);
+
+		if (unlikely(!cur)) {
+			mif_err("failed to alloc cpif_page\n");
+			goto postpone;
+		}
+		cur->page = __dev_alloc_pages(GFP_KERNEL | CPIF_GFP_MASK, pool->page_order);
+		if (unlikely(!cur->page)) {
+			mif_err("failed to get page\n");
+			kvfree(cur);
+			goto postpone;
+		}
+		cur->usable = true;
+		cur->offset = 0;
+		rpage_arr[i] = cur;
+	}
+
+postpone:
+	if (i != num_page) {
+		pool->rpage_arr_len = i;
+		pool->page_alloc_complete = false;
+	} else
+		pool->page_alloc_complete = true;
 
 	return pool;
 
@@ -210,7 +255,7 @@ static void *cpif_alloc_tmp_page(struct cpif_page_pool *pool, u64 alloc_size)
 		if (tmp->page) /* unref, or possibly free the page */
 			__free_pages(tmp->page, get_order(pool->tmp_page_size));
 		tmp->page = new_pg;
-		pool->tmp_page_size = 4096 * (1 << page_order);
+		pool->tmp_page_size = PAGE_SIZE << page_order;
 		pool->using_tmp_alloc = true;
 		tmp->usable = true;
 		tmp->offset = pool->tmp_page_size - alloc_size;

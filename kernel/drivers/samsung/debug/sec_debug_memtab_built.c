@@ -19,6 +19,7 @@
 #include <linux/workqueue.h>
 #include <linux/xarray.h>
 #include <linux/sched/cputime.h>
+#include <linux/device.h>
 /* for module symbol */
 #include <linux/module.h>
 #include <linux/elf.h>
@@ -105,3 +106,7 @@ DEFINE_MEMBER_TYPE(irq_desc_action, irq_desc, action);
 DEFINE_MEMBER_TYPE(irq_desc_irq_data__irq, irq_desc, irq_data.irq);
 DEFINE_MEMBER_TYPE(irqaction_name, irqaction, name);
 DEFINE_MEMBER_TYPE(irqaction_thread, irqaction, thread);
+DEFINE_MEMBER_TYPE(device_driver, device, driver);
+DEFINE_MEMBER_TYPE(device_bus, device, bus);
+DEFINE_MEMBER_TYPE(device_class, device, class);
+

@@ -2,9 +2,25 @@
 #include "platform_mif_pcie_api.h"
 #include "mif_reg.h"
 
+#ifdef CONFIG_SCSC_BB_PAEAN
 extern int exynos_acpm_write_reg(struct device_node *acpm_mfd_node, u8 sid, u16 type, u8 reg, u8 value);
+#endif
 
+#ifdef CONFIG_SCSC_BB_REDWOOD
+static uint on_pinctrl_delay = 5000;
+module_param(on_pinctrl_delay, uint, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(on_pinctrl_delay, "wlbt_pinctrl on delay(us)");
+
+static uint off_pinctrl_delay = 160;
+module_param(off_pinctrl_delay, uint, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(off_pinctrl_delay, "wlbt_pinctrl off delay(us)");
+#endif
+
+#ifdef CONFIG_SCSC_BB_PAEAN
 static bool keep_powered = true;
+#else
+static bool keep_powered = false;
+#endif
 module_param(keep_powered, bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(keep_powered, "Keep WLBT powered after reset, to sleep flash module");
 
@@ -16,6 +32,60 @@ static bool enable_platform_mif_arm_reset = true;
 module_param(enable_platform_mif_arm_reset, bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(enable_platform_mif_arm_reset, "Enables WIFIBT ARM cores reset");
 
+static uint max_linkup_count = 3;
+module_param(max_linkup_count, uint, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(max_linkup_count,"max count for linkup re-try");
+
+static uint scan2mem_timeout_value = 5000;
+module_param(scan2mem_timeout_value, uint, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(scan2mem_timeout_value, "scan2mem_timeout(ms)");
+
+static void platform_mif_reset_assert(struct scsc_mif_abs *interface)
+{
+	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
+	SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
+		"reset_gpio and pmic_gpio set low for retry\n");
+#ifdef CONFIG_SCSC_BB_REDWOOD
+	gpio_set_value(platform->reset_gpio, 0);
+	udelay(off_pinctrl_delay);
+#endif
+	gpio_set_value(platform->pmic_gpio, 0);
+	msleep(200);
+	SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
+		"delay 200ms after low gpios\n");
+}
+
+bool platform_mif_get_scan2mem_mode(struct scsc_mif_abs *interface)
+{
+	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
+	return pcie_mif_get_scan2mem_mode(platform->pcie);
+}
+
+void platform_mif_set_scan2mem_mode(struct scsc_mif_abs *interface, bool enable)
+{
+	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
+	pcie_mif_set_scan2mem_mode(platform->pcie, enable);
+}
+
+void platform_mif_set_s2m_dram_offset(struct scsc_mif_abs *interface, u32 offset)
+{
+	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
+	pcie_set_s2m_dram_offset(platform->pcie, offset);
+}
+
+u32 platform_mif_get_s2m_size_octets(struct scsc_mif_abs *interface)
+{
+	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
+
+	return pcie_get_s2m_size_octets(platform->pcie);
+}
+
+unsigned long platform_mif_get_mem_start(struct scsc_mif_abs *interface)
+{
+	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
+	return platform->mem_start;
+}
+
 /* reset=0 - release from reset */
 /* reset=1 - hold reset */
 int platform_mif_reset(struct scsc_mif_abs *interface, bool reset)
@@ -23,25 +93,45 @@ int platform_mif_reset(struct scsc_mif_abs *interface, bool reset)
 	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
 	unsigned long timeout;
 	bool init;
+	int i;
 	u32 ret = 0;
 
 	if (enable_platform_mif_arm_reset) {
 		if (!reset) { /* Release from reset */
 			SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, " - reset : false\n");
 
-			if (keep_powered) {
-				/* If WLBT was kept powered after reset, to allow the PMU to
-				 * sleep the flash module, power cycle it now to reset the HW.
-				 */
-				SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "power cycle WLBT\n");
-				gpio_set_value(platform->pmic_gpio, 0);
-				msleep(200);
+			if (!platform_mif_get_scan2mem_mode(interface)) {
+				if (keep_powered) {
+					/* If WLBT was kept powered after reset, to allow the PMU to
+					* sleep the flash module, power cycle it now to reset the HW.
+					*/
+					SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "power cycle WLBT\n");
+
+					gpio_set_value(platform->pmic_gpio, 0);
+					msleep(200);
+				}
 			}
-			gpio_set_value(platform->pmic_gpio, 1);
-			/* Start always with fw_user to one */
-			platform_mif_pcie_control_fsm_prepare_fw(platform);
-			platform_mif_send_event_to_fsm_wait_completion(platform, PCIE_EVT_RST_ON);
-			scsc_pcie_complete();
+
+			for (i = 0; i < max_linkup_count; i++) {
+				gpio_set_value(platform->pmic_gpio, 1);
+#ifdef CONFIG_SCSC_BB_REDWOOD
+				udelay(on_pinctrl_delay);
+				gpio_set_value(platform->reset_gpio, 1);
+#endif
+				/* Start always with fw_user to one */
+				platform_mif_pcie_control_fsm_prepare_fw(platform);
+				platform_mif_send_event_to_fsm_wait_completion(platform, PCIE_EVT_RST_ON);
+				ret = scsc_pcie_complete();
+				if (ret) {
+					SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
+						"trying to link up again\n");
+					platform_mif_reset_assert(interface);
+				}
+				else
+					break;
+			}
+			if (ret)
+				return ret;
 
 			pcie_register_driver();
 
@@ -57,6 +147,12 @@ int platform_mif_reset(struct scsc_mif_abs *interface, bool reset)
 
 			if (!init) {
 				SCSC_TAG_INFO(PLAT_MIF, "PCIe has not been initialized\n");
+				if (pcie_is_on(platform->pcie)) {
+					SCSC_TAG_INFO(PLAT_MIF, "Trying to link down\n");
+					platform_mif_send_event_to_fsm_wait_completion(platform, PCIE_EVT_RST_OFF);
+					scsc_pcie_complete();
+				}
+				pcie_unregister_driver();
 				return -EIO;
 			}
 
@@ -71,13 +167,26 @@ int platform_mif_reset(struct scsc_mif_abs *interface, bool reset)
 
 			pcie_unregister_driver();
 
-			if (!keep_powered) {
-				SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
-						"pmic_gpio is set as low\n");
-				gpio_set_value(platform->pmic_gpio, 0);
-			} else {
-				SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
-						"pmic_gpio power preserved\n");
+			if (platform_mif_get_scan2mem_mode(interface)) {
+				SCSC_TAG_INFO(PLAT_MIF, "Wait for %dmsec to guarantee time for scandump\n", scan2mem_timeout_value);
+				msleep(scan2mem_timeout_value);
+			}
+
+#ifdef CONFIG_SCSC_BB_REDWOOD
+			gpio_set_value(platform->reset_gpio, 0);
+#endif
+			if (!platform_mif_get_scan2mem_mode(interface)) {
+				if (!keep_powered) {
+#ifdef CONFIG_SCSC_BB_REDWOOD
+					udelay(off_pinctrl_delay);
+#endif
+					SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
+							"pmic_gpio is set as low\n");
+					gpio_set_value(platform->pmic_gpio, 0);
+				} else {
+					SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
+							"pmic_gpio power preserved\n");
+				}
 			}
 		}
 	} else
@@ -87,25 +196,35 @@ int platform_mif_reset(struct scsc_mif_abs *interface, bool reset)
 }
 
 
+#ifdef CONFIG_SCSC_BB_PAEAN
 int platform_mif_acpm_write_reg(struct platform_mif *platform, u8 reg, u8 value)
 {
-	int ret;
+	int ret = 0;
 	const int wlbt_channel = 8;
 
 	mutex_lock(&platform->acpm_lock);
 	ret = exynos_acpm_write_reg(platform->np, wlbt_channel, 0, reg, value);
 	mutex_unlock(&platform->acpm_lock);
-
 	return ret;
 }
+#endif
+
+#ifdef CONFIG_SCSC_BB_REDWOOD
+void platform_mif_control_suspend_gpio(struct scsc_mif_abs *interface, u8 value)
+{
+	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
+	u8 ret;
+	SCSC_TAG_DEBUG_DEV(PLAT_MIF,platform->dev, "set suspend_gpio %d\n", value);
+	gpio_set_value(platform->suspend_gpio, value);
+	ret = gpio_get_value(platform->suspend_gpio);
+	SCSC_TAG_DEBUG_DEV(PLAT_MIF,platform->dev, "set suspend_gpio %d\n", ret);
+}
+#endif
 
 int platform_mif_suspend(struct scsc_mif_abs *interface)
 {
 	int r = 0;
 	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
-
-	SCSC_TAG_INFO(PLAT_MIF, "setting SPMI register 0x0\n");
-	platform_mif_acpm_write_reg(platform, 0x0, 0x0);
 
 	if (platform->suspend_handler)
 		r = platform->suspend_handler(interface, platform->suspendresume_data);
@@ -120,10 +239,6 @@ void platform_mif_resume(struct scsc_mif_abs *interface)
 	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
 
 	SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "resuming platform driver\n");
-
-	SCSC_TAG_INFO(PLAT_MIF, "setting SPMI register 0x1\n");
-	platform_mif_acpm_write_reg(platform, 0x0, 0x1);
-
 }
 
 

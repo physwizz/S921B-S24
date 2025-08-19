@@ -2,6 +2,7 @@
  * kunit_notifier.h
  */
 #include <linux/notifier.h>
+#include <kunit/mock.h>
 
 extern int register_kunit_notifier(struct notifier_block *nb);
 extern int unregister_kunit_notifier(struct notifier_block *nb);

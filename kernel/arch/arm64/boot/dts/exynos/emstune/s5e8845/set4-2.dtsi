@@ -21,8 +21,8 @@
 		ecs_dynamic { };
 
 		tex {
-			top-app		= <1>;
-			prio		= <110>;
+			top-app = <110>;
+			foreground = <110>;
 		};
 
 		ntu {

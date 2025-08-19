@@ -17,7 +17,10 @@ extern int contexthub_ipc_write_call(uint8_t *tx, int length, int timeout);
 extern void get_chub_current_sram_dump(void);
 extern u32 ipc_get_chub_mem_size(void);
 
-#define CHUB_ERR_FW_FAULT    3 /* ref. nanohub/chub.h */
+/* ref. nanohub/chub.h */
+#define	CHUB_ERR_ITMON		1 /* ITMON by CHUB */
+#define	CHUB_ERR_S2MPU		2 /* S2MPU by CHUB */
+#define CHUB_ERR_FW_FAULT	3 /* CSP_FAULT by CHUB */
 
 void shub_handle_recv_packet(char *packet, int packet_len)
 {
@@ -34,7 +37,8 @@ void shub_dump_write_file(void *dump_data, int dump_size, int err_type)
 	else
 		dump_type = err_type;
 
-	if (dump_type == 0 || dump_type == CHUB_ERR_FW_FAULT || dump_type >= DUMP_TYPE_BASE)
+	if (dump_type == 0 || dump_type == CHUB_ERR_FW_FAULT || dump_type == CHUB_ERR_ITMON 
+		|| dump_type == CHUB_ERR_S2MPU || dump_type >= DUMP_TYPE_BASE)
 		write_shub_dump_file((char *)dump_data, dump_size, dump_type, 1);
 	else
 		shub_infof("skip save dump file : dump_type : %d", dump_type);

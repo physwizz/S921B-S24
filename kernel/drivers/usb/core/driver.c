@@ -35,6 +35,8 @@
 
 #include "usb.h"
 
+#include <trace/hooks/usb.h>
+
 extern struct usb_hcd *xhci_exynos_hcd;
 extern struct phy *xhci_exynos_phy;
 #define PHY_MODE_SUSPEND_BYPASS		0x35
@@ -1414,7 +1416,7 @@ static int usb_suspend_both(struct usb_device *udev, pm_message_t msg)
 	int			i = 0, n = 0;
 	struct usb_interface	*intf;
 	struct usb_device	*hdev;
-	int			bypass;
+	int			bypass = 0;
 
 	if (!udev || !udev->bus || !udev->bus->root_hub) {
 		pr_info("%s: bypass udev 0\n", __func__);
@@ -1441,6 +1443,10 @@ static int usb_suspend_both(struct usb_device *udev, pm_message_t msg)
 
 	pr_info("%s: bypass = %d\n", __func__, bypass);
 
+	if (bypass)
+		goto done;
+
+	trace_android_rvh_usb_dev_suspend(udev, msg, &bypass);
 	if (bypass)
 		goto done;
 
@@ -1542,7 +1548,7 @@ static int usb_resume_both(struct usb_device *udev, pm_message_t msg)
 	int			i;
 	struct usb_interface	*intf;
 	struct usb_device	*hdev;
-	int			bypass;
+	int			bypass = 0;
 
 	if (!udev || !udev->bus || !udev->bus->root_hub) {
 		pr_info("%s: bypass udev 0\n", __func__);
@@ -1576,6 +1582,10 @@ static int usb_resume_both(struct usb_device *udev, pm_message_t msg)
 
 	pr_info("%s: bypass = %d\n", __func__, bypass);
 
+	if (bypass)
+		goto done;
+
+	trace_android_vh_usb_dev_resume(udev, msg, &bypass);
 	if (bypass)
 		goto done;
 

@@ -1187,10 +1187,11 @@ static netdev_tx_t slsi_net_hw_xmit(struct sk_buff *skb, struct net_device *dev)
 #else
 	if (skb->queue_mapping != SLSI_NETIF_Q_ARP && skb->queue_mapping != SLSI_NETIF_Q_PRIORITY) {
 #endif
-		if (skb_headroom(skb) < (fapi_sig_size(ma_unitdata_req) + 160)) {
+		if (skb_headroom(skb) < SLSI_NETIF_SKB_HEADROOM) {
 			struct sk_buff *skb2 = NULL;
 
-			skb2 = skb_realloc_headroom(skb, fapi_sig_size(ma_unitdata_req) + 160);
+			SLSI_NET_DBG3(dev, SLSI_TX, "headroom (%d) insufficient, realloc\n", skb_headroom(skb));
+			skb2 = skb_realloc_headroom(skb, SLSI_NETIF_SKB_HEADROOM);
 			if (!skb2) {
 				SLSI_NET_WARN(dev, "alloc SKB headroom failed, drop Tx pkt\n");
 				r = -EFAULT;
@@ -1217,6 +1218,17 @@ static netdev_tx_t slsi_net_hw_xmit(struct sk_buff *skb, struct net_device *dev)
 		return NETDEV_TX_OK;
 	}
 #endif
+
+	/*
+	 * The TCP small queue logic allows only up to 1ms of bytes to be queued
+	 * to qdisc by default. But Wi-Fi aggregation needs a larger amount of
+	 * packets to be queued.
+	 * So tweak the pacing shift value to get more amount of data queued without
+	 * local flow control.
+	 * the values can be: 10 (default: 1ms), 9 (2ms), 8 (4ms), 7(8ms), 6(16ms)
+	 * Experiments showed that value of 7 was optimal for the current SoC
+	 */
+	sk_pacing_shift_update(skb->sk, 7);
 
 	/* SKB is owned by slsi_tx_data() ONLY IF ret value is success (0) */
 	r = slsi_tx_data(sdev, dev, skb);

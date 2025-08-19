@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -100,6 +100,7 @@ struct dp_rtpm_tput_policy_context {
  * @enable_tcp_delack: enable Dynamic Configuration of Tcp Delayed Ack
  * @enable_tcp_limit_output: enable TCP limit output
  * @enable_tcp_adv_win_scale: enable  TCP adv window scaling
+ * @tcp_adv_win_scl_disc_lvl_low: Set TCP adv win scale level LOW on disconnect
  * @tcp_delack_thres_high: High Threshold inorder to trigger TCP Del Ack
  * indication
  * @tcp_delack_thres_low: Low Threshold inorder to trigger TCP Del Ack
@@ -164,6 +165,7 @@ struct wlan_dp_psoc_cfg {
 	uint32_t enable_tcp_delack;
 	bool     enable_tcp_limit_output;
 	uint32_t enable_tcp_adv_win_scale;
+	bool tcp_adv_win_scl_disc_lvl_low;
 	uint32_t tcp_delack_thres_high;
 	uint32_t tcp_delack_thres_low;
 	uint32_t tcp_tx_high_tput_thres;
@@ -415,6 +417,7 @@ struct fisa_pkt_hist {
  * @rx_flow_tuple_info: RX tuple information
  * @napi_id: NAPI ID (REO ID) on which the flow is being received
  * @vdev: VDEV handle corresponding to the FLOW
+ * @vdev_id: DP vdev id
  * @dp_intf: DP interface handle corresponding to the flow
  * @bytes_aggregated: Number of bytes currently aggregated
  * @flush_count: Number of Flow flushes done
@@ -458,6 +461,7 @@ struct dp_fisa_rx_sw_ft {
 	struct cdp_rx_flow_tuple_info rx_flow_tuple_info;
 	uint8_t napi_id;
 	struct dp_vdev *vdev;
+	uint8_t vdev_id;
 	struct wlan_dp_intf *dp_intf;
 	uint64_t bytes_aggregated;
 	uint32_t flush_count;
@@ -692,24 +696,34 @@ struct wlan_dp_intf {
 	qdf_list_t dp_link_list;
 };
 
+#define WLAN_DP_LINK_MAGIC 0x5F44505F4C494E4B	/* "_DP_LINK" in ASCII */
+
 /**
  * struct wlan_dp_link - DP link (corresponds to objmgr vdev)
  * @node: list node for membership in the DP links list
+ * @magic: magic number to identify validity of dp_link
  * @link_id: ID for this DP link (Same as vdev_id)
  * @mac_addr: mac address of this link
  * @dp_intf: Parent DP interface for this DP link
  * @vdev: object manager vdev context
  * @vdev_lock: vdev spin lock
  * @conn_info: STA connection information
+ * @destroyed: flag to indicate dp_link destroyed (logical delete)
+ * @inactive_list_elem: list node for membership in dp link inactive list
+ * @cdp_vdev_list: cdp_vdev list to which the dp_link is registered
  */
 struct wlan_dp_link {
 	qdf_list_node_t node;
+	uint64_t magic;
 	uint8_t link_id;
 	struct qdf_mac_addr mac_addr;
 	struct wlan_dp_intf *dp_intf;
 	struct wlan_objmgr_vdev *vdev;
 	qdf_spinlock_t vdev_lock;
 	struct wlan_dp_conn_info conn_info;
+	uint8_t destroyed : 1;
+	TAILQ_ENTRY(wlan_dp_link) inactive_list_elem;
+	TAILQ_HEAD(, cdp_vdev) cdp_vdev_list;
 };
 
 /**
@@ -805,6 +819,8 @@ struct dp_direct_link_context {
  * @skip_fisa_param.skip_fisa: Flag to skip FISA aggr inside @skip_fisa_param
  * @skip_fisa_param.fisa_force_flush: Force flush inside @skip_fisa_param
  * @fst_cmem_size: CMEM size for FISA flow table
+ * @inactive_dp_link_list: inactive DP links list
+ * @dp_link_del_lock: DP link delete operation lock
  */
 struct wlan_dp_psoc_context {
 	struct wlan_objmgr_psoc *psoc;
@@ -905,6 +921,8 @@ struct wlan_dp_psoc_context {
 	uint64_t fst_cmem_size;
 
 #endif
+	TAILQ_HEAD(, wlan_dp_link) inactive_dp_link_list;
+	qdf_spinlock_t dp_link_del_lock;
 };
 
 #ifdef WLAN_DP_PROFILE_SUPPORT

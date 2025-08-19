@@ -16,12 +16,13 @@ static struct {
 	struct ecs_governor		*gov;
 	struct list_head		gov_list;
 
-	/* ecs request */
-	struct list_head		requests;
-	struct cpumask			requested_cpus;
+	/* ecs MAX request */
+	struct list_head		requests_max;
+	struct cpumask			requested_max_cpus;
 
-	/* ecs user request */
-	struct cpumask			user_cpus;
+	/* ecs MIN request */
+	struct list_head		requests_min;
+	struct cpumask			requested_min_cpus;
 
 	struct kobject *ecs_kobj;
 	struct kobject *governor_kobj;
@@ -178,8 +179,8 @@ void update_ecs_cpus(void)
 	cpumask_copy(&prev_cpus, &ecs.cpus);
 
 	cpumask_and(&ecs.cpus, get_governor_cpus(), cpu_possible_mask);
-	cpumask_and(&ecs.cpus, &ecs.cpus, &ecs.requested_cpus);
-	cpumask_and(&ecs.cpus, &ecs.cpus, &ecs.user_cpus);
+	cpumask_or(&ecs.cpus, &ecs.cpus, &ecs.requested_min_cpus);
+	cpumask_and(&ecs.cpus, &ecs.cpus, &ecs.requested_max_cpus);
 
 	if (cpumask_subset(&prev_cpus, &ecs.cpus)) {
 		raw_spin_unlock_irqrestore(&ecs_lock, flags);
@@ -258,11 +259,12 @@ struct ecs_request {
 	struct list_head	list;
 };
 
-static struct ecs_request *ecs_find_request(char *name)
+static struct ecs_request *ecs_find_request(char *name, enum ecs_type type)
 {
 	struct ecs_request *req;
+	struct list_head *head = type == ECS_MAX ? &ecs.requests_max : &ecs.requests_min;
 
-	list_for_each_entry(req, &ecs.requests, list)
+	list_for_each_entry(req, head, list)
 		if (!strcmp(req->name, name))
 			return req;
 
@@ -271,25 +273,33 @@ static struct ecs_request *ecs_find_request(char *name)
 
 static void ecs_request_combine_and_apply(void)
 {
-	struct cpumask mask;
+	struct cpumask max_mask;
+	struct cpumask min_mask;
 	struct ecs_request *req;
 	char buf[10];
 
-	cpumask_setall(&mask);
+	cpumask_setall(&max_mask);
+	cpumask_clear(&min_mask);
 
-	list_for_each_entry(req, &ecs.requests, list)
-		cpumask_and(&mask, &mask, &req->cpus);
+	list_for_each_entry(req, &ecs.requests_max, list)
+		cpumask_and(&max_mask, &max_mask, &req->cpus);
 
-	if (cpumask_empty(&mask) || !cpumask_test_cpu(0, &mask)) {
-		scnprintf(buf, sizeof(buf), "%*pbl", cpumask_pr_args(&mask));
+	if (cpumask_empty(&max_mask) || !cpumask_test_cpu(0, &max_mask)) {
+		scnprintf(buf, sizeof(buf), "%*pbl", cpumask_pr_args(&max_mask));
 		panic("ECS cpumask(%s) is wrong\n", buf);
 	}
+	cpumask_copy(&ecs.requested_max_cpus, &max_mask);
 
-	cpumask_copy(&ecs.requested_cpus, &mask);
+	list_for_each_entry(req, &ecs.requests_min, list)
+		cpumask_or(&min_mask, &min_mask, &req->cpus);
+
+	cpumask_and(&min_mask, &min_mask, cpu_possible_mask);
+	cpumask_copy(&ecs.requested_min_cpus, &min_mask);
+
 	update_ecs_cpus();
 }
 
-int ecs_request_register(char *name, const struct cpumask *mask)
+int ecs_request_register(char *name, const struct cpumask *mask, enum ecs_type type)
 {
 	struct ecs_request *req;
 	char buf[ECS_USER_NAME_LEN];
@@ -303,18 +313,25 @@ int ecs_request_register(char *name, const struct cpumask *mask)
 	raw_spin_lock_irqsave(&ecs_req_lock, flags);
 
 	/* check whether name is already register or not */
-	if (ecs_find_request(name))
+	if (ecs_find_request(name, type))
 		panic("Failed to register ecs request! already existed\n");
 
 	/* init new request information */
-	cpumask_copy(&req->cpus, mask);
+	if (mask)
+		cpumask_copy(&req->cpus, mask);
+	else
+		cpumask_clear(&req->cpus);
 	strcpy(req->name, name);
 
 	/* register request list */
-	list_add(&req->list, &ecs.requests);
+	if (type == ECS_MAX)
+		list_add(&req->list, &ecs.requests_max);
+	else
+		list_add(&req->list, &ecs.requests_min);
 
 	scnprintf(buf, sizeof(buf), "%*pbl", cpumask_pr_args(&req->cpus));
-	pr_info("Register new ECS request [name:%s, mask:%s]\n", req->name, buf);
+	pr_info("Register new ECS request [name:%s, mask:%s, type=%s]\n",
+				req->name, buf, type ? "MAX" : "MIN");
 
 	/* applying new request */
 	ecs_request_combine_and_apply();
@@ -326,14 +343,14 @@ int ecs_request_register(char *name, const struct cpumask *mask)
 EXPORT_SYMBOL_GPL(ecs_request_register);
 
 /* remove request on the request list of exynos_core_sparing request */
-int ecs_request_unregister(char *name)
+int ecs_request_unregister(char *name, enum ecs_type type)
 {
 	struct ecs_request *req;
 	unsigned long flags;
 
 	raw_spin_lock_irqsave(&ecs_req_lock, flags);
 
-	req = ecs_find_request(name);
+	req = ecs_find_request(name, type);
 	if (!req) {
 		raw_spin_unlock_irqrestore(&ecs_req_lock, flags);
 		return -ENODEV;
@@ -351,14 +368,14 @@ int ecs_request_unregister(char *name)
 }
 EXPORT_SYMBOL_GPL(ecs_request_unregister);
 
-int ecs_request(char *name, const struct cpumask *mask)
+int ecs_request(char *name, const struct cpumask *mask, enum ecs_type type)
 {
 	struct ecs_request *req;
 	unsigned long flags;
 
 	raw_spin_lock_irqsave(&ecs_req_lock, flags);
 
-	req = ecs_find_request(name);
+	req = ecs_find_request(name, type);
 	if (!req) {
 		raw_spin_unlock_irqrestore(&ecs_req_lock, flags);
 		return -EINVAL;
@@ -384,65 +401,95 @@ struct kobject *ecs_get_governor_object(void)
  ******************************************************************************/
 
 #define STR_LEN (6)
-static ssize_t store_ecs_cpus(struct kobject *kobj,
-		struct kobj_attribute *attr, const char *buf, size_t count)
+static int __store_ecs_cpus(const char *buf, struct cpumask *mask)
 {
 	int ret;
 	char str[STR_LEN];
-	struct cpumask mask;
 
 	if (strlen(buf) >= STR_LEN)
 		return -EINVAL;
 
-	if (!sscanf(buf, "%s", str))
+	if (!sscanf(buf, "%5s", str))
 		return -EINVAL;
 
 	if (str[0] == '0' && str[1] =='x')
-		ret = cpumask_parse(str + 2, &mask);
+		ret = cpumask_parse(str + 2, mask);
 	else
-		ret = cpumask_parse(str, &mask);
+		ret = cpumask_parse(str, mask);
 
 	if (ret){
 		pr_err("input of req_cpus(%s) is not correct\n", buf);
 		return -EINVAL;
 	}
 
-	cpumask_copy(&ecs.user_cpus, &mask);
-	update_ecs_cpus();
+	return ret;
+}
+
+static ssize_t store_ecs_min_cpus(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	struct cpumask mask;
+
+	if (__store_ecs_cpus(buf, &mask))
+		return -EINVAL;
+
+	ecs_request("SYSFS", &mask, ECS_MIN);
 
 	return count;
 }
+static struct kobj_attribute ecs_min_cpus_attr =
+__ATTR(cpus, 0644, NULL, store_ecs_min_cpus);
+
+static ssize_t store_ecs_max_cpus(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	struct cpumask mask;
+
+	if (__store_ecs_cpus(buf, &mask))
+		return -EINVAL;
+
+	ecs_request("SYSFS", &mask, ECS_MAX);
+
+	return count;
+}
+static struct kobj_attribute ecs_max_cpus_attr =
+__ATTR(cpus, 0644, NULL, store_ecs_max_cpus);
 
 static ssize_t show_ecs_cpus(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
+	struct ecs_request *req;
 	int ret = 0;
 
 	/* All combined CPUs */
 	ret += snprintf(buf + ret, PAGE_SIZE - ret,
-				"cpus : %#x\n",
+				"cur_cpus : %#x\n",
 				*(unsigned int *)cpumask_bits(&ecs.cpus));
 
 	/* Governor CPUs */
 	ret += snprintf(buf + ret, PAGE_SIZE - ret,
-				"* gov cpus : %#x\n",
+				"* governor target cpus : %#x\n",
 				*(unsigned int *)cpumask_bits(get_governor_cpus()));
 
 	/* Requested from kernel CPUs */
 	ret += snprintf(buf + ret, PAGE_SIZE - ret,
-				"* kernel requsted cpus : %#x\n",
-				*(unsigned int *)cpumask_bits(&ecs.requested_cpus));
-
-	/* Requested from user CPUs */
+				"* requsted max cpus : %#x\n",
+				*(unsigned int *)cpumask_bits(&ecs.requested_max_cpus));
+	list_for_each_entry(req, &ecs.requests_max, list)
 	ret += snprintf(buf + ret, PAGE_SIZE - ret,
-				"* user requested cpus : %#x\n",
-				*(unsigned int *)cpumask_bits(&ecs.user_cpus));
+			"     %s: %#x\n", req->name, *(unsigned int *)cpumask_bits(&req->cpus));
+
+	ret += snprintf(buf + ret, PAGE_SIZE - ret,
+				"* requsted min cpus : %#x\n",
+				*(unsigned int *)cpumask_bits(&ecs.requested_min_cpus));
+	list_for_each_entry(req, &ecs.requests_min, list)
+	ret += snprintf(buf + ret, PAGE_SIZE - ret,
+			"     %s: %#x\n", req->name, *(unsigned int *)cpumask_bits(&req->cpus));
 
 	return ret;
 }
-
 static struct kobj_attribute ecs_cpus_attr =
-__ATTR(cpus, 0644, show_ecs_cpus, store_ecs_cpus);
+__ATTR(cpus, 0444, show_ecs_cpus, NULL);
 
 static ssize_t store_ecs_scaling_governor(struct kobject *kobj,
 		struct kobj_attribute *attr, const char *buf, size_t count)
@@ -497,11 +544,19 @@ static int ecs_sysfs_init(struct kobject *ems_kobj)
 
 	ret = sysfs_create_file(ecs.ecs_kobj, &ecs_cpus_attr.attr);
 	if (ret)
-		pr_warn("%s: failed to create ecs sysfs\n", __func__);
+		pr_warn("%s: failed to create ecs_cpus sysfs\n", __func__);
+
+	ret = sysfs_create_file(ecs.ecs_kobj, &ecs_min_cpus_attr.attr);
+	if (ret)
+		pr_warn("%s: failed to create ecs_min_cpus sysfs\n", __func__);
+
+	ret = sysfs_create_file(ecs.ecs_kobj, &ecs_max_cpus_attr.attr);
+	if (ret)
+		pr_warn("%s: failed to create ecs_max_cpus sysfs\n", __func__);
 
 	ret = sysfs_create_file(ecs.governor_kobj, &ecs_scaling_governor_attr.attr);
 	if (ret)
-		pr_warn("%s: failed to create ecs sysfs\n", __func__);
+		pr_warn("%s: failed to create ecs_scaling_governor sysfs\n", __func__);
 
 	return 0;
 }
@@ -514,13 +569,16 @@ int ecs_init(struct kobject *ems_kobj)
 		return -ENOMEM;
 	}
 
+	INIT_LIST_HEAD(&ecs.requests_max);
+	INIT_LIST_HEAD(&ecs.requests_min);
+	INIT_LIST_HEAD(&ecs.gov_list);
+
 	ecs.gov = NULL;
 	cpumask_copy(&ecs.cpus, cpu_possible_mask);
-	cpumask_copy(&ecs.requested_cpus, cpu_possible_mask);
-	cpumask_copy(&ecs.user_cpus, cpu_possible_mask);
-
-	INIT_LIST_HEAD(&ecs.requests);
-	INIT_LIST_HEAD(&ecs.gov_list);
+	cpumask_copy(&ecs.requested_max_cpus, cpu_possible_mask);
+	cpumask_clear(&ecs.requested_min_cpus);
+	ecs_request_register("SYSFS", cpu_possible_mask, ECS_MAX);
+	ecs_request_register("SYSFS", NULL, ECS_MIN);
 
 	ecs_sysfs_init(ems_kobj);
 

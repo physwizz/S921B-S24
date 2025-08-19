@@ -69,41 +69,66 @@ static inline void mxlog_phase5_message_handler(const void *message,
 	if (mxlog && elogmsg) {
 		int num_args = 0;
 		char spare[MAX_SPARE_FMT + TSTAMP_LEN] = {};
+		char values[MAX_SPARE_FMT] = {};
 		char *fmt = NULL;
 		size_t fmt_sz = 0;
 		u32 smap = 0, lmap = 0, strmap = 0;
 		u32 *args = NULL;
 
-		/* Check OFFSET sanity... beware of FW guys :D ! */
-		if (elogmsg->offset >= MXLS_SZ(mxlog)) {
-			SCSC_TAG_ERR(MX_FW,
-				     "Received fmtstr OFFSET(%d) is OUT OF range(%zd)...skip..\n",
-				     elogmsg->offset, MXLS_SZ(mxlog));
-			return;
-		}
 		args = (u32 *)(elogmsg + 1);
 		num_args =
 			(length - MINIMUM_MXLOG_MSG_LEN_BYTES) /
 			MXLOG_ELEMENT_SIZE;
-		fmt = (char  *)(MXLS_DATA(mxlog) + elogmsg->offset);
-		/* Avoid being fooled by a NON NULL-terminated strings too ! */
-		fmt_sz = strnlen(fmt, MXLS_SZ(mxlog) - elogmsg->offset);
-		if (fmt_sz >= MAX_SPARE_FMT - 1) {
+
+		/* Check OFFSET sanity... beware of FW guys :D ! */
+		if (elogmsg->offset >= MXLS_SZ(mxlog) && elogmsg->offset < MXLOG_BINARY_FID) {
 			SCSC_TAG_ERR(MX_FW,
+				     "Received fmtstr OFFSET(%d) is OUT OF range(%zd)...skip..\n",
+				     elogmsg->offset, MXLS_SZ(mxlog));
+			return;
+
+		/* Check OFFSET is binary mxlog */
+		} else if (elogmsg->offset >= MXLOG_BINARY_FID) {
+			char arg_fmt[] = "%08x";
+			int i, len;
+			len = 0;
+
+			for (i = 0; i < num_args; i++) {
+				len += snprintf(values + len, MAX_SPARE_FMT - len, arg_fmt, args[i]);
+				if (i < (num_args - 1))
+					len += snprintf(values + len, MAX_SPARE_FMT - len, "%c", ':');
+			}
+			len = snprintf(spare, MAX_SPARE_FMT + TSTAMP_LEN - 2,
+					SCSC_PREFIX"%08X FID[%u]: %s",
+					elogmsg->timestamp, ~elogmsg->offset, values);
+
+			snprintf(spare + len, sizeof("\n"), "\n");
+			SCSC_TAG_LVL(MX_FW, level, spare);
+			return;
+		} else {
+			fmt = (char  *)(MXLS_DATA(mxlog) + elogmsg->offset);
+			fmt_sz = strnlen(fmt, MXLS_SZ(mxlog) - elogmsg->offset);
+
+			/* Avoid being fooled by a NON NULL-terminated strings too ! */
+			if (fmt_sz >= MAX_SPARE_FMT - 1) {
+				SCSC_TAG_ERR(MX_FW,
 				     "UNSUPPORTED message length %zd ... truncated.\n",
 				     fmt_sz);
-			fmt_sz = MAX_SPARE_FMT - 2;
-		}
-		/* Pre-Process fmt string to be able to do proper casting */
-		if (num_args)
-			build_len_sign_maps(fmt, &smap, &lmap, &strmap);
+				fmt_sz = MAX_SPARE_FMT - 2;
+			}
 
-		/* Add FW provided tstamp on front and proper \n at
-		 * the end when needed
-		 */
-		snprintf(spare, MAX_SPARE_FMT + TSTAMP_LEN - 2, SCSC_PREFIX"%08X %s%c",
-			 elogmsg->timestamp, fmt,
-			 (fmt[fmt_sz] != '\n') ? '\n' : '\0');
+			/* Pre-Process fmt string to be able to do proper casting */
+			if (num_args)
+	                        build_len_sign_maps(fmt, &smap, &lmap, &strmap);
+
+			/* Add FW provided tstamp on front and proper \n at
+			 * the end when needed
+			 */
+			snprintf(spare, MAX_SPARE_FMT + TSTAMP_LEN - 2, SCSC_PREFIX"%08X %s%c",
+				 elogmsg->timestamp, fmt,
+				 (fmt[fmt_sz] != '\n') ? '\n' : '\0');
+		}
+
 		fmt = spare;
 
 		switch (num_args) {

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -30,6 +30,7 @@
 #include "wlan_mlme_api.h"
 #include "wlan_reg_ucfg_api.h"
 #include "wlan_cm_tgt_if_tx_api.h"
+#include "wlan_connectivity_logging.h"
 
 #if defined(WLAN_FEATURE_HOST_ROAM) || defined(WLAN_FEATURE_ROAM_OFFLOAD)
 /**
@@ -887,6 +888,17 @@ QDF_STATUS wlan_cm_set_roam_band_bitmask(struct wlan_objmgr_psoc *psoc,
 					 uint8_t vdev_id,
 					 uint32_t roam_band_bitmask);
 
+/**
+ * wlan_cm_set_btm_config() - Set btm roaming disable flag for vdev
+ * @psoc: psoc pointer
+ * @vdev_id: vdev id
+ * @is_disable_btm: to check whether btm roaming is disabled or not
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS wlan_cm_set_btm_config(struct wlan_objmgr_psoc *psoc,
+				  uint8_t vdev_id, bool is_disable_btm);
+
 #ifdef FEATURE_RX_LINKSPEED_ROAM_TRIGGER
 /**
  * struct roam_link_speed_cfg - link speed state config
@@ -1363,6 +1375,30 @@ QDF_STATUS
 wlan_cm_add_all_link_probe_rsp_to_scan_db(struct wlan_objmgr_psoc *psoc,
 				struct roam_scan_candidate_frame *candidate);
 
+/**
+ * wlan_cm_is_mbo_ap_without_pmf() - Check if the connected AP is MBO without
+ *                                   PMF
+ * @psoc: PSOC pointer
+ * @vdev_id: vdev id
+ *
+ * Return: True if connected AP is MBO capable without PMF
+ */
+bool wlan_cm_is_mbo_ap_without_pmf(struct wlan_objmgr_psoc *psoc,
+				   uint8_t vdev_id);
+
+/**
+ * wlan_cm_roam_btm_block_event() - Send BTM block/drop logging event
+ * @vdev_id: vdev id
+ * @token: BTM token
+ * @reason: Reason for dropping the BTM frame
+ *
+ * This is wrapper for cm_roam_btm_block_event()
+ *
+ * Return: QDF_STATUS
+ */
+QDF_STATUS
+wlan_cm_roam_btm_block_event(uint8_t vdev_id, uint8_t token,
+			     enum wlan_diag_btm_block_reason reason);
 #else
 static inline
 void wlan_cm_roam_activate_pcl_per_vdev(struct wlan_objmgr_psoc *psoc,
@@ -1456,6 +1492,13 @@ wlan_cm_set_roam_band_bitmask(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
 			      uint32_t roam_band_bitmask)
 {
 	return QDF_STATUS_E_NOSUPPORT;
+}
+
+static inline QDF_STATUS wlan_cm_set_btm_config(struct wlan_objmgr_psoc *psoc,
+						uint8_t vdev_id,
+						bool is_disable_btm)
+{
+	return QDF_STATUS_SUCCESS;
 }
 
 static inline
@@ -1624,6 +1667,20 @@ wlan_cm_add_all_link_probe_rsp_to_scan_db(struct wlan_objmgr_psoc *psoc,
 				struct roam_scan_candidate_frame *candidate)
 {
 	return QDF_STATUS_SUCCESS;
+}
+
+static inline
+bool wlan_cm_is_mbo_ap_without_pmf(struct wlan_objmgr_psoc *psoc,
+				   uint8_t vdev_id)
+{
+	return false;
+}
+
+static inline QDF_STATUS
+wlan_cm_roam_btm_block_event(uint8_t vdev_id, uint8_t token,
+			     enum wlan_diag_btm_block_reason reason)
+{
+	return QDF_STATUS_E_NOSUPPORT;
 }
 #endif /* WLAN_FEATURE_ROAM_OFFLOAD */
 

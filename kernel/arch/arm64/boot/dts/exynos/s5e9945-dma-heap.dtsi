@@ -145,6 +145,5 @@
 
 	rbin: rbin {
 		size = <0x19000000>;
-		expand_size = <0x1F400000>;
 	};
 };

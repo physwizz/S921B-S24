@@ -1,5 +1,5 @@
 /*
- * File: include/ddar/dd.h
+ * File: include/ddar/dd_i.h
  *
  * Samsung dual DAR driver cache I/O relay to user space daemon interface
  *
@@ -32,7 +32,6 @@
 #define DD_POLICY_TRACE_FILE			(0x40)
 #define DD_POLICY_SECURE_ERASE			(0x80)
 
-#define AID_VENDOR_DDAR_DE_ACCESS		(5300)
 struct dd_policy {
 	char version; // dualdar feature version
 	char userid; // Android userid

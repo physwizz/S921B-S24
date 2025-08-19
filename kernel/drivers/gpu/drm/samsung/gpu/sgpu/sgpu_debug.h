@@ -26,6 +26,12 @@
 #endif
 
 struct sgpu_debug {
+	bool pagefault_to_panic;
+
+#ifdef CONFIG_DEBUG_FS
+	struct dentry *debugfs_pagefault_to_panic;
+#endif
+
 #if IS_ENABLED(CONFIG_EXYNOS_S2MPU)
 	struct s2mpu_notifier_block s2mpu_nb[NR_SGPU_S2MPU_SUBSYS];
 #endif

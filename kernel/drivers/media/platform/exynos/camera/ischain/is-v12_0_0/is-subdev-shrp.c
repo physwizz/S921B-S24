@@ -534,7 +534,7 @@ static int __shrp_hf_otf_in_cfg(struct is_device_ischain *device,
 
 	mdbgs_ischain(4, "%s : HF OTF enable\n", device, __func__);
 
-	set_bit(PARAM_RGBP_OTF_OUTPUT_HF, frame->pmap);
+	set_bit(PARAM_RGBP_OTF_OUTPUT_HF, pmap);
 	set_bit(PARAM_MCFP_HF, frame->pmap);
 
 	shrp_otf_out->cmd = OTF_OUTPUT_COMMAND_ENABLE;

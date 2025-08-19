@@ -30,7 +30,7 @@
 #include <linux/gpio.h>
 #include <linux/delay.h>
 #include <linux/pm_wakeup.h>
-#include <common_define.h>
+#include "common_define.h"
 
 typedef struct gpio_manager gpio_manager;
 

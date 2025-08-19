@@ -27,6 +27,14 @@
 			min-cpus = "0-5";
 		};
 
+		gsc {
+			level1 {
+				level = <1>;
+				up_threshold = <1200>;
+				down_threshold = <1024>;
+			};
+		};
+
 		fclamp {
 			monitor-group {
 				top-app         = <1>;

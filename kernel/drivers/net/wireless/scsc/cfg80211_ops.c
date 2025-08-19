@@ -3535,7 +3535,7 @@ int slsi_start_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	r = slsi_mlme_start(sdev, dev, dev->dev_addr, settings, wpa_ie_pos, wmm_ie_pos, append_vht_ies);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 22))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 94))
         cfg80211_ch_switch_notify(dev, &settings->chandef, 0, 0);
 #elif (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 41))
 	cfg80211_ch_switch_notify(dev, &settings->chandef, 0);
@@ -4733,8 +4733,9 @@ struct ieee80211_sta_vht_cap       slsi_vht_cap = {
 	},
 };
 
-#ifdef CONFIG_SCSC_WLAN_SUPPORT_6G
-static struct ieee80211_sband_iftype_data slsi_sta_he_cap[] = {
+#if defined(CONFIG_SCSC_WLAN_HE) || defined(CONFIG_SCSC_WLAN_SUPPORT_6G)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+static struct ieee80211_sband_iftype_data slsi_he_cap[] = {
 	{
 		.types_mask = BIT(NL80211_IFTYPE_STATION) |
 			BIT(NL80211_IFTYPE_AP) |
@@ -4788,59 +4789,6 @@ static struct ieee80211_sband_iftype_data slsi_sta_he_cap[] = {
 		},
 		.he_6ghz_capa = {
 			.capa = 0,
-		},
-	},
-};
-#endif
-#ifdef CONFIG_SCSC_WLAN_HE
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
-static const struct ieee80211_sband_iftype_data slsi_softap_he_cap[] = {
-	{
-		.types_mask = BIT(NL80211_IFTYPE_AP),
-		.he_cap = {
-			.has_he = true,
-			.he_cap_elem = {
-				.mac_cap_info[0] =
-						IEEE80211_HE_MAC_CAP0_HTC_HE,
-				.mac_cap_info[1] =
-						IEEE80211_HE_MAC_CAP1_TF_MAC_PAD_DUR_16US,
-				.mac_cap_info[3] =
-						IEEE80211_HE_MAC_CAP3_OMI_CONTROL,
-				.phy_cap_info[0] =
-						IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_IN_2G |
-						IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_80MHZ_IN_5G |
-						IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G |
-						IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_RU_MAPPING_IN_2G,
-				.phy_cap_info[1] =
-						IEEE80211_HE_PHY_CAP1_DEVICE_CLASS_A |
-						IEEE80211_HE_PHY_CAP1_LDPC_CODING_IN_PAYLOAD |
-						IEEE80211_HE_PHY_CAP1_HE_LTF_AND_GI_FOR_HE_PPDUS_0_8US,
-				.phy_cap_info[2] =
-						IEEE80211_HE_PHY_CAP2_NDP_4x_LTF_AND_3_2US,
-				.phy_cap_info[6] =
-						IEEE80211_HE_PHY_CAP6_PPE_THRESHOLD_PRESENT,
-				.phy_cap_info[7] =
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 13, 0))
-						IEEE80211_HE_PHY_CAP7_POWER_BOOST_FACTOR_SUPP |
-#else
-						IEEE80211_HE_PHY_CAP7_POWER_BOOST_FACTOR_AR |
-#endif
-						IEEE80211_HE_PHY_CAP7_MAX_NC_1,
-				.phy_cap_info[9] =
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
-						IEEE80211_HE_PHY_CAP9_NOMIMAL_PKT_PADDING_16US |
-#endif
-						IEEE80211_HE_PHY_CAP9_LONGER_THAN_16_SIGB_OFDM_SYM |
-						IEEE80211_HE_PHY_CAP9_TX_1024_QAM_LESS_THAN_242_TONE_RU |
-						IEEE80211_HE_PHY_CAP9_RX_1024_QAM_LESS_THAN_242_TONE_RU,
-			},
-			.he_mcs_nss_supp = {
-				.rx_mcs_80 = cpu_to_le16(0xfffa),
-				.tx_mcs_80 = cpu_to_le16(0xfffa),
-				.rx_mcs_160 = cpu_to_le16(0xfffa),
-				.tx_mcs_160 = cpu_to_le16(0xfffa),
-			},
-			.ppe_thres = { 0x79, 0x1C, 0xC7, 0x71, 0x1C, 0xC7, 0x71 },
 		},
 	},
 };
@@ -5048,10 +4996,10 @@ struct slsi_dev                           *slsi_cfg80211_new(struct device *dev)
 
 #ifdef CONFIG_SCSC_WLAN_HE
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
-	slsi_band_2ghz.iftype_data = slsi_softap_he_cap;
-	slsi_band_2ghz.n_iftype_data = ARRAY_SIZE(slsi_softap_he_cap);
-	slsi_band_5ghz.iftype_data = slsi_softap_he_cap;
-	slsi_band_5ghz.n_iftype_data = ARRAY_SIZE(slsi_softap_he_cap);
+	slsi_band_2ghz.iftype_data = slsi_he_cap;
+	slsi_band_2ghz.n_iftype_data = ARRAY_SIZE(slsi_he_cap);
+	slsi_band_5ghz.iftype_data = slsi_he_cap;
+	slsi_band_5ghz.n_iftype_data = ARRAY_SIZE(slsi_he_cap);
 #endif
 #endif
 
@@ -5221,11 +5169,13 @@ static bool slsi_update_wiphy_6ghz(struct slsi_dev *sdev)
 
 	he_6ghz_capa = le16_to_cpu(*(u16 *)sdev->fw_he_cap);
 
-	for (i = 0; i < ARRAY_SIZE(slsi_sta_he_cap); i++)
-		slsi_sta_he_cap[i].he_6ghz_capa.capa = cpu_to_le16(he_6ghz_capa);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+	for (i = 0; i < ARRAY_SIZE(slsi_he_cap); i++)
+		slsi_he_cap[i].he_6ghz_capa.capa = cpu_to_le16(he_6ghz_capa);
 
-	slsi_band_6ghz.iftype_data = slsi_sta_he_cap;
-	slsi_band_6ghz.n_iftype_data = ARRAY_SIZE(slsi_sta_he_cap);
+	slsi_band_6ghz.iftype_data = slsi_he_cap;
+	slsi_band_6ghz.n_iftype_data = ARRAY_SIZE(slsi_he_cap);
+#endif
 
 	sdev->wiphy->bands[NL80211_BAND_6GHZ] = &slsi_band_6ghz;
 	sdev->device_config.band_6G = &slsi_band_6ghz;

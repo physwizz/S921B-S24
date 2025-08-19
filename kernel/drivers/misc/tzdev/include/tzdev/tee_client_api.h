@@ -16,7 +16,7 @@
 
 #include <linux/types.h>
 
-#define TEEC_CONFIG_SHAREDMEM_MAX_SIZE		0x1000000
+#define TEEC_CONFIG_SHAREDMEM_MAX_SIZE		0x2000000
 
 /* standard error codes */
 #define TEEC_SUCCESS				0x00000000

@@ -877,6 +877,7 @@
 #define MFC_MST_OVER_TEMP_INT	0x0024
 #define MFC_ISET_PCR			0x0169
 #define MFC_RES_PCR				0x016A
+#define PCR_FIX_MODE			0x0168
 #endif
 
 /* F/W Update & Verification ERROR CODES */
@@ -1126,6 +1127,7 @@ struct mfc_charger_platform_data {
 #endif
 	u32 mpp_epp_vout;
 	u32 mpp_epp_def_power;
+	u32 mpp_epp_max_count;
 };
 
 #define mfc_charger_platform_data_t \
@@ -1171,6 +1173,7 @@ struct mfc_charger_data {
 	struct wakeup_source *wpc_rx_phm_ws;
 	struct wakeup_source *wpc_phm_exit_ws;
 	struct wakeup_source *epp_clear_ws;
+	struct wakeup_source *epp_count_ws;
 	struct workqueue_struct *wqueue;
 	struct work_struct wcin_work;
 	struct delayed_work wpc_det_work;
@@ -1203,6 +1206,7 @@ struct mfc_charger_data {
 	struct delayed_work wpc_deactivate_work;
 	struct delayed_work wpc_phm_exit_work;
 	struct delayed_work epp_clear_timer_work;
+	struct delayed_work epp_count_work;
 
 	struct alarm phm_alarm;
 
@@ -1296,6 +1300,7 @@ struct mfc_charger_data {
 	unsigned int wireless_fw_mode_param;
 #endif
 	int epp_time;
+	int epp_count;
 
 	char d_buf[MFC_BAT_DUMP_SIZE];
 };

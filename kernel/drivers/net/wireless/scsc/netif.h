@@ -52,8 +52,16 @@
 
 #define SLSI_NETIF_Q_PER_PEER   4
 
+/* From HIP5 the signal is not inlined with payload anymore.
+ * there is no need of a large headroom.
+ */
+#ifdef CONFIG_SCSC_WLAN_HIP5
+/* sizeof ma_unitdata_req [36] (needed for Host only) + reserved[28]  */
+#define SLSI_NETIF_SKB_HEADROOM (64)
+#else
 /* sizeof ma_unitdata_req [36] + pad [30] + pad_words [2]  */
 #define SLSI_NETIF_SKB_HEADROOM (68 + 160)
+#endif
 #define SLSI_NETIF_SKB_TAILROOM 0
 #define SLSI_SYS_ERROR_RECOVERY_TIMEOUT  1000 /* 1s timeout */
 

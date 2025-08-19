@@ -55,6 +55,7 @@ static int is_hw_shrp_handle_interrupt0(u32 id, void *context)
 			(hw_ip->num_buffers & 0xffff), &hw_shrp->irq_state[SHRP0_INTR])
 			& shrp_hw_g_int_mask0(get_base(hw_ip));
 
+	is_hw_trace_logger(hw_ip, status);
 	msdbg_hw(2, "SHRP0 interrupt status(0x%x)\n", instance, hw_ip, status);
 
 	if (!test_bit(HW_OPEN, &hw_ip->state)) {
@@ -1257,6 +1258,9 @@ static int is_hw_shrp_notify_timeout(struct is_hw_ip *hw_ip, u32 instance)
 	}
 
 	shrp_hw_dump(hw_ip->pmio, HW_DUMP_DBG_STATE);
+
+	print_hex_dump(KERN_INFO, "SHRP config:", DUMP_PREFIX_OFFSET, 16, 1,
+			(u32 *)&hw_shrp->config, sizeof(struct is_shrp_config), true);
 
 	return CALL_HW_HELPER_OPS(hw_ip, notify_timeout, instance, &hw_shrp->lib[instance]);
 }

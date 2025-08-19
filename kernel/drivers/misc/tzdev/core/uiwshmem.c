@@ -15,7 +15,6 @@
 #include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/kernel.h>
-#include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/uaccess.h>
@@ -25,6 +24,7 @@
 #include "core/log.h"
 #include "core/notifier.h"
 #include "core/subsystem.h"
+#include "core/sysdep.h"
 #include "debug/pmf.h"
 #include "tzdev_internal.h"
 
@@ -123,8 +123,7 @@ static int tz_uiwshmem_mmap(struct file *filp, struct vm_area_struct *vma)
 		goto out;
 	}
 
-	vm_flags_set(vma, VM_DONTCOPY | VM_DONTEXPAND);
-	vm_flags_clear(vma, VM_MAYEXEC);
+	sysdep_vm_flags_mod(vma, (VM_DONTCOPY | VM_DONTEXPAND), VM_MAYEXEC);
 
 	ret = tzdev_iw_shmem_map_user(priv->id, vma);
 out:

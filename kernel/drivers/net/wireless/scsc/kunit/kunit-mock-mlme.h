@@ -12,7 +12,6 @@
 #define slsi_mlme_reassociate_resp(args...)			kunit_mock_slsi_mlme_reassociate_resp(args)
 #define slsi_mlme_configure_monitor_mode(args...)		kunit_mock_slsi_mlme_configure_monitor_mode(args)
 #define slsi_mlme_stop_link_stats_req(args...)			kunit_mock_slsi_mlme_stop_link_stats_req(args)
-#define slsi_mlme_twt_suspend(args...)				kunit_mock_slsi_mlme_twt_suspend(args)
 #define slsi_mlme_connect_resp(args...)				kunit_mock_slsi_mlme_connect_resp(args)
 #define slsi_mlme_add_sched_scan(args...)			kunit_mock_slsi_mlme_add_sched_scan(args)
 #define slsi_mlme_register_action_frame(args...)		kunit_mock_slsi_mlme_register_action_frame(args)
@@ -139,12 +138,6 @@ static int kunit_mock_slsi_mlme_configure_monitor_mode(struct slsi_dev *sdev, st
 }
 
 static int kunit_mock_slsi_mlme_stop_link_stats_req(struct slsi_dev *sdev, u16 stats_stop_mask)
-{
-	return 0;
-}
-
-static int kunit_mock_slsi_mlme_twt_suspend(struct slsi_dev *sdev, struct net_device *dev,
-					    u16 setup_id, u32 suspend_duration)
 {
 	return 0;
 }

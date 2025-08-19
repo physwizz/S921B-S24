@@ -19,7 +19,7 @@
 #include "./kunit/kunit_mifintrbit.c"
 #endif
 
-const char *wlbt_irq_types[39] = {
+const char *wlbt_irq_types[40] = {
 	"DEFAULT_IRQ_TYPE",
 	"GDB_TRANSPORT_FXM_1_INPUT_TYPE",
 	"GDB_TRANSPORT_FXM_1_OUTPUT_TYPE",
@@ -57,6 +57,7 @@ const char *wlbt_irq_types[39] = {
 	"HIP5_IRQ_HANDLER_CTRL_TYPE",
 	"HIP5_IRQ_HANDLER_FB_TYPE",
 	"HIP5_IRQ_HANDLER_DAT_TYPE",
+	"HIP5_IRQ_HANDLER_DPD_TYPE",
 	"HIP5_IRQ_HANDLER_STUB_TYPE",
 	"LAST_IRQ_TYPE"
 };

@@ -627,14 +627,15 @@ void pablo_lib_dvfs_set_static_dvfs_stream_kunit_test(struct kunit *test)
 {
 	int ret;
 	struct is_dvfs_ctrl *test_dvfs_ctrl;
+	u32 scenario, dvfs;
 
 	test_dvfs_ctrl = &dvfs_ctrl;
 
-	ret = is_set_static_dvfs(test_dvfs_ctrl, IS_SN_END, true);
+	ret = is_set_static_dvfs(test_dvfs_ctrl, IS_SN_END, true, true);
 	KUNIT_EXPECT_EQ(test, ret, (int)IS_SCENARIO_DEFAULT);
 
 	/* check stream on */
-	ret = is_set_static_dvfs(test_dvfs_ctrl, IS_DVFS_SN_DEFAULT, true);
+	ret = is_set_static_dvfs(test_dvfs_ctrl, IS_DVFS_SN_DEFAULT, true, true);
 	KUNIT_EXPECT_EQ(test, test_dvfs_ctrl->cur_lv[IS_DVFS_CAM], (u32)1);
 	KUNIT_EXPECT_EQ(test, test_dvfs_ctrl->cur_lv[IS_DVFS_ISP], (u32)1);
 	KUNIT_EXPECT_EQ(test, test_dvfs_ctrl->cur_lv[IS_DVFS_INT_CAM], (u32)1);
@@ -642,8 +643,17 @@ void pablo_lib_dvfs_set_static_dvfs_stream_kunit_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, test_dvfs_ctrl->cur_lv[IS_DVFS_INT], (u32)1);
 	KUNIT_EXPECT_EQ(test, ret, 0);
 
+	scenario = IS_DVFS_SN_REAR_SINGLE_PHOTO;
+	ret = is_set_static_dvfs(test_dvfs_ctrl, scenario, true, false);
+	KUNIT_EXPECT_EQ(test, ret, scenario);
+	for (dvfs = 0; dvfs < IS_DVFS_END; dvfs++) {
+		if (!test_dvfs_ctrl->dvfs_info.qos_name[dvfs])
+			KUNIT_EXPECT_EQ(test, test_dvfs_ctrl->cur_lv[dvfs],
+				test_sn_dvfs_data[scenario][dvfs]);
+	}
+
 	/* check stream off */
-	ret = is_set_static_dvfs(test_dvfs_ctrl, IS_DVFS_SN_DEFAULT, false);
+	ret = is_set_static_dvfs(test_dvfs_ctrl, IS_DVFS_SN_DEFAULT, false, false);
 	KUNIT_EXPECT_EQ(test, test_dvfs_ctrl->cur_lv[IS_DVFS_CSIS], (u32)1);
 	KUNIT_EXPECT_EQ(test, ret, 0);
 }

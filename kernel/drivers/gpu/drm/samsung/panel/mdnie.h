@@ -207,6 +207,13 @@ enum ANTI_GLARE {
 	ANTI_GLARE_MAX
 };
 
+#define MDNIE_ADAPTIVE_MODE_PROPERTY ("mdnie_adaptive_mode")
+
+enum ADAPTIVE_MODE {
+	ADAPTIVE_MODE_OFF,
+	ADAPTIVE_MODE_ON,
+	ADAPTIVE_MODE_MAX
+};
 
 #define MDNIE_COLOR_LENS_PROPERTY ("mdnie_color_lens")
 
@@ -429,6 +436,7 @@ struct mdnie_properties {
 	enum HMD_MODE hmd;
 	enum NIGHT_MODE night;
 	enum ANTI_GLARE anti_glare;
+	enum ADAPTIVE_MODE adaptive_mode;
 	enum COLOR_LENS color_lens;
 	enum COLOR_LENS_COLOR color_lens_color;
 	enum COLOR_LENS_LEVEL color_lens_level;

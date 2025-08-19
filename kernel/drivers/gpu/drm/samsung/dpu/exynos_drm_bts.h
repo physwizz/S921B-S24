@@ -28,11 +28,19 @@ struct exynos_drm_crtc;
 
 #define BTS_DISP_FACTOR		100UL
 #define BTS_WIN_MAX		(16)
-#define BTS_DPP_MAX		(18)
+#define BTS_DPP_MAX		(20)
 #define BTS_DPU_MAX		(2)
 #define BTS_DECON_MAX		(4)
 
-#define UHD_PIXELS		(8294400)
+#define UHD_PIXELS		(6167040)
+
+#define UPDATE_BW_FMT		"prev:(%u %u), cur(%u %u)"
+#define UPDATE_BW_ARG_BTS(b)				\
+	(b)->prev_total_bw, (b)->prev_boost_info,	\
+	(b)->total_bw, (b)->boost_info
+#define UPDATE_BW_ARG_QOS(b)				\
+	(b)->prev_max_disp_freq, UINT_MAX,		\
+	(b)->max_disp_freq, UINT_MAX			\
 
 enum dpu_win_state {
 	DPU_WIN_STATE_DISABLED = 0,

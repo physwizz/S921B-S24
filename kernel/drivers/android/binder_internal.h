@@ -14,6 +14,7 @@
 #include <linux/uidgid.h>
 #include <uapi/linux/android/binderfs.h>
 #include "binder_alloc.h"
+#include "dbitmap.h"
 
 struct binder_context {
 	struct binder_node *binder_context_mgr_node;
@@ -443,7 +444,6 @@ struct binder_proc {
 	bool sync_recv;
 	bool async_recv;
 	wait_queue_head_t freeze_wait;
-
 	struct list_head todo;
 	struct binder_stats stats;
 	struct list_head delivered_death;
@@ -460,6 +460,74 @@ struct binder_proc {
 	struct dentry *binderfs_entry;
 	bool oneway_spam_detection_enabled;
 };
+
+/**
+ * struct binder_proc_wrap - wrapper to preserve KMI in binder_proc
+ * @proc:                    binder_proc being wrapped
+ * @dmap:                    dbitmap to manage available reference descriptors
+ *                           (protected by @proc.outer_lock)
+ * @lock:                    protects @proc->alloc fields
+ */
+struct binder_proc_wrap {
+	struct binder_proc proc;
+	struct dbitmap dmap;
+	spinlock_t lock;
+};
+
+static inline
+struct binder_proc_wrap *proc_wrapper(struct binder_proc *proc)
+{
+	return container_of(proc, struct binder_proc_wrap, proc);
+}
+
+static inline struct binder_proc *
+binder_proc_entry(struct binder_alloc *alloc)
+{
+	return container_of(alloc, struct binder_proc, alloc);
+}
+
+static inline struct binder_proc_wrap *
+binder_alloc_to_proc_wrap(struct binder_alloc *alloc)
+{
+	return proc_wrapper(binder_proc_entry(alloc));
+}
+
+static inline void binder_alloc_lock_init(struct binder_alloc *alloc)
+{
+	spin_lock_init(&binder_alloc_to_proc_wrap(alloc)->lock);
+}
+
+static inline void binder_alloc_lock(struct binder_alloc *alloc)
+{
+	spin_lock(&binder_alloc_to_proc_wrap(alloc)->lock);
+}
+
+static inline void binder_alloc_unlock(struct binder_alloc *alloc)
+{
+	spin_unlock(&binder_alloc_to_proc_wrap(alloc)->lock);
+}
+
+static inline int binder_alloc_trylock(struct binder_alloc *alloc)
+{
+	return spin_trylock(&binder_alloc_to_proc_wrap(alloc)->lock);
+}
+
+/**
+ * binder_alloc_get_free_async_space() - get free space available for async
+ * @alloc:	binder_alloc for this proc
+ *
+ * Return:	the bytes remaining in the address-space for async transactions
+ */
+static inline size_t
+binder_alloc_get_free_async_space(struct binder_alloc *alloc)
+{
+	size_t free_async_space;
+
+	binder_alloc_lock(alloc);
+	free_async_space = alloc->free_async_space;
+	binder_alloc_unlock(alloc);
+	return free_async_space;
+}
 
 /**
  * struct binder_thread - binder thread bookkeeping

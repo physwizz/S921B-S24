@@ -110,7 +110,10 @@ static struct platform_mif *g_platform;
 
 extern void acpm_init_eint_clk_req(u32 eint_num);
 extern int exynos_pcie_rc_chk_link_status(int ch_num);
+
+#ifdef CONFIG_SCSC_BB_PAEAN
 extern int exynos_acpm_write_reg(struct device_node *acpm_mfd_node, u8 sid, u16 type, u8 reg, u8 value);
+#endif
 
 static unsigned long sharedmem_base;
 static size_t sharedmem_size;
@@ -120,13 +123,26 @@ module_param(disable_apm_setup, bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(disable_apm_setup, "Disable host APM setup");
 
 #ifdef CONFIG_SCSC_BB_REDWOOD
-static uint pinctrl_delay = 10;
-module_param(pinctrl_delay, uint, S_IRUGO | S_IWUSR);
-MODULE_PARM_DESC(pinctrl_delay, "wlbt_pinctrl delay(us)");
+static uint on_pinctrl_delay = 5000;
+module_param(on_pinctrl_delay, uint, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(on_pinctrl_delay, "wlbt_pinctrl on delay(us)");
+
+static uint off_pinctrl_delay = 160;
+module_param(off_pinctrl_delay, uint, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(off_pinctrl_delay, "wlbt_pinctrl off delay(us)");
 #endif
+
+static uint max_linkup_count = 3;
+module_param(max_linkup_count, uint, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(max_linkup_count,"max count for linkup re-try");
+
 static uint wlbt_status_timeout_value = 500;
 module_param(wlbt_status_timeout_value, uint, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(wlbt_status_timeout_value, "wlbt_status_timeout(ms)");
+
+static uint scan2mem_timeout_value = 5000;
+module_param(scan2mem_timeout_value, uint, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(scan2mem_timeout_value, "scan2mem_timeout(ms)");
 
 static bool enable_scandump_wlbt_status_timeout;
 module_param(enable_scandump_wlbt_status_timeout, bool, S_IRUGO | S_IWUSR);
@@ -140,7 +156,11 @@ static bool enable_platform_mif_arm_reset = true;
 module_param(enable_platform_mif_arm_reset, bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(enable_platform_mif_arm_reset, "Enables WIFIBT ARM cores reset");
 
+#ifdef CONFIG_SCSC_BB_PAEAN
 static bool keep_powered = true;
+#else
+static bool keep_powered = false;
+#endif
 module_param(keep_powered, bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(keep_powered, "Keep WLBT powered after reset, to sleep flash module");
 
@@ -170,16 +190,18 @@ static const char *events[7] = {"RST ON", "RST OFF", "CLAIM", "CLAIM CB", "RELEA
 
 #ifdef CONFIG_SCSC_QOS
 #if defined(CONFIG_SOC_S5E9945)
-/* cpucl0: initial-level (lowest freq-level) */
-static uint qos_cpucl0_lv[] = {0, 0, 0};
-/* cpucl1: initial-level (lowest freq-level) */
-static uint qos_cpucl1_lv[] = {0, 0, 0};
-/* cpucl2: initial-level (lowest freq-level) */
-static uint qos_cpucl2_lv[] = {0, 0, 0};
-/* int: initial-level (lowest freq-level) */
-static uint qos_int_lv[] = {7, 7, 7};
-/* mif: initial-level (lowest freq-level) */
-static uint qos_mif_lv[] = {12, 12, 12};
+/* cpucl0: 400Mhz / 864Mhz / 1248Mhz for cpucl0 */
+static uint qos_cpucl0_lv[] = {0, 4, 8};
+/* cpucl1: 672Mhz / 1440Mhz / 2112Mhz for cpucl1 */
+static uint qos_cpucl1_lv[] = {0, 8, 15};
+/* cpucl2: 672Mhz / 1536Mhz / 2304Mhz for cpucl2 */
+static uint qos_cpucl2_lv[] = {0, 9, 17};
+/* cpucl3: 672Mhz / 1536Mhz / 2304Mhz for cpucl3 */
+static uint qos_cpucl3_lv[] = {0, 9, 17};
+/* int: 133Mhz / 332Mhz / 800Mhz */
+static uint qos_int_lv[] = {7, 4, 0};
+/* mif: 421Mhz / 2028Mhz / 7206Mhz */
+static uint qos_mif_lv[] = {12, 5, 0};
 #else
 /* cpucl0: 400Mhz / 864Mhz / 1248Mhz for cpucl0 */
 static uint qos_cpucl0_lv[] = {0, 4, 8};
@@ -193,13 +215,18 @@ static uint qos_int_lv[] = {7, 4, 0};
 static uint qos_mif_lv[] = {12, 5, 0};
 #endif /*CONFIG_SOC_S5E9945*/
 module_param_array(qos_cpucl0_lv, uint, NULL, 0644);
-MODULE_PARM_DESC(qos_cpucl0_lv, "S5E8535 DVFS Lv of CPUCL0 to apply Min/Med/Max PM QoS");
+MODULE_PARM_DESC(qos_cpucl0_lv, "S5E9945 DVFS Lv of CPUCL0 to apply Min/Med/Max PM QoS");
 
 module_param_array(qos_cpucl1_lv, uint, NULL, 0644);
-MODULE_PARM_DESC(qos_cpucl1_lv, "S5E8535 DVFS Lv of CPUCL1 to apply Min/Med/Max PM QoS");
+MODULE_PARM_DESC(qos_cpucl1_lv, "S5E9945 DVFS Lv of CPUCL1 to apply Min/Med/Max PM QoS");
 
 module_param_array(qos_cpucl2_lv, uint, NULL, 0644);
-MODULE_PARM_DESC(qos_cpucl2_lv, "S5E8535 DVFS Lv of CPUCL2 to apply Min/Med/Max PM QoS");
+MODULE_PARM_DESC(qos_cpucl2_lv, "S5E9945 DVFS Lv of CPUCL2 to apply Min/Med/Max PM QoS");
+
+#if defined(CONFIG_SOC_S5E9945)
+module_param_array(qos_cpucl3_lv, uint, NULL, 0644);
+MODULE_PARM_DESC(qos_cpucl3_lv, "S5E9945 DVFS Lv of CPUCL3 to apply Min/Med/Max PM QoS");
+#endif
 
 module_param_array(qos_int_lv, uint, NULL, 0644);
 MODULE_PARM_DESC(qos_int_lv, "DVFS Level of INT");
@@ -272,6 +299,9 @@ struct platform_mif {
 		struct cpufreq_policy *cpucl0_policy;
 		struct cpufreq_policy *cpucl1_policy;
 		struct cpufreq_policy *cpucl2_policy;
+#if defined(CONFIG_SOC_S5E9945)
+		struct cpufreq_policy *cpucl3_policy;
+#endif
 		struct dvfs_rate_volt *int_domain_fv;
 		struct dvfs_rate_volt *mif_domain_fv;
 	} qos;
@@ -323,8 +353,10 @@ struct platform_mif {
 	spinlock_t cb_sync;
 	struct notifier_block	pm_nb;
 
+#ifdef CONFIG_SCSC_BB_PAEAN
 	/* This mutex_lock is only used for exynos_acpm_write_reg function */
 	struct mutex acpm_lock;
+#endif
 
 	/* wakelock to stop suspend during wake# IRQ handler and kthread processing it */
 	struct wake_lock wakehash_wakelock;
@@ -337,43 +369,14 @@ inline void platform_int_debug(struct platform_mif *platform);
 #define PCIE_LINK_OFF	1
 
 #ifdef CONFIG_SCSC_BB_REDWOOD
-
-#define GPIO_CMGP 0x14030000
-#define GPM30_CON 0x60
-#define GPM30_DAT 0x64
-#define GPM30_PUD 0x68
-#define GPM30_DRV 0x6C
-
-#define GPIO_ALIVE 0x12850000
-#define GPA02_CON 0x00
-#define GPA02_DAT 0x04
-#define GPA02_PUD 0x08
-
-void __iomem* cmgp_iobase;
-int gpm30_con;
-int gpm30_dat;
-int gpm30_pud;
-int gpm30_drv;
-
-void __iomem* alive_iobase;
-int gpa02_con;
-int gpa02_dat;
-int gpa02_pud;
-
-void platform_mif_control_suspend_gpio(u8 value)
+static void platform_mif_control_suspend_gpio(struct scsc_mif_abs *interface, u8 value)
 {
-	gpa02_dat = __raw_readl(alive_iobase+GPA02_DAT);
-	gpa02_dat &= 0xFFFFFFFB;
-	gpa02_dat |= value << 2;
-	__raw_writel(gpa02_dat,alive_iobase+GPA02_DAT); //gpa02_dat = on
-	gpa02_dat = __raw_readl(alive_iobase+GPA02_DAT);
-	SCSC_TAG_INFO(PLAT_MIF, "set suspend gpio 0x%d\n", gpa02_dat);
-}
-
-void platform_mif_read_suspend_gpio(struct platform_mif *platform)
-{
-	gpa02_dat = __raw_readl(alive_iobase+GPA02_DAT);
-	SCSC_TAG_INFO(PLAT_MIF, "get suspend gpio 0x%d\n", gpa02_dat);
+	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
+	u8 ret;
+	SCSC_TAG_DEBUG_DEV(PLAT_MIF,platform->dev, "set suspend_gpio %d\n", value);
+	gpio_set_value(platform->suspend_gpio, value);
+	ret = gpio_get_value(platform->suspend_gpio);
+	SCSC_TAG_DEBUG_DEV(PLAT_MIF,platform->dev, "set suspend_gpio %d\n", ret);
 }
 #endif
 
@@ -709,6 +712,9 @@ int qos_get_param(char *buffer, const struct kernel_param *kp)
 	struct cpufreq_policy *cpucl0_policy = cpufreq_cpu_get(0);
 	struct cpufreq_policy *cpucl1_policy = cpufreq_cpu_get(4);
 	struct cpufreq_policy *cpucl2_policy = cpufreq_cpu_get(7);
+#if defined(CONFIG_SOC_S5E9945)
+	struct cpufreq_policy *cpucl3_policy = cpufreq_cpu_get(9);
+#endif
 	struct dvfs_rate_volt *int_domain_fv;
 	struct dvfs_rate_volt *mif_domain_fv;
 	u32 int_lv, mif_lv;
@@ -727,6 +733,13 @@ int qos_get_param(char *buffer, const struct kernel_param *kp)
 			cpucl2_policy->freq_table[qos_cpucl2_lv[0]].frequency,
 			cpucl2_policy->freq_table[qos_cpucl2_lv[1]].frequency,
 			cpucl2_policy->freq_table[qos_cpucl2_lv[2]].frequency);
+
+#if defined(CONFIG_SOC_S5E9945)
+	count += sprintf(buffer + count, "CPUCL3 QoS: %u, %u, %u\n",
+			cpucl3_policy->freq_table[qos_cpucl3_lv[0]].frequency,
+			cpucl3_policy->freq_table[qos_cpucl3_lv[1]].frequency,
+			cpucl3_policy->freq_table[qos_cpucl3_lv[2]].frequency);
+#endif
 
 	int_lv = cal_dfs_get_lv_num(ACPM_DVFS_INT);
 	int_domain_fv =
@@ -755,6 +768,9 @@ int qos_get_param(char *buffer, const struct kernel_param *kp)
 	cpufreq_cpu_put(cpucl0_policy);
 	cpufreq_cpu_put(cpucl1_policy);
 	cpufreq_cpu_put(cpucl2_policy);
+#if defined(CONFIG_SOC_S5E9945)
+	cpufreq_cpu_put(cpucl3_policy);
+#endif
 	kfree(int_domain_fv);
 	kfree(mif_domain_fv);
 
@@ -770,7 +786,11 @@ module_param_cb(qos_info, &domain_id_ops, NULL, 0444);
 static void platform_mif_verify_qos_table(struct platform_mif *platform)
 {
 	u32 index;
+#if !defined(CONFIG_SOC_S5E9945)
 	u32 cl0_max_idx, cl1_max_idx, cl2_max_idx;
+#else
+	u32 cl0_max_idx, cl1_max_idx, cl2_max_idx, cl3_max_idx;
+#endif
 	u32 int_max_idx, mif_max_idx;
 
 	cl0_max_idx = cpufreq_frequency_table_get_index(platform->qos.cpucl0_policy,
@@ -779,6 +799,10 @@ static void platform_mif_verify_qos_table(struct platform_mif *platform)
 							platform->qos.cpucl1_policy->max);
 	cl2_max_idx = cpufreq_frequency_table_get_index(platform->qos.cpucl2_policy,
 							platform->qos.cpucl2_policy->max);
+#if defined(CONFIG_SOC_S5E9945)
+	cl3_max_idx = cpufreq_frequency_table_get_index(platform->qos.cpucl3_policy,
+							platform->qos.cpucl3_policy->max);
+#endif
 
 	int_max_idx = (cal_dfs_get_lv_num(ACPM_DVFS_INT) - 1);
 	mif_max_idx = (cal_dfs_get_lv_num(ACPM_DVFS_MIF) - 1);
@@ -787,6 +811,9 @@ static void platform_mif_verify_qos_table(struct platform_mif *platform)
 		qos_cpucl0_lv[index] = min(qos_cpucl0_lv[index], cl0_max_idx);
 		qos_cpucl1_lv[index] = min(qos_cpucl1_lv[index], cl1_max_idx);
 		qos_cpucl2_lv[index] = min(qos_cpucl2_lv[index], cl2_max_idx);
+#if defined(CONFIG_SOC_S5E9945)
+		qos_cpucl3_lv[index] = min(qos_cpucl3_lv[index], cl3_max_idx);
+#endif
 		qos_int_lv[index] = min(qos_int_lv[index], int_max_idx);
 		qos_mif_lv[index] = min(qos_mif_lv[index], mif_max_idx);
 	}
@@ -802,11 +829,19 @@ static int platform_mif_qos_init(struct platform_mif *platform)
 	platform->qos.cpucl0_policy = cpufreq_cpu_get(0);
 	platform->qos.cpucl1_policy = cpufreq_cpu_get(4);
 	platform->qos.cpucl2_policy = cpufreq_cpu_get(7);
+#if defined(CONFIG_SOC_S5E9945)
+	platform->qos.cpucl3_policy = cpufreq_cpu_get(9);
+#endif
 
 	platform->qos_enabled = false;
 
+#if !defined(CONFIG_SOC_S5E9945)
 	if ((!platform->qos.cpucl0_policy) || (!platform->qos.cpucl1_policy) ||
-			(!platform->qos.cpucl2_policy)) {
+	    (!platform->qos.cpucl2_policy)) {
+#else
+	if ((!platform->qos.cpucl0_policy) || (!platform->qos.cpucl1_policy) ||
+	    (!platform->qos.cpucl2_policy) || (!platform->qos.cpucl3_policy)) {
+#endif
 		SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
 				"PM QoS init error. CPU policy is not loaded\n");
 		return -ENOENT;
@@ -826,7 +861,7 @@ static int platform_mif_qos_init(struct platform_mif *platform)
 		return -ENOENT;
 	}
 
-	/* verify pre-configured freq-levels of cpucl0/1/2 */
+	/* verify pre-configured freq-levels of cpucl0/1/2/3 */
 	platform_mif_verify_qos_table(platform);
 
 	platform->qos_enabled = true;
@@ -850,9 +885,17 @@ static int platform_mif_pm_qos_add_request(struct scsc_mif_abs *interface, struc
 	qos_req->cpu_cluster0_policy = cpufreq_cpu_get(0);
 	qos_req->cpu_cluster1_policy = cpufreq_cpu_get(4);
 	qos_req->cpu_cluster2_policy = cpufreq_cpu_get(7);
+#if defined(CONFIG_SOC_S5E9945)
+	qos_req->cpu_cluster3_policy = cpufreq_cpu_get(9);
+#endif
 
+#if !defined(CONFIG_SOC_S5E9945)
 	if ((!qos_req->cpu_cluster0_policy) || (!qos_req->cpu_cluster1_policy) ||
-			(!qos_req->cpu_cluster2_policy)) {
+	    (!qos_req->cpu_cluster2_policy)) {
+#else
+	if ((!qos_req->cpu_cluster0_policy) || (!qos_req->cpu_cluster1_policy) ||
+	    (!qos_req->cpu_cluster2_policy) || (!qos_req->cpu_cluster3_policy)) {
+#endif
 		SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
 				"PM QoS add request error. CPU policy not loaded\n");
 		return -ENOENT;
@@ -870,6 +913,10 @@ static int platform_mif_pm_qos_add_request(struct scsc_mif_abs *interface, struc
 						&qos_req->pm_qos_req_cl1, FREQ_QOS_MIN, 0);
 		freq_qos_tracer_add_request(&qos_req->cpu_cluster2_policy->constraints,
 						&qos_req->pm_qos_req_cl2, FREQ_QOS_MIN, 0);
+#if defined(CONFIG_SOC_S5E9945)
+		freq_qos_tracer_add_request(&qos_req->cpu_cluster3_policy->constraints,
+						&qos_req->pm_qos_req_cl3, FREQ_QOS_MIN, 0);
+#endif
 
 		SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "PM QoS add request: SCSC_QOS_DISABLED\n");
 	} else {
@@ -890,7 +937,20 @@ static int platform_mif_pm_qos_add_request(struct scsc_mif_abs *interface, struc
 		freq_qos_tracer_add_request(&qos_req->cpu_cluster2_policy->constraints,
 										&qos_req->pm_qos_req_cl2, FREQ_QOS_MIN,
 				platform->qos.cpucl2_policy->freq_table[qos_cpucl2_lv[qos_lv]].frequency);
+#if defined(CONFIG_SOC_S5E9945)
+		freq_qos_tracer_add_request(&qos_req->cpu_cluster3_policy->constraints,
+										&qos_req->pm_qos_req_cl3, FREQ_QOS_MIN,
+				platform->qos.cpucl3_policy->freq_table[qos_cpucl3_lv[qos_lv]].frequency);
 
+		SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
+			"PM QoS add request: %u. CL0 %u CL1 %u CL2 %u CL3 %u MIF %u INT %u\n", config,
+			platform->qos.cpucl0_policy->freq_table[qos_cpucl0_lv[qos_lv]].frequency,
+			platform->qos.cpucl1_policy->freq_table[qos_cpucl1_lv[qos_lv]].frequency,
+			platform->qos.cpucl2_policy->freq_table[qos_cpucl2_lv[qos_lv]].frequency,
+			platform->qos.cpucl3_policy->freq_table[qos_cpucl3_lv[qos_lv]].frequency,
+			platform->qos.mif_domain_fv[qos_mif_lv[qos_lv]].rate,
+			platform->qos.int_domain_fv[qos_int_lv[qos_lv]].rate);
+#else
 		SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
 			"PM QoS add request: %u. CL0 %u CL1 %u CL2 %u MIF %u INT %u\n", config,
 			platform->qos.cpucl0_policy->freq_table[qos_cpucl0_lv[qos_lv]].frequency,
@@ -898,6 +958,7 @@ static int platform_mif_pm_qos_add_request(struct scsc_mif_abs *interface, struc
 			platform->qos.cpucl2_policy->freq_table[qos_cpucl2_lv[qos_lv]].frequency,
 			platform->qos.mif_domain_fv[qos_mif_lv[qos_lv]].rate,
 			platform->qos.int_domain_fv[qos_int_lv[qos_lv]].rate);
+#endif
 	}
 
 	return 0;
@@ -924,7 +985,9 @@ static int platform_mif_pm_qos_update_request(struct scsc_mif_abs *interface, st
 		freq_qos_update_request(&qos_req->pm_qos_req_cl0, 0);
 		freq_qos_update_request(&qos_req->pm_qos_req_cl1, 0);
 		freq_qos_update_request(&qos_req->pm_qos_req_cl2, 0);
-
+#if defined(CONFIG_SOC_S5E9945)
+		freq_qos_update_request(&qos_req->pm_qos_req_cl3, 0);
+#endif
 		SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "PM QoS update request: SCSC_QOS_DISABLED\n");
 	} else {
 		u32 qos_lv = config -1;
@@ -941,14 +1004,27 @@ static int platform_mif_pm_qos_update_request(struct scsc_mif_abs *interface, st
 			platform->qos.cpucl1_policy->freq_table[qos_cpucl1_lv[qos_lv]].frequency);
 		freq_qos_update_request(&qos_req->pm_qos_req_cl2,
 			platform->qos.cpucl2_policy->freq_table[qos_cpucl2_lv[qos_lv]].frequency);
+#if defined(CONFIG_SOC_S5E9945)
+		freq_qos_update_request(&qos_req->pm_qos_req_cl3,
+			platform->qos.cpucl3_policy->freq_table[qos_cpucl3_lv[qos_lv]].frequency);
 
-		SCSC_TAG_DEBUG_DEV(PLAT_MIF, platform->dev,
+		SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
+			"PM QoS update request: %u. CL0 %u CL1 %u CL2 %u CL3 %u MIF %u INT %u \n", config,
+			platform->qos.cpucl0_policy->freq_table[qos_cpucl0_lv[qos_lv]].frequency,
+			platform->qos.cpucl1_policy->freq_table[qos_cpucl1_lv[qos_lv]].frequency,
+			platform->qos.cpucl2_policy->freq_table[qos_cpucl2_lv[qos_lv]].frequency,
+			platform->qos.cpucl3_policy->freq_table[qos_cpucl3_lv[qos_lv]].frequency,
+			platform->qos.mif_domain_fv[qos_mif_lv[qos_lv]].rate,
+			platform->qos.int_domain_fv[qos_int_lv[qos_lv]].rate);
+#else
+		SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
 			"PM QoS update request: %u. CL0 %u CL1 %u CL2 %u MIF %u INT %u \n", config,
 			platform->qos.cpucl0_policy->freq_table[qos_cpucl0_lv[qos_lv]].frequency,
 			platform->qos.cpucl1_policy->freq_table[qos_cpucl1_lv[qos_lv]].frequency,
 			platform->qos.cpucl2_policy->freq_table[qos_cpucl2_lv[qos_lv]].frequency,
 			platform->qos.mif_domain_fv[qos_mif_lv[qos_lv]].rate,
 			platform->qos.int_domain_fv[qos_int_lv[qos_lv]].rate);
+#endif
 	}
 
 	return 0;
@@ -978,7 +1054,9 @@ static int platform_mif_pm_qos_remove_request(struct scsc_mif_abs *interface, st
 	freq_qos_tracer_remove_request(&qos_req->pm_qos_req_cl0);
 	freq_qos_tracer_remove_request(&qos_req->pm_qos_req_cl1);
 	freq_qos_tracer_remove_request(&qos_req->pm_qos_req_cl2);
-
+#if defined(CONFIG_SOC_S5E9945)
+	freq_qos_tracer_remove_request(&qos_req->pm_qos_req_cl3);
+#endif
 	return 0;
 }
 #endif /*CONFIG_SCSC_QOS*/
@@ -1167,17 +1245,51 @@ int scsc_pcie_complete(void)
 }
 EXPORT_SYMBOL(scsc_pcie_complete);
 
-#if defined(CONFIG_SCSC_BB_REDWOOD)
-static void set_reset_pin(int on)
+static void platform_mif_reset_assert(struct scsc_mif_abs *interface)
 {
-	gpm30_dat = __raw_readl(cmgp_iobase+GPM30_DAT);
-	gpm30_dat &= 0xFFFFFFFE;
-	gpm30_dat |= on;
-	__raw_writel(gpm30_dat,cmgp_iobase+GPM30_DAT); //gpm30_dat = on
-	gpm30_dat = __raw_readl(cmgp_iobase+GPM30_DAT);
-	SCSC_TAG_INFO(PLAT_MIF, "set reset pin 0x%d\n", gpm30_dat);
-}
+	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
+	SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
+		"reset_gpio and pmic_gpio set low for retry\n");
+#ifdef CONFIG_SCSC_BB_REDWOOD
+	gpio_set_value(platform->reset_gpio, 0);
+	udelay(off_pinctrl_delay);
 #endif
+	gpio_set_value(platform->pmic_gpio, 0);
+	msleep(200);
+	SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
+		"delay 200ms after low gpios\n");
+}
+
+static bool platform_mif_get_scan2mem_mode(struct scsc_mif_abs *interface)
+{
+	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
+	return pcie_mif_get_scan2mem_mode(platform->pcie);
+}
+
+static void platform_mif_set_scan2mem_mode(struct scsc_mif_abs *interface, bool enable)
+{
+	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
+	pcie_mif_set_scan2mem_mode(platform->pcie, enable);
+}
+
+static void platform_mif_set_s2m_dram_offset(struct scsc_mif_abs *interface, u32 offset)
+{
+	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
+	pcie_set_s2m_dram_offset(platform->pcie, offset);
+}
+
+static u32 platform_mif_get_s2m_size_octets(struct scsc_mif_abs *interface)
+{
+	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
+
+	return pcie_get_s2m_size_octets(platform->pcie);
+}
+
+static unsigned long platform_mif_get_mem_start(struct scsc_mif_abs *interface)
+{
+	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
+	return platform->mem_start;
+}
 
 /* reset=0 - release from reset */
 /* reset=1 - hold reset */
@@ -1186,30 +1298,45 @@ static int platform_mif_reset(struct scsc_mif_abs *interface, bool reset)
 	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
 	unsigned long timeout;
 	bool init;
+	int i;
 	u32 ret = 0;
 
 	if (enable_platform_mif_arm_reset) {
 		if (!reset) { /* Release from reset */
 			SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, " - reset : false\n");
 
-			if (keep_powered) {
-				/* If WLBT was kept powered after reset, to allow the PMU to
-				 * sleep the flash module, power cycle it now to reset the HW.
-				 */
-				SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "power cycle WLBT\n");
+			if (!platform_mif_get_scan2mem_mode(interface)) {
+				if (keep_powered) {
+					/* If WLBT was kept powered after reset, to allow the PMU to
+					* sleep the flash module, power cycle it now to reset the HW.
+					*/
+					SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "power cycle WLBT\n");
 
-				gpio_set_value(platform->pmic_gpio, 0);
-				msleep(200);
+					gpio_set_value(platform->pmic_gpio, 0);
+					msleep(200);
+				}
 			}
-			gpio_set_value(platform->pmic_gpio, 1);
+
+			for (i = 0; i < max_linkup_count; i++) {
+				gpio_set_value(platform->pmic_gpio, 1);
 #ifdef CONFIG_SCSC_BB_REDWOOD
-			udelay(pinctrl_delay);
-			set_reset_pin(1);
+				udelay(on_pinctrl_delay);
+				gpio_set_value(platform->reset_gpio, 1);
 #endif
-			/* Start always with fw_user to one */
-			platform_mif_pcie_control_fsm_prepare_fw(platform);
-			platform_mif_send_event_to_fsm_wait_completion(platform, PCIE_EVT_RST_ON);
-			scsc_pcie_complete();
+				/* Start always with fw_user to one */
+				platform_mif_pcie_control_fsm_prepare_fw(platform);
+				platform_mif_send_event_to_fsm_wait_completion(platform, PCIE_EVT_RST_ON);
+				ret = scsc_pcie_complete();
+				if (ret) {
+					SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
+						"trying to link up again\n");
+					platform_mif_reset_assert(interface);
+				}
+				else
+					break;
+			}
+			if (ret)
+				return ret;
 
 			pcie_register_driver();
 
@@ -1225,7 +1352,7 @@ static int platform_mif_reset(struct scsc_mif_abs *interface, bool reset)
 
 			if (!init) {
 				SCSC_TAG_INFO(PLAT_MIF, "PCIe has not been initialized\n");
-				if(pcie_is_on(platform->pcie)){
+				if (pcie_is_on(platform->pcie)) {
 					SCSC_TAG_INFO(PLAT_MIF, "Trying to link down\n");
 					platform_mif_send_event_to_fsm_wait_completion(platform, PCIE_EVT_RST_OFF);
 					scsc_pcie_complete();
@@ -1245,17 +1372,26 @@ static int platform_mif_reset(struct scsc_mif_abs *interface, bool reset)
 
 			pcie_unregister_driver();
 
+			if (platform_mif_get_scan2mem_mode(interface)) {
+				SCSC_TAG_INFO(PLAT_MIF, "Wait for %dmsec to guarantee time for scandump\n", scan2mem_timeout_value);
+				msleep(scan2mem_timeout_value);
+			}
+
 #ifdef CONFIG_SCSC_BB_REDWOOD
-				set_reset_pin(0);
-				udelay(pinctrl_delay);
+			gpio_set_value(platform->reset_gpio, 0);
 #endif
-			if (!keep_powered) {
-				SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
-						"pmic_gpio is set as low\n");
-				gpio_set_value(platform->pmic_gpio, 0);
-			} else {
-				SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
-						"pmic_gpio power preserved\n");
+			if (!platform_mif_get_scan2mem_mode(interface)) {
+				if (!keep_powered) {
+#ifdef CONFIG_SCSC_BB_REDWOOD
+					udelay(off_pinctrl_delay);
+#endif
+					SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
+							"pmic_gpio is set as low\n");
+					gpio_set_value(platform->pmic_gpio, 0);
+				} else {
+					SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
+							"pmic_gpio power preserved\n");
+				}
 			}
 		}
 	} else
@@ -1463,18 +1599,18 @@ static void platform_mif_suspend_unreg_handler(struct scsc_mif_abs *interface)
 	platform->suspendresume_data = NULL;
 }
 
-static __iomem void *platform_get_scoreboard(struct scsc_mif_abs *interface)
+static __iomem void *platform_get_ramrp_ptr(struct scsc_mif_abs *interface)
 {
 	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
 
-	return pcie_get_scoreboard(platform->pcie);
+	return pcie_get_ramrp_ptr(platform->pcie);
 }
 
-static int platform_get_scoreboard_ref(struct scsc_mif_abs *interface, __iomem void *addr, uintptr_t *addr_ref)
+static int platform_get_ramrp_buff(struct scsc_mif_abs *interface, void** buff, int count, u64 offset)
 {
 	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
 
-	return pcie_get_scoreboard_ref(platform->pcie, addr, addr_ref);
+	return pcie_get_ramrp_buff(platform->pcie, buff, count, offset);
 }
 
 static int platform_mif_get_mbox_pmu(struct scsc_mif_abs *interface)
@@ -1794,40 +1930,6 @@ int platform_mif_acpm_write_reg(struct scsc_mif_abs *interface, u8 reg, u8 value
 }
 #endif
 
-#ifdef CONFIG_SCSC_BB_REDWOOD
-static void platform_mif_init_pin(void)
-{
-	cmgp_iobase = ioremap(GPIO_CMGP,0x1000);
-	gpm30_con = __raw_readl(cmgp_iobase+GPM30_CON);
-	gpm30_con &= 0xFFFFFFFC;
-	gpm30_con |= 0x1;
-	__raw_writel(gpm30_con, cmgp_iobase+GPM30_CON); // gpm30_con
-	gpm30_con = __raw_readl(cmgp_iobase+GPM30_CON);
-	gpm30_pud = __raw_readl(cmgp_iobase+GPM30_PUD);
-	gpm30_pud &= 0xFFFFFFFC;
-	__raw_writel(gpm30_pud, cmgp_iobase+GPM30_PUD); // gpm30_pud
-	gpm30_pud = __raw_readl(cmgp_iobase+GPM30_PUD);
-	gpm30_drv = __raw_readl(cmgp_iobase+GPM30_DRV);
-	gpm30_drv &= 0xFFFFFFFC;
-	gpm30_drv |= 0x3;
-	__raw_writel(gpm30_drv, cmgp_iobase+GPM30_DRV); // gpm30_drv
-	gpm30_drv = __raw_readl(cmgp_iobase+GPM30_DRV);
-	SCSC_TAG_INFO(PLAT_MIF, "set wlbt reset pin con: %d, pud: %d, drv: %d\n",gpm30_con, gpm30_pud, gpm30_drv);
-
-	alive_iobase = ioremap(GPIO_ALIVE,0x1000);
-	gpa02_con = __raw_readl(alive_iobase+GPA02_CON);
-	gpa02_con &= 0xFFFFFFCF;
-	gpa02_con |= 0x1 << 8;
-	__raw_writel(gpa02_con, alive_iobase+GPA02_CON); // gpa02_con
-	gpa02_con = __raw_readl(alive_iobase+GPA02_CON);
-	gpa02_pud = __raw_readl(alive_iobase+GPA02_PUD);
-	gpa02_pud &= 0xFFFFFFCF;
-	__raw_writel(gpa02_pud, alive_iobase+GPA02_PUD); // gpa02_pud
-	gpa02_pud = __raw_readl(alive_iobase+GPA02_PUD);
-	SCSC_TAG_INFO(PLAT_MIF, "set wlbt reset pin con: %d, pud: %d\n",gpa02_con, gpa02_pud);
-}
-#endif
-
 struct scsc_mif_abs *platform_mif_create(struct platform_device *pdev)
 {
 	struct scsc_mif_abs *platform_if;
@@ -1895,8 +1997,8 @@ struct scsc_mif_abs *platform_mif_create(struct platform_device *pdev)
 	platform_if->recovery_disabled_reg = platform_recovery_disabled_reg;
 	platform_if->recovery_disabled_unreg = platform_recovery_disabled_unreg;
 #endif
-	platform_if->get_scoreboard = platform_get_scoreboard;
-	platform_if->get_scoreboard_ref = platform_get_scoreboard_ref;
+	platform_if->get_ramrp_ptr = platform_get_ramrp_ptr;
+	platform_if->get_ramrp_buff = platform_get_ramrp_buff;
 	platform_if->get_mbox_pmu = platform_mif_get_mbox_pmu;
 	platform_if->set_mbox_pmu = platform_mif_set_mbox_pmu;
 	platform_if->get_mbox_pmu_pcie_off = platform_mif_get_mbox_pmu_pcie_off;
@@ -1939,7 +2041,11 @@ struct scsc_mif_abs *platform_mif_create(struct platform_device *pdev)
 #elif CONFIG_SCSC_BB_REDWOOD
 	platform_if->control_suspend_gpio = platform_mif_control_suspend_gpio;
 #endif
-
+	platform_if->get_scan2mem_mode = platform_mif_get_scan2mem_mode;
+	platform_if->set_scan2mem_mode = platform_mif_set_scan2mem_mode;
+	platform_if->get_s2m_size_octets = platform_mif_get_s2m_size_octets;
+	platform_if->set_s2m_dram_offset = platform_mif_set_s2m_dram_offset;
+	platform_if->get_mem_start = platform_mif_get_mem_start;
 	platform->pm_nb.notifier_call = wlbt_rc_pm_notifier;
 	register_pm_notifier(&platform->pm_nb);
 #ifdef CONFIG_OF_RESERVED_MEM
@@ -2009,7 +2115,8 @@ struct scsc_mif_abs *platform_mif_create(struct platform_device *pdev)
 	}
 
 #ifdef CONFIG_SCSC_BB_REDWOOD
-	platform_mif_init_pin();
+	platform->reset_gpio = of_get_named_gpio(platform->dev->of_node, "wlbt,reset_gpio", 0);
+	platform->suspend_gpio = of_get_named_gpio(platform->dev->of_node, "wlbt,suspend_gpio", 0);
 #endif
 	platform->gpio_num = of_get_named_gpio(platform->dev->of_node, "wlbt,wakeup_gpio", 0);
 	platform->wakeup_irq = gpio_to_irq(of_get_named_gpio(platform->dev->of_node,
@@ -2053,6 +2160,7 @@ struct scsc_mif_abs *platform_mif_create(struct platform_device *pdev)
 	pcie_irq_reg_pmu_error_handler(pcie, platform_mif_pmu_error_isr, (void *)platform);
 	pcie_irq_reg_wlan_handler(pcie, platform_mif_wlan_isr, (void *)platform);
 	pcie_irq_reg_wpan_handler(pcie, platform_mif_wpan_isr, (void *)platform);
+	platform_mif_set_scan2mem_mode(platform_if, false);
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
 	wake_lock_init(NULL, &(platform->wakehash_wakelock.ws), "wakehash_wakelock");
@@ -2135,11 +2243,6 @@ int platform_mif_suspend(struct scsc_mif_abs *interface)
 	int r = 0;
 	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
 
-#ifdef CONFIG_SCSC_BB_REDWOOD
-	SCSC_TAG_INFO(PLAT_MIF, "setting HOST_SUSPEND_INTERRUPT GPIO(XWAKE_IN_WPAN) 0x1\n");
-	platform_mif_control_suspend_gpio(0x1);
-#endif
-
 	if (platform->suspend_handler)
 		r = platform->suspend_handler(interface, platform->suspendresume_data);
 
@@ -2153,12 +2256,6 @@ void platform_mif_resume(struct scsc_mif_abs *interface)
 	struct platform_mif *platform = platform_mif_from_mif_abs(interface);
 
 	SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "resuming platform driver\n");
-
-#ifdef CONFIG_SCSC_BB_REDWOOD
-	SCSC_TAG_INFO(PLAT_MIF, "setting HOST_SUSPEND_INTERRUPT GPIO(XWAKE_IN_WPAN) 0x0\n");
-	platform_mif_control_suspend_gpio(0x0);
-#endif
-
 }
 
 int scsc_pcie_claim(void)

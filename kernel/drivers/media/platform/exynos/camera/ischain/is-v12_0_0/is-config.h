@@ -22,6 +22,7 @@
  * =================================================================================================
  */
 #define IS_SENSOR_COUNT		6
+#define CONFIG_TIMER_TRACER 1
 
 /**
  * 1 Sensor could have maximum 3 streams.
@@ -129,7 +130,7 @@
 #define ENABLE_LMEDS
 #define ENABLE_LMEDS1
 #define ENABLE_SAT_CAV
-#define ENABLE_AWB_HAL
+/* #define ENABLE_AWB_HAL */
 #define ENABLE_BYRP_HDR
 #define ENABLE_10BIT_MCSC
 #define ENABLE_DJAG_IN_MCSC

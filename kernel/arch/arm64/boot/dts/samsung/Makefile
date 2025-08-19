@@ -5,4 +5,6 @@ subdir-y += e2s
 subdir-y += mu1s
 subdir-y += mu2s
 subdir-y += mu3s
-
+subdir-y += b6s
+subdir-y += r12s
+subdir-y += b7r

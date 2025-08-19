@@ -44,6 +44,7 @@
 #include <asm/uaccess.h>
 #include <linux/clk.h>
 #include <linux/regulator/consumer.h>
+#include <linux/version.h>
 #ifdef CONFIG_OF
 	#include <linux/of_gpio.h>
 #endif
@@ -1488,8 +1489,12 @@ int stk6d2x_remove(struct i2c_client *client)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+static int stk6d2x_i2c_probe(struct i2c_client *client)
+#else
 static int stk6d2x_i2c_probe(struct i2c_client *client,
 							 const struct i2c_device_id *id)
+#endif
 {
 	struct common_function common_fn =
 	{

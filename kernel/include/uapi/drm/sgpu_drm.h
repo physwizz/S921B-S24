@@ -599,8 +599,6 @@ struct drm_amdgpu_gem_va {
 #define AMDGPU_CHUNK_ID_SYNCOBJ_TIMELINE_SIGNAL  0x09
 #define AMDGPU_CHUNK_ID_MEMTRACK_HTILE_WA	0xA
 #define AMDGPU_CHUNK_ID_TIME		0x10
-#define AMDGPU_CHUNK_ID_MIN_FREQ_LOCK	0x12
-
 
 struct drm_amdgpu_cs_chunk {
 	__u32		chunk_id;
@@ -712,14 +710,6 @@ struct drm_amdgpu_cs_chunk_syncobj {
        __u32 handle;
        __u32 flags;
        __u64 point;
-};
-
-struct drm_amdgpu_cs_chunk_min_freq_lock {
-	__u32 start_offset_ms;
-	/* min lock duration (ms) */
-	__u32 duration_ms;
-	/* min lock clock (kHz) */
-	__u32 clock;
 };
 
 #define AMDGPU_FENCE_TO_HANDLE_GET_SYNCOBJ	0

@@ -25,6 +25,7 @@
 #include <linux/regmap.h>
 #include <linux/mfd/syscon.h>
 #include <linux/bitmap.h>
+#include <soc/samsung/exynos/memlogger.h>
 
 #include "dw_mmc.h"
 #include "dw_mmc-pltfm.h"
@@ -38,8 +39,46 @@
 extern int cal_pll_mmc_set_ssc(unsigned int mfr, unsigned int mrr, unsigned int ssc_on);
 extern int cal_pll_mmc_check(void);
 
+struct exynos_mmc_memlog {
+	struct memlog *desc;
+	struct memlog_obj *log_obj_file;
+	struct memlog_obj *log_obj;
+	unsigned int log_enable;
+};
+
+#define pr_memlog(dev, fmt, ...)					\
+	do {								\
+		if (dev.log_enable)					\
+			memlog_write_printf(dev.log_obj,		\
+					MEMLOG_LEVEL_EMERG,		\
+					fmt, ##__VA_ARGS__);		\
+		else							\
+			pr_err(fmt, ##__VA_ARGS__);			\
+	} while (0)
+
+struct exynos_mmc_memlog mmc_memlog;
+
 static void dw_mci_exynos_register_dump(struct dw_mci *host)
 {
+	pr_memlog(mmc_memlog, ": EMMCP_BASE:	0x%08x\n",
+		host->sfr_dump->fmp_emmcp_base = mci_readl(host, EMMCP_BASE));
+	pr_memlog(mmc_memlog, ": MPSECURITY:	0x%08x\n",
+		host->sfr_dump->mpsecurity = mci_readl(host, MPSECURITY));
+	pr_memlog(mmc_memlog, ": MPSTAT:		0x%08x\n",
+		host->sfr_dump->mpstat = mci_readl(host, MPSTAT));
+	pr_memlog(mmc_memlog, ": MPSBEGIN:		0x%08x\n",
+		host->sfr_dump->mpsbegin = mci_readl(host, MPSBEGIN0));
+	pr_memlog(mmc_memlog, ": MPSEND:		0x%08x\n",
+		host->sfr_dump->mpsend = mci_readl(host, MPSEND0));
+	pr_memlog(mmc_memlog, ": MPSCTRL:		0x%08x\n",
+		host->sfr_dump->mpsctrl = mci_readl(host, MPSCTRL0));
+	pr_memlog(mmc_memlog, ": HS400_RCLK_EN:  	0x%08x\n",
+		host->sfr_dump->hs400_rdqs_en = mci_readl(host, HS400_RCLK_EN));
+	pr_memlog(mmc_memlog, ": HS400_ASYNC_FIFO_CTRL:   0x%08x\n",
+		host->sfr_dump->hs400_acync_fifo_ctrl = mci_readl(host, HS400_ASYNC_FIFO_CTRL));
+	pr_memlog(mmc_memlog, ": HS400_DLINE_CTRL:        0x%08x\n",
+		host->sfr_dump->hs400_dline_ctrl = mci_readl(host, HS400_DLINE_CTRL));
+#if IS_ENABLED(MMC_DW_EXYNOS_DUMP_TO_CONSOLE)
 	dev_err(host->dev, ": EMMCP_BASE:	0x%08x\n",
 		host->sfr_dump->fmp_emmcp_base = mci_readl(host, EMMCP_BASE));
 	dev_err(host->dev, ": MPSECURITY:	0x%08x\n",
@@ -58,12 +97,134 @@ static void dw_mci_exynos_register_dump(struct dw_mci *host)
 		host->sfr_dump->hs400_acync_fifo_ctrl = mci_readl(host, HS400_ASYNC_FIFO_CTRL));
 	dev_err(host->dev, ": HS400_DLINE_CTRL:        0x%08x\n",
 		host->sfr_dump->hs400_dline_ctrl = mci_readl(host, HS400_DLINE_CTRL));
+#endif
 }
 
 static void dw_mci_reg_dump(struct dw_mci *host)
 {
 	u32 reg;
 
+	pr_memlog(mmc_memlog, ": ============== REGISTER DUMP ==============\n");
+	pr_memlog(mmc_memlog, ": CTRL:	 0x%08x\n", host->sfr_dump->contrl = mci_readl(host, CTRL));
+	pr_memlog(mmc_memlog, ": PWREN:	 0x%08x\n", host->sfr_dump->pwren = mci_readl(host, PWREN));
+	pr_memlog(mmc_memlog, ": CLKDIV:	 0x%08x\n",
+		host->sfr_dump->clkdiv = mci_readl(host, CLKDIV));
+	pr_memlog(mmc_memlog, ": CLKSRC:	 0x%08x\n",
+		host->sfr_dump->clksrc = mci_readl(host, CLKSRC));
+	pr_memlog(mmc_memlog, ": CLKENA:	 0x%08x\n",
+		host->sfr_dump->clkena = mci_readl(host, CLKENA));
+	pr_memlog(mmc_memlog, ": TMOUT:	 0x%08x\n", host->sfr_dump->tmout = mci_readl(host, TMOUT));
+	pr_memlog(mmc_memlog, ": CTYPE:	 0x%08x\n", host->sfr_dump->ctype = mci_readl(host, CTYPE));
+	pr_memlog(mmc_memlog, ": BLKSIZ:	 0x%08x\n",
+		host->sfr_dump->blksiz = mci_readl(host, BLKSIZ));
+	pr_memlog(mmc_memlog, ": BYTCNT:	 0x%08x\n",
+		host->sfr_dump->bytcnt = mci_readl(host, BYTCNT));
+	pr_memlog(mmc_memlog, ": INTMSK:	 0x%08x\n",
+		host->sfr_dump->intmask = mci_readl(host, INTMASK));
+	pr_memlog(mmc_memlog, ": CMDARG:	 0x%08x\n",
+		host->sfr_dump->cmdarg = mci_readl(host, CMDARG));
+	pr_memlog(mmc_memlog, ": CMD:	 0x%08x\n", host->sfr_dump->cmd = mci_readl(host, CMD));
+	pr_memlog(mmc_memlog, ": RESP0:	 0x%08x\n", mci_readl(host, RESP0));
+	pr_memlog(mmc_memlog, ": RESP1:	 0x%08x\n", mci_readl(host, RESP1));
+	pr_memlog(mmc_memlog, ": RESP2:	 0x%08x\n", mci_readl(host, RESP2));
+	pr_memlog(mmc_memlog, ": RESP3:	 0x%08x\n", mci_readl(host, RESP3));
+	pr_memlog(mmc_memlog, ": MINTSTS:	 0x%08x\n",
+		host->sfr_dump->mintsts = mci_readl(host, MINTSTS));
+	pr_memlog(mmc_memlog, ": RINTSTS:	 0x%08x\n",
+		host->sfr_dump->rintsts = mci_readl(host, RINTSTS));
+	pr_memlog(mmc_memlog, ": STATUS:	 0x%08x\n",
+		host->sfr_dump->status = mci_readl(host, STATUS));
+	pr_memlog(mmc_memlog, ": FIFOTH:	 0x%08x\n",
+		host->sfr_dump->fifoth = mci_readl(host, FIFOTH));
+	pr_memlog(mmc_memlog, ": CDETECT:	 0x%08x\n", mci_readl(host, CDETECT));
+	pr_memlog(mmc_memlog, ": WRTPRT:	 0x%08x\n", mci_readl(host, WRTPRT));
+	pr_memlog(mmc_memlog, ": GPIO:	 0x%08x\n", mci_readl(host, GPIO));
+	pr_memlog(mmc_memlog, ": TCBCNT:	 0x%08x\n",
+		host->sfr_dump->tcbcnt = mci_readl(host, TCBCNT));
+	pr_memlog(mmc_memlog, ": TBBCNT:	 0x%08x\n",
+		host->sfr_dump->tbbcnt = mci_readl(host, TBBCNT));
+	pr_memlog(mmc_memlog, ": DEBNCE:	 0x%08x\n", mci_readl(host, DEBNCE));
+	pr_memlog(mmc_memlog, ": USRID:	 0x%08x\n", mci_readl(host, USRID));
+	pr_memlog(mmc_memlog, ": VERID:	 0x%08x\n", mci_readl(host, VERID));
+	pr_memlog(mmc_memlog, ": HCON:	 0x%08x\n", mci_readl(host, HCON));
+	pr_memlog(mmc_memlog, ": UHS_REG:	 0x%08x\n",
+		host->sfr_dump->uhs_reg = mci_readl(host, UHS_REG));
+	pr_memlog(mmc_memlog, ": BMOD:	 0x%08x\n", host->sfr_dump->bmod = mci_readl(host, BMOD));
+	pr_memlog(mmc_memlog, ": PLDMND:	 0x%08x\n", mci_readl(host, PLDMND));
+	pr_memlog(mmc_memlog, ": DBADDRL:	 0x%08x\n",
+		host->sfr_dump->dbaddrl = mci_readl(host, DBADDRL));
+	pr_memlog(mmc_memlog, ": DBADDRU:	 0x%08x\n",
+		host->sfr_dump->dbaddru = mci_readl(host, DBADDRU));
+	pr_memlog(mmc_memlog, ": DSCADDRL:	 0x%08x\n",
+		host->sfr_dump->dscaddrl = mci_readl(host, DSCADDRL));
+	pr_memlog(mmc_memlog, ": DSCADDRU:	 0x%08x\n",
+		host->sfr_dump->dscaddru = mci_readl(host, DSCADDRU));
+	pr_memlog(mmc_memlog, ": BUFADDR:	 0x%08x\n",
+		host->sfr_dump->bufaddr = mci_readl(host, BUFADDR));
+	pr_memlog(mmc_memlog, ": BUFADDRU:	 0x%08x\n",
+		host->sfr_dump->bufaddru = mci_readl(host, BUFADDRU));
+	pr_memlog(mmc_memlog, ": DBADDR:	 0x%08x\n",
+		host->sfr_dump->dbaddr = mci_readl(host, DBADDR));
+	pr_memlog(mmc_memlog, ": DSCADDR:	 0x%08x\n",
+		host->sfr_dump->dscaddr = mci_readl(host, DSCADDR));
+	pr_memlog(mmc_memlog, ": BUFADDR:	 0x%08x\n",
+		host->sfr_dump->bufaddr = mci_readl(host, BUFADDR));
+	pr_memlog(mmc_memlog, ": CLKSEL:    0x%08x\n",
+		host->sfr_dump->clksel = mci_readl(host, CLKSEL));
+	pr_memlog(mmc_memlog, ": IDSTS:	 0x%08x\n", mci_readl(host, IDSTS));
+	pr_memlog(mmc_memlog, ": IDSTS64:	 0x%08x\n",
+		host->sfr_dump->idsts64 = mci_readl(host, IDSTS64));
+	pr_memlog(mmc_memlog, ": IDINTEN:	 0x%08x\n", mci_readl(host, IDINTEN));
+	pr_memlog(mmc_memlog, ": IDINTEN64: 0x%08x\n",
+		host->sfr_dump->idinten64 = mci_readl(host, IDINTEN64));
+	pr_memlog(mmc_memlog, ": RESP_TAT: 0x%08x\n", mci_readl(host, RESP_TAT));
+	pr_memlog(mmc_memlog, ": FORCE_CLK_STOP: 0x%08x\n",
+		host->sfr_dump->force_clk_stop = mci_readl(host, FORCE_CLK_STOP));
+	pr_memlog(mmc_memlog, ": CDTHRCTL: 0x%08x\n", mci_readl(host, CDTHRCTL));
+	if (host->ch_id == 0)
+		dw_mci_exynos_register_dump(host);
+	pr_memlog(mmc_memlog, ": ============== STATUS DUMP ================\n");
+	pr_memlog(mmc_memlog, ": cmd_status:      0x%08x\n",
+		host->sfr_dump->cmd_status = host->cmd_status);
+	pr_memlog(mmc_memlog, ": data_status:     0x%08x\n",
+		host->sfr_dump->force_clk_stop = host->data_status);
+	pr_memlog(mmc_memlog, ": pending_events:  0x%08lx\n",
+		host->sfr_dump->pending_events = host->pending_events);
+	pr_memlog(mmc_memlog, ": completed_events:0x%08lx\n",
+		host->sfr_dump->completed_events = host->completed_events);
+	pr_memlog(mmc_memlog, ": state:           %d\n", host->sfr_dump->host_state = host->state);
+	pr_memlog(mmc_memlog, ": gate-clk:            %s\n",
+		atomic_read(&host->ciu_clk_cnt) ? "enable" : "disable");
+	pr_memlog(mmc_memlog, ": ciu_en_win:           %d\n", atomic_read(&host->ciu_en_win));
+	reg = mci_readl(host, CMD);
+	pr_memlog(mmc_memlog, ": ================= CMD REG =================\n");
+	if ((reg >> 9) & 0x1) {
+		pr_memlog(mmc_memlog, ": read/write        : %s\n",
+			(reg & (0x1 << 10)) ? "write" : "read");
+		pr_memlog(mmc_memlog, ": data expected     : %d\n", (reg >> 9) & 0x1);
+	}
+	pr_memlog(mmc_memlog, ": cmd index         : %d\n",
+		host->sfr_dump->cmd_index = ((reg >> 0) & 0x3f));
+	reg = mci_readl(host, STATUS);
+	pr_memlog(mmc_memlog, ": ================ STATUS REG ===============\n");
+	pr_memlog(mmc_memlog, ": fifocount         : %d\n",
+		host->sfr_dump->fifo_count = ((reg >> 17) & 0x1fff));
+	pr_memlog(mmc_memlog, ": response index    : %d\n", (reg >> 11) & 0x3f);
+	pr_memlog(mmc_memlog, ": data state mc busy: %d\n", (reg >> 10) & 0x1);
+	pr_memlog(mmc_memlog, ": data busy         : %d\n",
+		host->sfr_dump->data_busy = ((reg >> 9) & 0x1));
+	pr_memlog(mmc_memlog, ": data 3 state      : %d\n",
+		host->sfr_dump->data_3_state = ((reg >> 8) & 0x1));
+	pr_memlog(mmc_memlog, ": command fsm state : %d\n", (reg >> 4) & 0xf);
+	pr_memlog(mmc_memlog, ": fifo full         : %d\n", (reg >> 3) & 0x1);
+	pr_memlog(mmc_memlog, ": fifo empty        : %d\n", (reg >> 2) & 0x1);
+	pr_memlog(mmc_memlog, ": fifo tx watermark : %d\n",
+		host->sfr_dump->fifo_tx_watermark = ((reg >> 1) & 0x1));
+	pr_memlog(mmc_memlog, ": fifo rx watermark : %d\n",
+		host->sfr_dump->fifo_rx_watermark = ((reg >> 0) & 0x1));
+	pr_memlog(mmc_memlog, ": ===========================================\n");
+
+#if IS_ENABLED(MMC_DW_EXYNOS_DUMP_TO_CONSOLE)
 	dev_err(host->dev, ": ============== REGISTER DUMP ==============\n");
 	dev_err(host->dev, ": CTRL:	 0x%08x\n", host->sfr_dump->contrl = mci_readl(host, CTRL));
 	dev_err(host->dev, ": PWREN:	 0x%08x\n", host->sfr_dump->pwren = mci_readl(host, PWREN));
@@ -183,6 +344,7 @@ static void dw_mci_reg_dump(struct dw_mci *host)
 	dev_err(host->dev, ": fifo rx watermark : %d\n",
 		host->sfr_dump->fifo_rx_watermark = ((reg >> 0) & 0x1));
 	dev_err(host->dev, ": ===========================================\n");
+#endif
 }
 
 /* Variations in Exynos specific dw-mshc controller */
@@ -1293,12 +1455,81 @@ static const struct of_device_id dw_mci_exynos_match[] = {
 
 MODULE_DEVICE_TABLE(of, dw_mci_exynos_match);
 
+static int mmc_memlog_file_completed(struct memlog_obj *obj, u32 flags)
+{
+	/* NOP */
+	return 0;
+}
+
+static int mmc_memlog_status_notify(struct memlog_obj *obj, u32 flags)
+{
+	/* NOP */
+	return 0;
+}
+
+static int mmc_memlog_level_notify(struct memlog_obj *obj, u32 flags)
+{
+	/* NOP */
+	return 0;
+}
+
+static int mmc_memlog_enable_notify(struct memlog_obj *obj, u32 flags)
+{
+	/* NOP */
+	return 0;
+}
+
+static const struct memlog_ops mmc_memlog_ops = {
+	.file_ops_completed = mmc_memlog_file_completed,
+	.log_status_notify = mmc_memlog_status_notify,
+	.log_level_notify = mmc_memlog_level_notify,
+	.log_enable_notify = mmc_memlog_enable_notify,
+};
+
+int exynos_mmc_init_mem_log(struct platform_device *pdev)
+{
+	struct exynos_mmc_memlog *memlog = &mmc_memlog;
+	struct memlog *desc;
+	struct memlog_obj *log_obj;
+	int ret;
+
+	pr_info("%s: +++\n", __func__);
+
+	ret = memlog_register("MMC", &pdev->dev, &desc);
+	if (ret) {
+		pr_err("failed to register memlog\n");
+		return -1;
+	}
+
+	memlog->desc = desc;
+	desc->ops = mmc_memlog_ops;
+
+	log_obj = memlog_alloc_printf(desc,
+					SZ_64K,
+					NULL,
+					"log-mem",
+					0);
+
+	if (log_obj) {
+		memlog->log_obj = log_obj;
+		memlog->log_enable = 1;
+	} else {
+		pr_err("%s: failed to alloc memlog memory for log\n",
+			__func__);
+		return -1;
+	}
+	pr_info("%s: ---\n", __func__);
+
+	return 0;
+}
+
 static int dw_mci_exynos_probe(struct platform_device *pdev)
 {
 	const struct dw_mci_drv_data *drv_data;
 	const struct of_device_id *match;
 	int ret;
 
+	exynos_mmc_init_mem_log(pdev);
 	match = of_match_node(dw_mci_exynos_match, pdev->dev.of_node);
 	drv_data = match->data;
 

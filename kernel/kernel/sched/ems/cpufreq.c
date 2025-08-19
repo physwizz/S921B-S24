@@ -206,7 +206,6 @@ unsigned int fclamp_apply(struct cpufreq_policy *policy, unsigned int orig_freq)
 		new_freq = orig_freq;
 
 	new_freq = clamp_val(new_freq, policy->cpuinfo.min_freq, policy->cpuinfo.max_freq);
-
 	trace_fclamp_apply(policy->cpu, orig_freq, new_freq, boost, fcd);
 
 	return new_freq;

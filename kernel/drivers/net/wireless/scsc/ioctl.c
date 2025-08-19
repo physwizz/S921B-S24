@@ -116,6 +116,9 @@
 #define CMD_SETBANDWIDTH "SETBANDWIDTH"
 #define CMD_SET_BSS_CHANNEL_WIDTH "SET_BSS_CHANNEL_WIDTH"
 
+#define CMD_SET_MAX_BW "SET_MAX_BW"
+#define CMD_GET_MAX_BW "GET_MAX_BW"
+
 #define CMD_SETBAND "SETBAND"
 #define CMD_GETBAND "GETBAND"
 #define CMD_FACTORY_SETBAND "FACTORY_SETBAND"
@@ -201,11 +204,12 @@
 
 #define CMD_TWT_SETUP                "TWT_SETUP"
 #define CMD_TWT_TEARDOWN             "TWT_TEARDOWN"
-#define CMD_TWT_SUSPEND              "TWT_INFO_FRM"
 #define CMD_GET_TWT_STATUS           "GET_TWT_STATUS"
 #define CMD_GET_TWT_CAP              "GET_TWT_CAP"
-#define CMD_GET_TWT_STATISTICS       "GET_TWT_STATISTICS"
-#define CMD_CLEAR_TWT_STATISTICS     "CLEAR_TWT_STATISTICS"
+#define CMD_OBSSPD_ENABLE            "OBSSPD_ENABLE"
+#define CMD_SRP_AND_NON_SRG_OBSS_PD_PROHIBITED	"SRP_AND_NON_SRG-OBSS_PD_PROHIBITED"
+#define CMD_GET_SR_PARAMETER_SET     "GET_SR_PARAMETER_SET"
+
 #define CMD_ADPS_ENABLE              "ADPS_ENABLE"
 #ifdef CONFIG_SCSC_WLAN_SAP_POWER_SAVE
 #define CMD_SET_AP_SUSPEND			"SET_AP_SUSPEND"
@@ -290,14 +294,6 @@
 
 #define SLSI_SCHED_PM_MIN_GRACE_PERIOD 0
 #define SLSI_SCHED_PM_MAX_GRACE_PERIOD 6144
-
-enum slsi_scheduled_pm_error_code {
-	SLSI_SCHED_PM_TRANSIENT_ERROR = -5,
-	SLSI_SCHED_PM_INVALID_ARGUMENT = -10,
-	SLSI_SCHED_PM_TEMPORARILY_BUSY = -15,
-	SLSI_SCHED_PM_NOT_SUPPORTED_REQUEST = -20,
-	SLSI_SCHED_PM_NOT_AVAILABLE_TO_PROCESS_CMD = -25
-};
 
 #ifdef CONFIG_SCSC_WLAN_SAP_POWER_SAVE
 #define AP_RPS_PHASE_MIN 1
@@ -5500,9 +5496,9 @@ int slsi_get_sta_info(struct net_device *dev, char *command, int buf_len)
 {
 	struct netdev_vif   *ndev_vif = netdev_priv(dev);
 	struct slsi_dev      *sdev = ndev_vif->sdev;
-	int                     len = 0;
+	int                     len = 0, i = 0;
 	struct slsi_ioctl_args *ioctl_args = NULL;
-	struct slsi_ap_sta_info sta_info;
+	struct slsi_ap_sta_info sta_info, sta_info_all;
 #ifdef CONFIG_SCSC_WLAN_WIFI_SHARING
 	struct net_device *ap_dev;
 	struct netdev_vif *ndev_ap_vif;
@@ -5561,8 +5557,7 @@ int slsi_get_sta_info(struct net_device *dev, char *command, int buf_len)
 	SLSI_MUTEX_LOCK(ndev_vif->vif_mutex);
 	memset(&sta_info, 0, sizeof(sta_info));
 	if (strcmp("ALL", ioctl_args->args[0]) == 0) {
-		int i = 0;
-
+		memset(&sta_info_all, 0, sizeof(sta_info_all));
 		for (i = 0; i < SLSI_PEER_INDEX_MAX; i++) {
 			if (ndev_vif->peer_sta_record[i] && ndev_vif->peer_sta_record[i]->valid &&
 			    slsi_fill_ap_sta_info(sdev, dev, ndev_vif->peer_sta_record[i]->address,
@@ -5570,12 +5565,18 @@ int slsi_get_sta_info(struct net_device *dev, char *command, int buf_len)
 				SLSI_INFO(sdev, "" MACSTR " - valid:%d, buf_len:%d, len:%d\n",
 					  MAC2STR(ndev_vif->peer_sta_record[i]->address),
 					  ndev_vif->peer_sta_record[i]->valid, buf_len, len);
-				len = slsi_copy_ap_sta_info_to_buf(ndev_vif, command, buf_len, len, &sta_info);
-				if (buf_len <= len)
-					break;
+				sta_info_all.retry_packets += sta_info.retry_packets;
+				sta_info_all.rx_bc_mc_packets += sta_info.rx_bc_mc_packets;
+				sta_info_all.tx_success_packets += sta_info.tx_success_packets;
+				sta_info_all.tx_failure_packets += sta_info.tx_failure_packets;
+				sta_info_all.tx_retry_packets += sta_info.tx_retry_packets;
+				sta_info_all.rx_success_packets += sta_info.rx_success_packets;
+				sta_info_all.rx_failure_packets += sta_info.rx_failure_packets;
+				sta_info_all.rx_retry_packets += sta_info.rx_retry_packets;
 				memset(&sta_info, 0, sizeof(sta_info));
 			}
 		}
+		len = slsi_copy_ap_sta_info_to_buf(ndev_vif, command, buf_len, len, &sta_info_all);
 	} else {
 		u8 u[ETH_ALEN];
 
@@ -5584,11 +5585,16 @@ int slsi_get_sta_info(struct net_device *dev, char *command, int buf_len)
 				 (int)strlen(ioctl_args->args[0]));
 			SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
 			kfree(ioctl_args);
-			return -EINVAL;
+			len = slsi_copy_ap_sta_info_to_buf(ndev_vif, command, buf_len, len, &sta_info);
+			return len;
 		}
 		slsi_machexstring_to_macarray(ioctl_args->args[0], u);
-		if (slsi_fill_ap_sta_info(sdev, dev, u, &sta_info, 0) == 0)
+		if (slsi_fill_ap_sta_info(sdev, dev, u, &sta_info, 0) == 0) {
 			len = slsi_copy_ap_sta_info_to_buf(ndev_vif, command, buf_len, len, &sta_info);
+		} else {
+			memset(&sta_info, 0, sizeof(sta_info));
+			len = slsi_copy_ap_sta_info_to_buf(ndev_vif, command, buf_len, len, &sta_info);
+		}
 	}
 	SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
 
@@ -6641,7 +6647,7 @@ static int slsi_twt_setup(struct net_device *dev, char *command, int buf_len)
 	struct slsi_dev        *sdev = ndev_vif->sdev;
 	struct slsi_vif_sta    *sta;
 	struct twt_setup       tsetup = {0};
-	int                    r, ret = SLSI_TWT_WIFI_ERROR_INVALID_ARGUMENT;
+	int                    r, ret = SLSI_WIFI_ERROR_INVALID_ARGUMENT;
 	struct slsi_ioctl_args *ioctl_args = NULL;
 	int                    i, setup_id_idx = SLSI_MAX_NUMBER_SETUP_ID;
 
@@ -6649,6 +6655,7 @@ static int slsi_twt_setup(struct net_device *dev, char *command, int buf_len)
 	r = slsi_verify_ioctl_args(sdev, ioctl_args);
 	if (r) {
 		SLSI_ERR(sdev, "twt_error_code = %d\n", ret);
+		ret = snprintf(command, buf_len, "%s %d", CMD_TWT_SETUP, ret);
 		return ret;
 	}
 
@@ -6656,7 +6663,7 @@ static int slsi_twt_setup(struct net_device *dev, char *command, int buf_len)
 	if (ndev_vif->iftype == NL80211_IFTYPE_UNSPECIFIED ||
 	    (ndev_vif->iftype == NL80211_IFTYPE_STATION && ndev_vif->sta.vif_status != SLSI_VIF_STATUS_CONNECTED)) {
 		SLSI_NET_ERR(dev, "sta is not in connected state\n");
-		ret = SLSI_TWT_WIFI_ERROR_NOT_AVAILABLE;
+		ret = SLSI_WIFI_ERROR_NOT_AVAILABLE;
 		goto exit;
 	}
 	if (ioctl_args->arg_count < 13) {
@@ -6724,7 +6731,7 @@ static int slsi_twt_setup(struct net_device *dev, char *command, int buf_len)
 	sta = &ndev_vif->sta;
 	if (!sta->twt_allowed) {
 		SLSI_ERR(sdev, "HE Capability not supported\n");
-		ret = SLSI_TWT_WIFI_ERROR_NOT_SUPPORTED;
+		ret = SLSI_WIFI_ERROR_NOT_SUPPORTED;
 		goto exit;
 	}
 	if ((tsetup.min_wake_duration != -1 && tsetup.d_wake_duration < tsetup.min_wake_duration) ||
@@ -6757,6 +6764,7 @@ static int slsi_twt_setup(struct net_device *dev, char *command, int buf_len)
 exit:
 	if (ret < 0)
 		SLSI_ERR(sdev, "twt_error_code = %d\n", ret);
+	ret = snprintf(command, buf_len, "%s %d", CMD_TWT_SETUP, ret);
 	SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
 	kfree(ioctl_args);
 	return ret;
@@ -6769,7 +6777,7 @@ static int slsi_twt_teardown(struct net_device *dev, char *command, int buf_len)
 	struct slsi_vif_sta    *sta;
 	int                    setup_id;
 	int                    negotiation_type;
-	int                    r, ret = SLSI_TWT_WIFI_ERROR_INVALID_ARGUMENT;
+	int                    r, ret = SLSI_WIFI_ERROR_INVALID_ARGUMENT;
 	struct slsi_ioctl_args *ioctl_args = NULL;
 	int                    setup_id_idx, teardown_count = 0;
 	bool                   teardown_success = false;
@@ -6778,6 +6786,7 @@ static int slsi_twt_teardown(struct net_device *dev, char *command, int buf_len)
 	r = slsi_verify_ioctl_args(sdev, ioctl_args);
 	if (r) {
 		SLSI_ERR(sdev, "twt_error_code = %d\n", ret);
+		ret = snprintf(command, buf_len, "%s %d", CMD_TWT_TEARDOWN, ret);
 		return ret;
 	}
 
@@ -6785,7 +6794,7 @@ static int slsi_twt_teardown(struct net_device *dev, char *command, int buf_len)
 	if (ndev_vif->iftype == NL80211_IFTYPE_UNSPECIFIED ||
 	    (ndev_vif->iftype == NL80211_IFTYPE_STATION && ndev_vif->sta.vif_status != SLSI_VIF_STATUS_CONNECTED)) {
 		SLSI_NET_ERR(dev, "sta is not in connected state\n");
-		ret = SLSI_TWT_WIFI_ERROR_NOT_AVAILABLE;
+		ret = SLSI_WIFI_ERROR_NOT_AVAILABLE;
 		goto exit;
 	}
 	if (ioctl_args->arg_count < 2) {
@@ -6811,7 +6820,7 @@ static int slsi_twt_teardown(struct net_device *dev, char *command, int buf_len)
 	sta = &ndev_vif->sta;
 	if (!sta->twt_allowed) {
 		SLSI_ERR(sdev, "HE Capability not supported\n");
-		ret = SLSI_TWT_WIFI_ERROR_NOT_SUPPORTED;
+		ret = SLSI_WIFI_ERROR_NOT_SUPPORTED;
 		goto exit;
 	}
 	for (setup_id_idx = 0; setup_id_idx < SLSI_MAX_NUMBER_SETUP_ID; setup_id_idx++) {
@@ -6824,58 +6833,12 @@ static int slsi_twt_teardown(struct net_device *dev, char *command, int buf_len)
 			teardown_count++;
 		}
 	}
-	if (teardown_success == true)
+	if (teardown_success == true || !teardown_count)
 		ret = 0;
-	if (!teardown_count)
-		ret = SLSI_TWT_WIFI_ERROR_NOT_AVAILABLE;
 exit:
 	if (ret < 0)
 		SLSI_ERR(sdev, "twt_error_code = %d\n", ret);
-	SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
-	kfree(ioctl_args);
-	return ret;
-}
-
-static int slsi_twt_suspend(struct net_device *dev, char *command, int buf_len)
-{
-	struct netdev_vif      *ndev_vif = netdev_priv(dev);
-	struct slsi_dev        *sdev = ndev_vif->sdev;
-	struct slsi_vif_sta    *sta;
-	int                    setup_id;
-	int                    suspend_duration;
-	int                    r, ret = SLSI_TWT_WIFI_ERROR_INVALID_ARGUMENT;
-	struct slsi_ioctl_args *ioctl_args = NULL;
-
-	ioctl_args = slsi_get_private_command_args(command, buf_len, 2);
-	r = slsi_verify_ioctl_args(sdev, ioctl_args);
-	if (r) {
-		SLSI_ERR(sdev, "twt_error_code = %d\n", ret);
-		return ret;
-	}
-
-	SLSI_MUTEX_LOCK(ndev_vif->vif_mutex);
-	if (ioctl_args->arg_count < 2) {
-		SLSI_ERR(sdev, "Invalid argument count = %d\n", ioctl_args->arg_count);
-		goto exit;
-	}
-	if (slsi_str2int(ioctl_args->args[0], &setup_id)) {
-		SLSI_ERR(sdev, "Invalid set up string: '%s'\n", ioctl_args->args[0]);
-		goto exit;
-	}
-	if (slsi_str2int(ioctl_args->args[1], &suspend_duration)) {
-		SLSI_ERR(sdev, "Invalid suspend duration string: '%s'\n", ioctl_args->args[1]);
-		goto exit;
-	}
-	sta = &ndev_vif->sta;
-	if (!sta->twt_allowed) {
-		SLSI_ERR(sdev, "HE Capability not supported\n");
-		ret = SLSI_TWT_WIFI_ERROR_NOT_SUPPORTED;
-		goto exit;
-	}
-	ret = slsi_mlme_twt_suspend(sdev, dev, setup_id, suspend_duration);
-exit:
-	if (ret < 0)
-		SLSI_ERR(sdev, "twt_error_code = %d\n", ret);
+	ret = snprintf(command, buf_len, "%s %d", CMD_TWT_TEARDOWN, ret);
 	SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
 	kfree(ioctl_args);
 	return ret;
@@ -6901,27 +6864,25 @@ static int slsi_twt_get_status(struct net_device *dev, char *command, int comman
 	SLSI_MUTEX_LOCK(ndev_vif->vif_mutex);
 	if (ioctl_args->arg_count < 1) {
 		SLSI_ERR(sdev, "Invalid argument count = %d\n", ioctl_args->arg_count);
-		ret = SLSI_TWT_WIFI_ERROR_INVALID_ARGUMENT;
+		ret = SLSI_WIFI_ERROR_INVALID_ARGUMENT;
 		goto exit;
 	}
 	if (slsi_str2int(ioctl_args->args[0], &setup_id)) {
 		SLSI_ERR(sdev, "Invalid set up string: '%s'\n", ioctl_args->args[0]);
-		ret = SLSI_TWT_WIFI_ERROR_INVALID_ARGUMENT;
+		ret = SLSI_WIFI_ERROR_INVALID_ARGUMENT;
 		goto exit;
 	}
+	/* If connected AP does not support TWT, requirement is to return success with all zeroes in output */
 	sta = &ndev_vif->sta;
-	if (!sta->twt_allowed) {
-		SLSI_ERR(sdev, "HE Capability not supported\n");
-		ret = SLSI_TWT_WIFI_ERROR_NOT_SUPPORTED;
-		goto exit;
-	}
 	query_count = 0;
-	for (setup_id_idx = 0; setup_id_idx < SLSI_MAX_NUMBER_SETUP_ID; setup_id_idx++) {
-		if ((!setup_id && sdev->twt_setup_id[setup_id_idx]) ||
-		    (setup_id && sdev->twt_setup_id[setup_id_idx] == setup_id)) {
-			ret = slsi_mlme_twt_status_query(sdev, dev, command, command_len, &command_pos,
-							 sdev->twt_setup_id[setup_id_idx]);
-			query_count++;
+	if (sta->twt_allowed) {
+		for (setup_id_idx = 0; setup_id_idx < SLSI_MAX_NUMBER_SETUP_ID; setup_id_idx++) {
+			if ((!setup_id && sdev->twt_setup_id[setup_id_idx]) ||
+				(setup_id && sdev->twt_setup_id[setup_id_idx] == setup_id)) {
+				ret = slsi_mlme_twt_status_query(sdev, dev, command, command_len, &command_pos,
+												 sdev->twt_setup_id[setup_id_idx]);
+				query_count++;
+			}
 		}
 	}
 	if (!query_count)
@@ -6944,7 +6905,7 @@ static int slsi_twt_get_capabilities(struct net_device *dev, char *command, int 
 	struct slsi_mib_data      mibrsp = { 0, NULL };
 	struct slsi_mib_value     *values = NULL;
 	struct slsi_mib_get_entry get_values[] = {{SLSI_PSID_UNIFI_TWT_CONTROL_FLAGS, { 0, 0 } } };
-	int                       r = SLSI_TWT_WIFI_ERROR_INVALID_ARGUMENT;
+	int                       r = SLSI_WIFI_ERROR_INVALID_ARGUMENT;
 	u16                       chipset_cap = 0;
 	int                       value;
 
@@ -6997,135 +6958,124 @@ exit_with_error:
 	return r;
 }
 
-static int slsi_twt_get_statistics_query(struct net_device *dev, char *command, int buf_len)
+static int slsi_obsspd_enable(struct net_device *dev, char *command, int buf_len)
 {
 	struct netdev_vif         *ndev_vif = netdev_priv(dev);
 	struct slsi_dev           *sdev = ndev_vif->sdev;
-	struct slsi_vif_sta       *sta;
-	int                       setup_id;
-	u32                       data[5];
-	int                       r, ret = SLSI_TWT_WIFI_ERROR_INVALID_ARGUMENT;
-	int                       i, j;
 	struct slsi_ioctl_args    *ioctl_args = NULL;
-	struct slsi_mib_data      mibrsp = { 0, NULL };
-	struct slsi_mib_value     *values = NULL;
-	struct slsi_mib_get_entry get_values[5] = {
-		{SLSI_PSID_UNIFI_TWT_AVG_EARLY_SP_TERM, { 0, 0 }},
-		{SLSI_PSID_UNIFI_TWT_AVG_TX_PKT_NUM, { 0, 0 }},
-		{SLSI_PSID_UNIFI_TWT_AVG_RX_PKT_NUM, { 0, 0 }},
-		{SLSI_PSID_UNIFI_TWT_AVG_TX_PKT_SIZE, { 0, 0 }},
-		{SLSI_PSID_UNIFI_TWT_AVG_RX_PKT_SIZE, { 0, 0 }}
-	};
+	int                       ret = -EINVAL;
+	int                       i = 0;
+	int                       config_count = 0;
+	int                       mib_length = 0;
+	int                       enable = 0;
+	int                       rssi = -82;
+	int                       rssi_list[7] = {-82,};
+	u8                        mac_addr[7][ETH_ALEN];
 
-	ioctl_args = slsi_get_private_command_args(command, buf_len, 1);
-	r = slsi_verify_ioctl_args(sdev, ioctl_args);
-	if (r) {
-		SLSI_ERR(sdev, "twt_error_code = %d\n", ret);
+	ioctl_args = slsi_get_private_command_args(command, buf_len, 15);
+	ret = slsi_verify_ioctl_args(sdev, ioctl_args);
+	if (ret)
 		return ret;
-	}
 
-	SLSI_MUTEX_LOCK(ndev_vif->vif_mutex);
-	if (ioctl_args->arg_count < 1) {
-		SLSI_ERR(sdev, "Invalid argument count = %d\n", ioctl_args->arg_count);
-		goto exit_with_error;
-	}
-	if (slsi_str2int(ioctl_args->args[0], &setup_id)) {
-		SLSI_ERR(sdev, "Invalid set up string: '%s'\n", ioctl_args->args[0]);
-		goto exit_with_error;
-	}
-	sta = &ndev_vif->sta;
-	if (!sta->twt_allowed) {
-		SLSI_ERR(sdev, "HE Capability not supported\n");
-		ret = SLSI_TWT_WIFI_ERROR_NOT_SUPPORTED;
-		goto exit_with_error;
-	}
-
-	for (j = 0; j < ARRAY_SIZE(get_values); j++)
-		get_values[j].index[0] = setup_id;
-	mibrsp.dataLength = 32 * ARRAY_SIZE(get_values);
-	mibrsp.data = kmalloc(mibrsp.dataLength, GFP_KERNEL);
-	if (!mibrsp.data) {
-		SLSI_ERR(sdev, "Cannot kmalloc %d bytes\n", mibrsp.dataLength);
-		ret = -ENOMEM;
-		goto exit_with_error;
-	}
-	values = slsi_read_mibs(sdev, dev, get_values, ARRAY_SIZE(get_values), &mibrsp);
-	if (!values) {
-		kfree(mibrsp.data);
-		goto exit_with_error;
-	}
-	for (i = 0; i < ARRAY_SIZE(get_values); i++) {
-		if (values[i].type == SLSI_MIB_TYPE_UINT) {
-			data[i] = values[i].u.uintValue;
-		} else {
-			SLSI_ERR(sdev, "invalid type. iter:%d\n", i);
-			kfree(mibrsp.data);
-			kfree(values);
-			goto exit_with_error;
+	ret = -EINVAL;
+	/* If OBBSPD_ENABLE is 0, set mib psid 2776 and 2728 with 0 value */
+	if (ioctl_args->arg_count == 1) {
+		if (slsi_str2int(ioctl_args->args[0], &enable) && enable != 0) {
+			SLSI_ERR(sdev, "Invalid OBSS-PD enabled flag: %s\n", ioctl_args->args[0]);
+			goto exit;
 		}
-	}
-	ret = snprintf(command, buf_len, "%d %d %d %d %d\n", data[0], data[1], data[2], data[3], data[4]);
-	kfree(values);
+		ret = slsi_set_mib_obss_pd_enable(sdev, enable, rssi);
+		if (ret)
+			goto exit;
+		ret = slsi_set_mib_obss_pd_enable_per_obss(sdev, config_count, rssi_list, mac_addr);
+	} else if (ioctl_args->arg_count == 2) {
+		if (slsi_str2int(ioctl_args->args[0], &enable)) {
+			SLSI_ERR(sdev, "Invalid OBSS-PD enabled flag: %s\n", ioctl_args->args[0]);
+			goto exit;
+		}
+		if (slsi_str2int(ioctl_args->args[1], &rssi)) {
+			SLSI_ERR(sdev, "Failed to read rssi string: %s\n", ioctl_args->args[1]);
+			goto exit;
+		}
+		SLSI_DBG3(sdev, SLSI_MLME, "OBSS-PD enabled flag: %d rssi: %d\n", enable, rssi);
 
-exit_with_error:
-	if (ret < 0)
-		SLSI_ERR(sdev, "twt_error_code = %d\n", ret);
-	SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
+		ret = slsi_set_mib_obss_pd_enable(sdev, enable, rssi);
+	} else if ((ioctl_args->arg_count - 1) % 2 == 0) {
+		for (i = 1; i < ioctl_args->arg_count; i += 2) {
+			slsi_machexstring_to_macarray(ioctl_args->args[i], mac_addr[config_count]);
+
+			if (slsi_str2int(ioctl_args->args[i + 1], &rssi_list[config_count])) {
+				SLSI_ERR(sdev, "Failed to read rssi string: '%s'\n", ioctl_args->args[i + 1]);
+				goto exit;
+			}
+			config_count++;
+		}
+		mib_length = config_count * 7; /* config_count * (mac_addr[6] + rssi) */
+		ret = slsi_set_mib_obss_pd_enable_per_obss(sdev, config_count, rssi_list, mac_addr);
+	} else {
+		SLSI_ERR(sdev, "Invalid OBSS-PD enabled size: %d\n", ioctl_args->arg_count);
+	}
+
+exit:
 	kfree(ioctl_args);
 	return ret;
 }
 
-static int slsi_twt_clear_statistics(struct net_device *dev, char *command, int buf_len)
+static int slsi_set_srp_and_non_srg_obss_pd_prohibited(struct net_device *dev, char *command, int buf_len)
 {
-	struct netdev_vif      *ndev_vif = netdev_priv(dev);
-	struct slsi_dev        *sdev = ndev_vif->sdev;
-	struct slsi_vif_sta    *sta;
-	struct slsi_mib_data   mib_data = { 0, NULL };
-	int                    setup_id;
-	int                    r, result = SLSI_TWT_WIFI_ERROR_INVALID_ARGUMENT;
-	struct slsi_ioctl_args *ioctl_args = NULL;
+	struct netdev_vif         *ndev_vif = netdev_priv(dev);
+	struct slsi_dev           *sdev = ndev_vif->sdev;
+	struct slsi_ioctl_args    *ioctl_args = NULL;
+	int                       enable;
+	int                       ret = -EINVAL;
 
 	ioctl_args = slsi_get_private_command_args(command, buf_len, 1);
-	r = slsi_verify_ioctl_args(sdev, ioctl_args);
-	if (r) {
-		SLSI_ERR(sdev, "twt_error_code = %d\n", result);
-		return result;
+	ret = slsi_verify_ioctl_args(sdev, ioctl_args);
+	if (ret)
+		return ret;
+
+	ret = -EINVAL;
+	if (slsi_str2int(ioctl_args->args[0], &enable)) {
+		SLSI_ERR(sdev, "Invalid OBSS-PD Prohibit enabled flag: '%s'\n", ioctl_args->args[0]);
+		goto exit;
 	}
+	if (enable != 0 && enable != 1) {
+		SLSI_ERR(sdev, "Invalid value of OBSS-PD Prohibit enabled flag %d\n", enable);
+		goto exit;
+	}
+	SLSI_DBG3(sdev, SLSI_MLME, "OBSS-PD Prohibit enabled flag = %d\n", enable);
+
+	ret = slsi_set_mib_srp_non_srg_obss_pd_prohibited(sdev, enable);
+
+exit:
+	kfree(ioctl_args);
+	return ret;
+}
+
+static int slsi_get_spatial_reuse_parameter_set(struct net_device *dev, char *command, int buf_len)
+{
+	struct netdev_vif         *ndev_vif = netdev_priv(dev);
+	int                       ret = -EINVAL;
+	struct slsi_vif_sta       *sta;
+	int                       hesiga_spatial_reuse_value15_disallowed;
+	int                       non_srg_obss_pd_sr_disallowed;
 
 	SLSI_MUTEX_LOCK(ndev_vif->vif_mutex);
-	if (ioctl_args->arg_count < 1) {
-		SLSI_ERR(sdev, "Invalid argument count = %d\n", ioctl_args->arg_count);
-		goto exit_with_error;
-	}
-	if (slsi_str2int(ioctl_args->args[0], &setup_id)) {
-		SLSI_ERR(sdev, "Invalid setup string: '%s'\n", ioctl_args->args[0]);
-		goto exit_with_error;
-	}
-	if (setup_id < 0 || setup_id >= 8) {
-		SLSI_ERR(sdev, "Invalid setup id : %d\n", setup_id);
-		goto exit_with_error;
-	}
 	sta = &ndev_vif->sta;
-	if (!sta->twt_allowed) {
-		SLSI_ERR(sdev, "HE Capability not supported\n");
-		result = SLSI_TWT_WIFI_ERROR_NOT_SUPPORTED;
-		goto exit_with_error;
-	}
-	result = slsi_mib_encode_uint(&mib_data, SLSI_PSID_UNIFI_TWT_CLEAR_STATS, setup_id, 0);
-	if (result != SLSI_MIB_STATUS_SUCCESS || mib_data.dataLength == 0)
-		goto exit_with_error;
 
-	result = slsi_mlme_set(sdev, dev, mib_data.data, mib_data.dataLength);
-	if (result != 0)
-		SLSI_ERR(sdev, "twt_clear_statistics: mlme_set_req failed: Result code: %d\n", result);
-	kfree(mib_data.data);
+	/* Inverse below values due to host requirements */
+	hesiga_spatial_reuse_value15_disallowed = !sta->hesiga_spatial_reuse_value15allowed;
+	non_srg_obss_pd_sr_disallowed = !sta->non_srg_obss_pd_sr_allowed;
 
-exit_with_error:
-	if (result < 0)
-		SLSI_ERR(sdev, "twt_error_code = %d\n", result);
+	ret = snprintf(command, buf_len, "%s %d %d %d %d %d", CMD_GET_SR_PARAMETER_SET,
+		       sta->srg_obss_pd_min_offset,
+		       sta->srg_obss_pd_max_offset,
+		       sta->non_srg_obss_pd_max_offset,
+		       hesiga_spatial_reuse_value15_disallowed,
+		       non_srg_obss_pd_sr_disallowed);
+
 	SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
-	kfree(ioctl_args);
-	return result;
+	return ret;
 }
 
 static int slsi_adps_enable(struct net_device *dev, char *command, int buf_len)
@@ -7169,77 +7119,53 @@ exit:
 	return ret;
 }
 
-static int slsi_get_sched_pm_error_code(struct net_device *dev, int result_code)
-{
-	switch (result_code) {
-	case FAPI_RESULTCODE_INVALID_PARAMETERS:
-		result_code = SLSI_SCHED_PM_INVALID_ARGUMENT;
-		break;
-	case FAPI_RESULTCODE_INVALID_VIRTUAL_INTERFACE_INDEX:
-		result_code = SLSI_SCHED_PM_INVALID_ARGUMENT;
-		break;
-	case FAPI_RESULTCODE_NOT_SUPPORTED:
-		result_code = SLSI_SCHED_PM_NOT_SUPPORTED_REQUEST;
-		break;
-	case FAPI_RESULTCODE_INVALID_STATE:
-		result_code = SLSI_SCHED_PM_TEMPORARILY_BUSY;
-		break;
-	default:
-		result_code = SLSI_SCHED_PM_TRANSIENT_ERROR;
-	}
-	return result_code;
-}
-
 static int slsi_sched_pm_setup(struct net_device *dev, char *command, int buf_len)
 {
 	struct netdev_vif              *ndev_vif = netdev_priv(dev);
 	struct slsi_dev                *sdev = ndev_vif->sdev;
 	struct slsi_scheduled_pm_setup sched_pm_setup;
-	int                            ret = SLSI_SCHED_PM_INVALID_ARGUMENT;
+	int                            r, ret = SLSI_WIFI_ERROR_INVALID_ARGUMENT;
 	struct slsi_ioctl_args         *ioctl_args = NULL;
 
 	ioctl_args = slsi_get_private_command_args(command, buf_len, 7);
-	ret = slsi_verify_ioctl_args(sdev, ioctl_args);
-	if (ret)
+	r = slsi_verify_ioctl_args(sdev, ioctl_args);
+	if (r) {
+		SLSI_ERR(sdev, "sched_pm_error_code = %d\n", ret);
+		ret = snprintf(command, buf_len, "%s %d", CMD_SCHED_PM_SETUP, ret);
 		return ret;
+	}
 
 	SLSI_MUTEX_LOCK(ndev_vif->vif_mutex);
 	if (ndev_vif->iftype != NL80211_IFTYPE_STATION ||
 	    (ndev_vif->iftype == NL80211_IFTYPE_STATION && ndev_vif->sta.vif_status != SLSI_VIF_STATUS_CONNECTED)) {
 		SLSI_NET_ERR(dev, "Not STA mode or STA is not in Connected state, iftype = %d\n", ndev_vif->iftype);
-		ret = -EPERM;
+		ret = SLSI_WIFI_ERROR_NOT_AVAILABLE;
 		goto exit;
 	}
 	if (ioctl_args->arg_count < 7) {
 		SLSI_ERR(sdev, "Invalid argument count = %d\n", ioctl_args->arg_count);
-		ret = -EINVAL;
 		goto exit;
 	}
 	if (slsi_str2int(ioctl_args->args[0], &sched_pm_setup.desired_duration)) {
 		SLSI_ERR(sdev, "Invalid Desired Duration String: '%s'\n", ioctl_args->args[0]);
-		ret = -EINVAL;
 		goto exit;
 	}
 	if (sched_pm_setup.desired_duration < SLSI_SCHED_PM_MIN_DESIRED_DURATION ||
 	    sched_pm_setup.desired_duration > SLSI_SCHED_PM_MAX_DESIRED_DURATION) {
 		SLSI_ERR(sdev, "Invalid Desired Duration : %d\n", sched_pm_setup.desired_duration);
-		ret = -EINVAL;
 		goto exit;
 	}
 	if (slsi_str2int(ioctl_args->args[1], &sched_pm_setup.desired_interval)) {
 		SLSI_ERR(sdev, "Invalid Desired Interval String: '%s'\n", ioctl_args->args[1]);
-		ret = -EINVAL;
 		goto exit;
 	}
 	if (sched_pm_setup.desired_interval < SLSI_SCHED_PM_MIN_DESIRED_INTERVAL ||
 	    sched_pm_setup.desired_interval > SLSI_SCHED_PM_MAX_DESIRED_INTERVAL) {
 		SLSI_ERR(sdev, "Invalid Desired Interval : %d\n", sched_pm_setup.desired_interval);
-		ret = -EINVAL;
 		goto exit;
 	}
 	if (slsi_str2int(ioctl_args->args[2], &sched_pm_setup.additional_duration)) {
 		SLSI_ERR(sdev, "Invalid Additional Duration String: '%s'\n", ioctl_args->args[2]);
-		ret = -EINVAL;
 		goto exit;
 	}
 	if (sched_pm_setup.additional_duration == -1)
@@ -7247,27 +7173,22 @@ static int slsi_sched_pm_setup(struct net_device *dev, char *command, int buf_le
 	if (sched_pm_setup.additional_duration < SLSI_SCHED_PM_MIN_ADDITIONAL_DURATION ||
 	    sched_pm_setup.additional_duration > SLSI_SCHED_PM_MAX_ADDITIONAL_DURATION) {
 		SLSI_ERR(sdev, "Invalid Additional Duration : %d\n", sched_pm_setup.additional_duration);
-		ret = -EINVAL;
 		goto exit;
 	}
 	if (slsi_str2int(ioctl_args->args[3], &sched_pm_setup.minimum_interval)) {
 		SLSI_ERR(sdev, "Invalid Minimum Interval String: '%s'\n", ioctl_args->args[3]);
-		ret = -EINVAL;
 		goto exit;
 	}
 	if (slsi_str2int(ioctl_args->args[4], &sched_pm_setup.maximum_interval)) {
 		SLSI_ERR(sdev, "Invalid Maximum Interval String: '%s'\n", ioctl_args->args[4]);
-		ret = -EINVAL;
 		goto exit;
 	}
 	if (slsi_str2int(ioctl_args->args[5], &sched_pm_setup.minimum_duration)) {
 		SLSI_ERR(sdev, "Invalid Minimum Duration String: '%s'\n", ioctl_args->args[5]);
-		ret = -EINVAL;
 		goto exit;
 	}
 	if (slsi_str2int(ioctl_args->args[6], &sched_pm_setup.maximum_duration)) {
 		SLSI_ERR(sdev, "Invalid Maximum Duration String: '%s'\n", ioctl_args->args[6]);
-		ret = -EINVAL;
 		goto exit;
 	}
 	if (sched_pm_setup.minimum_interval == -1)
@@ -7279,11 +7200,10 @@ static int slsi_sched_pm_setup(struct net_device *dev, char *command, int buf_le
 	if (sched_pm_setup.maximum_duration == -1)
 		sched_pm_setup.maximum_duration = sched_pm_setup.desired_duration;
 	ret = slsi_mlme_sched_pm_setup(sdev, dev, &sched_pm_setup);
-	if (ret != FAPI_RESULTCODE_SUCCESS) {
-		ret = slsi_get_sched_pm_error_code(dev, ret);
-		SLSI_NET_ERR(dev, "mlme_scheduled_pm_setup(result:%d) ERROR\n", ret);
-	}
 exit:
+	if (ret < 0)
+		SLSI_ERR(sdev, "sched_pm_error_code = %d\n", ret);
+	ret = snprintf(command, buf_len, "%s %d", CMD_SCHED_PM_SETUP, ret);
 	SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
 	kfree(ioctl_args);
 	return ret;
@@ -7303,11 +7223,10 @@ static int slsi_sched_pm_teardown(struct net_device *dev, char *command, int buf
 		goto exit;
 	}
 	ret = slsi_mlme_sched_pm_teardown(sdev, dev);
-	if (ret != FAPI_RESULTCODE_SUCCESS) {
-		ret = slsi_get_sched_pm_error_code(dev, ret);
-		SLSI_NET_ERR(dev, "mlme_sched_pm_teardown(result:%d) ERROR\n", ret);
-	}
 exit:
+	if (ret < 0)
+		SLSI_ERR(sdev, "sched_pm_error_code = %d\n", ret);
+	ret = snprintf(command, buf_len, "%s %d", CMD_SCHED_PM_TEARDOWN, ret);
 	SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
 	return ret;
 }
@@ -7966,8 +7885,6 @@ static int slsi_get_tdls_wider_bandwidth(struct net_device *dev, char *command, 
 	return res;
 }
 
-/*TODO:autogen to be done*/
-#define SLSI_PSID_UNIFI_TDLS_AVAILABLE 2571
 static int slsi_get_tdls_available_state(struct net_device *dev, char *command, int buf_len)
 {
 	struct netdev_vif         *ndev_vif = netdev_priv(dev);
@@ -7982,7 +7899,6 @@ static int slsi_get_tdls_available_state(struct net_device *dev, char *command, 
 	if (!ndev_vif->activated) {
 		SLSI_DBG3(sdev, SLSI_MLME, "vif not activated. return GET_TDLS_AVAILABLE 0\n");
 		res = snprintf(command, buf_len, "%s %d\n", CMD_GET_TDLS_AVAILABLE, 0);
-		SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
 		goto exit_with_error;
 	}
 
@@ -8224,7 +8140,7 @@ exit:
 static void slsi_get_dual_station_cert(struct slsi_dev *sdev, u8 *dual_cert)
 {
 	struct slsi_mib_value     *values = NULL;
-	struct slsi_mib_get_entry get_values[] = {{SLSI_PSID_UNIFI_DUAL_STATION_CERTIFICATE, { 0, 0 } } };
+	struct slsi_mib_get_entry get_values[] = {{SLSI_PSID_UNIFI6_GDUAL_CLIENT_CERT, { 0, 0 } } };
 	struct slsi_mib_data      mibrsp = { 0, NULL };
 
 	*dual_cert = 0;
@@ -8602,6 +8518,86 @@ static int slsi_get_tas_mode(struct net_device *dev, char *command, int buf_len)
 	return len;
 }
 
+int slsi_set_max_bw(struct net_device *dev, char *command, int cmd_len)
+{
+	struct netdev_vif      *ndev_vif = netdev_priv(dev);
+	struct slsi_dev        *sdev = ndev_vif->sdev;
+	struct slsi_ioctl_args *ioctl_args = NULL;
+	int                    bw_index = 0;
+	int                    type = 0;
+	u16                    bandwidth = 0;
+	u16                    announce_validate = 0;
+	int                    ret = 0;
+
+	ioctl_args = slsi_get_private_command_args(command, cmd_len, 2);
+	ret = slsi_verify_ioctl_args(sdev, ioctl_args);
+	if (ret)
+		return ret;
+
+	if (slsi_str2int(ioctl_args->args[0], &type)) {
+		SLSI_ERR(sdev, "Invalid string: '%s'\n", ioctl_args->args[0]);
+		kfree(ioctl_args);
+		return -1;
+	}
+	if (type != 0 && type != 1) {
+		SLSI_ERR(sdev, "Invalid type: '%d'\n", type);
+		kfree(ioctl_args);
+		return -1;
+	}
+	if (slsi_str2int(ioctl_args->args[1], &bw_index)) {
+		SLSI_ERR(sdev, "Invalid string: '%s'\n", ioctl_args->args[1]);
+		kfree(ioctl_args);
+		return -1;
+	}
+	if (bw_index < 1 || bw_index > 5) {
+		SLSI_ERR(sdev, "Invalid bw_index: '%s'\n", bw_index);
+		kfree(ioctl_args);
+		return -1;
+	}
+
+	announce_validate = type ? 0 : 1;
+	bandwidth = (bw_index == 5) ? 176 : 10 << bw_index;
+
+	SLSI_MUTEX_LOCK(ndev_vif->vif_mutex);
+
+	if (ndev_vif->iftype != NL80211_IFTYPE_STATION) {
+		SLSI_NET_ERR(dev, "Not in STA mode. vif_type %d\n", ndev_vif->vif_type);
+		SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
+		kfree(ioctl_args);
+		return -1;
+	}
+
+	ret = slsi_mlme_set_max_bw(sdev, dev, 1, announce_validate, bandwidth);
+	if (ret < 0) {
+		ret = -1;
+	} else {
+		sdev->dynamic_bw_type = type;
+		sdev->dynamic_bw_index = bw_index;
+		ret = 0;
+	}
+
+	SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
+	kfree(ioctl_args);
+
+	return ret;
+}
+
+int slsi_get_max_bw(struct net_device *dev, char *command, int cmd_len)
+{
+	struct netdev_vif	*ndev_vif = netdev_priv(dev);
+	struct slsi_dev		*sdev = ndev_vif->sdev;
+	int			len = 0;
+
+	SLSI_MUTEX_LOCK(ndev_vif->vif_mutex);
+	if (ndev_vif->vif_type != FAPI_VIFTYPE_STATION)
+		SLSI_NET_ERR(dev, "Not in STA mode. vif_type %d\n", ndev_vif->vif_type);
+	else
+		len = snprintf(command, cmd_len, "%d %d", sdev->dynamic_bw_type, sdev->dynamic_bw_index);
+	SLSI_MUTEX_UNLOCK(ndev_vif->vif_mutex);
+
+	return len;
+}
+
 static const struct slsi_ioctl_fn slsi_ioctl_fn_table[] = {
 	{ CMD_SETSUSPENDMODE,               slsi_set_suspend_mode },
 	{ CMD_SETJOINPREFER,                slsi_update_rssi_boost },
@@ -8762,11 +8758,11 @@ static const struct slsi_ioctl_fn slsi_ioctl_fn_table[] = {
 	{ CMD_ROAMING_BLACKLIST_REMOVE,     slsi_roaming_blacklist_remove },
 	{ CMD_TWT_SETUP,                    slsi_twt_setup},
 	{ CMD_TWT_TEARDOWN,                 slsi_twt_teardown},
-	{ CMD_TWT_SUSPEND,                  slsi_twt_suspend},
 	{ CMD_GET_TWT_STATUS,               slsi_twt_get_status},
 	{ CMD_GET_TWT_CAP,                  slsi_twt_get_capabilities},
-	{ CMD_GET_TWT_STATISTICS,           slsi_twt_get_statistics_query},
-	{ CMD_CLEAR_TWT_STATISTICS,         slsi_twt_clear_statistics},
+	{ CMD_OBSSPD_ENABLE,                slsi_obsspd_enable},
+	{ CMD_SRP_AND_NON_SRG_OBSS_PD_PROHIBITED, slsi_set_srp_and_non_srg_obss_pd_prohibited},
+	{ CMD_GET_SR_PARAMETER_SET,         slsi_get_spatial_reuse_parameter_set},
 	{ CMD_ADPS_ENABLE,                  slsi_adps_enable},
 	{ CMD_SCHED_PM_SETUP,               slsi_sched_pm_setup},
 	{ CMD_SCHED_PM_TEARDOWN,            slsi_sched_pm_teardown},
@@ -8808,6 +8804,8 @@ static const struct slsi_ioctl_fn slsi_ioctl_fn_table[] = {
 	{CMD_GET_UWBCX_PREPARE_TIME,        slsi_get_uwbcx_prepare_time},
 #endif
 	{CMD_GET_TAS_MODE,                  slsi_get_tas_mode},
+	{CMD_SET_MAX_BW,		    slsi_set_max_bw},
+	{CMD_GET_MAX_BW,		    slsi_get_max_bw},
 };
 
 static int slsi_ioctl_fn_lookup(char *command, int len)

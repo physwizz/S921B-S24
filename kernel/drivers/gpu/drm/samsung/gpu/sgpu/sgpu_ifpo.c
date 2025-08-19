@@ -294,6 +294,8 @@ static void __sgpu_ifpo_abort_power_on(struct amdgpu_device *adev)
 	if (ifpo->state)
 		return;
 
+	sgpu_pm_monitor_update(adev, SGPU_POWER_STATE_ON);
+
 	/* BG3D_DVFS_CTL 0x058 enable */
 	writel(0x1, adev->pm.pmu_mmio + 0x58);
 
@@ -463,6 +465,8 @@ static void sgpu_ifpo_abort_power_off(struct amdgpu_device *adev)
 #endif	/* IS_ENABLED(CONFIG_CAL_IF) */
 
 	ifpo->state = false;
+
+	sgpu_pm_monitor_update(adev, SGPU_POWER_STATE_IFPO);
 
 	SGPU_LOG(adev, DMSG_INFO, DMSG_POWER, "IFPO POWER OFF");
 

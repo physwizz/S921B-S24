@@ -122,11 +122,12 @@ static u32 firmware_btlog_enables1_high;
 static bool disable_service;
 
 /* MUST larger than 1017 (BSMHCP_MAX_PACKET_SIZE - L2CAP_HEADER_SIZE) and multiply of 2
- * Default value is 16 * 1024 (MXLOG_TRANSPORT_BUF_LENGTH)
+ * MUST less than or equal to MXLOG_TRANSPORT_BUF_LENGTH (current: 16 * 1024 bytes)
+ * Default value is MXLOG_TRANSPORT_BUF_LENGTH (current: 16 * 1024 bytes)
  */
 static int fw_log_circ_buf_size = 16 * 1024;
-/* MUST less than equal 1017 (BSMHCP_MAX_PACKET_SIZE - L2CAP_HEADER_SIZE)
- * Default value is 1017 (BSMHCP_MAX_PACKET_SIZE - L2CAP_HEADER_SIZE)
+/* MUST less than or equal to BSMHCP_MAX_PACKET_SIZE - L2CAP_HEADER_SIZE (current: 1017 bytes)
+ * Default value is BSMHCP_MAX_PACKET_SIZE - L2CAP_HEADER_SIZE (current: 1017 bytes)
  */
 static int fw_log_circ_buf_threshold = BSMHCP_MAX_PACKET_SIZE - L2CAP_HEADER_SIZE;
 static u8 kern2fw_level_map[] = {
@@ -547,6 +548,9 @@ static int slsi_sm_bt_service_cleanup(void)
 	if (NULL != bt_svc->service) {
 		SCSC_TAG_DEBUG(BT_COMMON, "stopping debugging thread (service=%p)\n", bt_svc->service);
 
+		/* Release the fw_acl_read for btsnoop */
+		scsc_bt_fw_log_release();
+
 		/* If slsi_sm_bt_service_cleanup_stop_service fails, then let
 		   recovery do the rest of the deinit later. */
 		if (bt_svc->service_started) {
@@ -569,12 +573,8 @@ static int slsi_sm_bt_service_cleanup(void)
 			bt_module_irq_mask = 0;
 		}
 
-		/* Release the fw_acl_read for btsnoop */
-		scsc_bt_fw_log_release();
-
 		/* Shut down the shared memory interface */
-		SCSC_TAG_DEBUG(BT_COMMON,
-			"cleanup protocol structure and main interrupts\n");
+		SCSC_TAG_DEBUG(BT_COMMON, "cleanup main interrupts\n");
 		scsc_bt_shm_exit();
 
 		/* Cleanup AVDTP detections */
@@ -674,6 +674,9 @@ static int slsi_sm_bt_service_cleanup(void)
 						 SLSI_BT_SERVICE_CLOSE_RETRY);
 		}
 		bt_svc->service = NULL;
+
+		SCSC_TAG_DEBUG(BT_COMMON, "cleanup protocol structure\n");
+		scsc_bt_shm_cleanup();
 
 		SCSC_TAG_DEBUG(BT_COMMON,
 			"notify the KIC subsystem of the shutdown\n");
@@ -2663,22 +2666,7 @@ static int scsc_btlog_enables_set_param_cb(const char *buffer,
 		firmware_btlog_enables0_high = (u32)((btlog_enables_low & 0xFFFFFFFF00000000) >> 32);
 		firmware_btlog_enables1_low  = (u32)(btlog_enables_high & 0x00000000FFFFFFFF);
 		firmware_btlog_enables1_high = (u32)((btlog_enables_high & 0xFFFFFFFF00000000) >> 32);
-
-		/* Enable fwsnoop, if filter is fwsnoop canned set */
-		if ((firmware_btlog_enables1_high == 0x04000000 ||
-		     firmware_btlog_enables1_high == 0x05000000 ||
-		     firmware_btlog_enables1_high == 0x06000000) &&
-		    firmware_btlog_enables1_low == 0x00000000 &&
-		    firmware_btlog_enables0_high == 0x00000000 &&
-		    firmware_btlog_enables0_low == 0x00000000)
-			scsc_bt_fw_log_update_filter(1,
-				firmware_btlog_enables1_high, firmware_btlog_enables1_low,
-				firmware_btlog_enables0_high, firmware_btlog_enables0_low);
-		/* Disable fwsnoop, if filter is not fwsnoop canned set */
-		else
-			scsc_bt_fw_log_update_filter(0,
-				firmware_btlog_enables1_high, firmware_btlog_enables1_low,
-				firmware_btlog_enables0_high, firmware_btlog_enables0_low);
+		scsc_update_btlog_params();
 	}
 
 	return ret;

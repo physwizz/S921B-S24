@@ -102,19 +102,14 @@ VENDOR_MODULE_LIST = [
     "drivers/soc/samsung/dm/exynos-esca-dm.ko",
     "drivers/soc/samsung/exynos-wow.ko",
     "drivers/soc/samsung/exynos/exynos-seclog.ko",
-    "sound/soc/samsung/exynos/exynos9945_audio.ko",
     "sound/soc/samsung/exynos/sec_audio_sysfs.ko",
     "sound/soc/samsung/exynos/sec_audio_debug.ko",
     "sound/soc/samsung/snd-soc-s3c-dma.ko",
     "sound/soc/samsung/exynos/abox/snd-soc-samsung-abox-gic.ko",
     "sound/soc/samsung/exynos/abox/snd-soc-samsung-abox.ko",
     "sound/soc/samsung/exynos/snd-soc-dp_dma.ko",
-    "drivers/firmware/cirrus/cs_dsp.ko",
     "drivers/soc/samsung/exynos/exynos-seh.ko",
-    "sound/soc/codecs/snd-soc-wm-adsp.ko",
     "drivers/pwm/pwm-samsung.ko",
-    "sound/soc/codecs/snd-soc-cirrus-amp.ko",
-    "sound/soc/codecs/snd-soc-cs35l43-i2c.ko",
     "drivers/bts/exynos-btsops9945.ko",
     "drivers/char/hw_random/exyswd-rng.ko",
     "drivers/bts/exynos-bts.ko",
@@ -134,7 +129,6 @@ VENDOR_MODULE_LIST = [
     "drivers/media/platform/exynos/camera/lib/votf/votf.ko",
     "drivers/soc/samsung/cpif/direct_dm.ko",
     "drivers/soc/samsung/cpif/mcu_ipc.ko",
-    "drivers/media/platform/exynos/camera/testing/self/pablo-self-tests.ko",
     "sound/soc/samsung/exynos/vts/snd-soc-samsung-vts-mailbox.ko",
     "drivers/soc/samsung/exynos-sci_dbg.ko",
     "drivers/soc/samsung/cpif/shm_ipc.ko",
@@ -144,6 +138,7 @@ VENDOR_MODULE_LIST = [
     "drivers/media/platform/exynos/camera/lib/pablo-libs.ko",
     "drivers/soc/samsung/cpif/hook.ko",
     "drivers/soc/samsung/cpif/cpif.ko",
+    "drivers/clo/clo.ko",
     "drivers/media/platform/exynos/camera/pablo-smc.ko",
     "drivers/vision/npu.ko",
     "drivers/media/platform/exynos/camera/hardware/pablo-hws.ko",
@@ -236,6 +231,7 @@ VENDOR_DEV_MODULE_LIST = [
     # modules only for debug/developments.
     "drivers/soc/samsung/exynos/debug/exynos-debug-test.ko",
     "drivers/pinctrl/samsung/secgpio_dvs.ko",
+    "drivers/media/platform/exynos/camera/testing/self/pablo-self-tests.ko",
 ]
 
 

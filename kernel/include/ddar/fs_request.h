@@ -22,19 +22,6 @@
 
 #include <linux/slab.h>
 
-#define FSOP_SDP_SET_SENSITIVE 10
-#define FSOP_SDP_SET_PROTECTED 11
-
-#define FSOP_DLP_FILE_OPENED   21
-#define FSOP_DLP_FILE_CLOSED   22
-#define FSOP_DLP_FILE_INIT     23
-#define FSOP_DLP_FILE_INIT_RESTRICTED     24
-#define FSOP_DLP_FILE_REMOVE     25
-#define FSOP_DLP_FILE_RENAME     26
-#define FSOP_DLP_FILE_ACCESS_DENIED     27
-#define FSOP_DLP_FILE_OPENED_CREATOR    28
-#define FSOP_DLP_FILE_REMOVE_MEDIA     29
-
 #define FSOP_AUDIT_FAIL_ENCRYPT		51
 #define FSOP_AUDIT_FAIL_DECRYPT		52
 #define FSOP_AUDIT_FAIL_ACCESS		53
@@ -54,7 +41,7 @@ typedef struct sdp_fs_command {
 	int err;
 } sdp_fs_command_t;
 
-extern int sdp_fs_request(sdp_fs_command_t *sdp_req, fs_request_cb_t callback);
+int sdp_fs_request(sdp_fs_command_t *sdp_req, fs_request_cb_t callback);
 
 static inline sdp_fs_command_t *sdp_fs_command_alloc(int opcode, int pid,
 		int userid, int partid, unsigned long ino, int err, gfp_t gfp) {

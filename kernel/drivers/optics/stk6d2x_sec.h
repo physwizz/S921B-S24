@@ -13,8 +13,8 @@
 #ifndef __STK6D2X_SEC_H__
 #define __STK6D2X_SEC_H__
 
-#include <stk6d2x.h>
-#include <common_define.h>
+#include "stk6d2x.h"
+#include "common_define.h"
 
 // #define SUPPORT_SENSOR_CLASS
 

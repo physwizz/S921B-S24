@@ -736,11 +736,12 @@ void __sysmmu_tlb_invalidate(struct sysmmu_drvdata *drvdata,
 				dma_addr_t iova, size_t size)
 {
 	void * __iomem sfrbase = drvdata->sfrbase;
+	u32 start_addr, end_addr;
 
-	writel_relaxed(ALIGN_DOWN(iova, SPAGE_SIZE),
-					sfrbase + REG_FLUSH_RANGE_START);
-	writel_relaxed(ALIGN_DOWN(iova + size - 1, SPAGE_SIZE) | TLB_INVALIDATE,
-					sfrbase + REG_FLUSH_RANGE_END);
+	start_addr = (iova >> 4) & 0xffffff00;
+	end_addr = (((iova + size - 1) >> 4) & 0xffffff00) | TLB_INVALIDATE;
+	writel_relaxed(start_addr, sfrbase + REG_FLUSH_RANGE_START);
+	writel_relaxed(end_addr, sfrbase + REG_FLUSH_RANGE_END);
 }
 
 static void exynos_sysmmu_tlb_invalidate(dma_addr_t d_start, size_t size)
@@ -759,8 +760,8 @@ static void exynos_sysmmu_tlb_invalidate(dma_addr_t d_start, size_t size)
 	dev_dbg(drvdata->dev,
 		"TLB invalidation %#zx@%#llx\n", size, start);
 
-	//__sysmmu_tlb_invalidate(drvdata, start, size);
-	__sysmmu_tlb_invalidate_all(drvdata->sfrbase);
+	__sysmmu_tlb_invalidate(drvdata, start, size);
+	//__sysmmu_tlb_invalidate_all(drvdata->sfrbase);
 
 	spin_unlock(&drvdata->lock);
 }
@@ -1185,7 +1186,7 @@ int cpif_iommu_map(unsigned long iova, phys_addr_t paddr, size_t size, int prot)
 		if (alloc_counter > max_req_cnt)
 			max_req_cnt = alloc_counter;
 		ret = exynos_iommu_map(iova, paddr, pgsize, prot);
-		exynos_sysmmu_tlb_invalidate(iova, pgsize);
+	//	exynos_sysmmu_tlb_invalidate(iova, pgsize);
 #if IS_ENABLED(CONFIG_CPIF_IOMMU_HISTORY_LOG)
 		add_history_buff(&cpif_map_history, paddr, orig_paddr,
 				changed_size, orig_size);
@@ -1261,7 +1262,6 @@ size_t cpif_iommu_unmap(unsigned long iova, size_t size)
 
 		alloc_counter--;
 		unmapped_page = exynos_iommu_unmap(iova, pgsize);
-		exynos_sysmmu_tlb_invalidate(iova, pgsize);
 #if IS_ENABLED(CONFIG_CPIF_IOMMU_HISTORY_LOG)
 		add_history_buff(&cpif_unmap_history, iova, orig_iova,
 				size, orig_size);
@@ -1275,6 +1275,7 @@ size_t cpif_iommu_unmap(unsigned long iova, size_t size)
 		iova += unmapped_page;
 		unmapped += unmapped_page;
 	}
+	exynos_sysmmu_tlb_invalidate(orig_iova, size);
 
 	spin_unlock_irqrestore(&domain->pgtablelock, flags);
 

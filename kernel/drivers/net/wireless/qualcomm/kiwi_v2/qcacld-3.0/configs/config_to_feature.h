@@ -2986,6 +2986,12 @@
 #undef WLAN_FEATURE_NO_P2P_CONCURRENCY
 #endif
 #define WLAN_FEATURE_NO_P2P_CONCURRENCY (1)
+/* Case 07433934 : SS requested to add to notify when BT_EN controlled by WLAN due to PCIe recovery */
+#define SEC_CONFIG_FORCE_CHANGE_BT_EN (1)
 #endif /* CONFIG_WLAN_SAMSUNG_FEATURE */
+
+#ifdef CONFIG_DP_RX_PEEK_MSDU_DONE_WAR
+#define DP_RX_PEEK_MSDU_DONE_WAR (1)
+#endif
 
 #endif /* CONFIG_TO_FEATURE_H */

@@ -57,11 +57,11 @@
 #define S2MPM07_GPIO_CONF_DRIVE_STRENGTH	(PIN_CONFIG_END + 7)
 
 static const char *const s2mpm07_biases[] = {
-	"no-pull", "pull-down", "pull-up"
+	"no-pull", "pull-down", "pull-up", "not-use"
 };
 
 static const char *const s2mpm07_strengths[] = {
-	"1mA", "2mA", "3mA", "4mA", "5mA", "6mA"
+	"1mA", "2mA", "3mA", "4mA", "5mA", "6mA", "not-use", "not-use"
 };
 
 static const struct pinconf_generic_params s2mpm07_gpio_bindings[] = {

@@ -387,7 +387,7 @@ static ssize_t kq_mesh_store_func_attr(struct device *dev,
 	struct kq_mesh_func_name *info;
 
 	for (info = kq_mesh_func_list; info->func; info++) {
-		if (!strncmp(buf, info->name, sizeof((const char **)&info->name))) {
+		if (!strncmp(buf, info->name, strlen(info->name))) {
 			pr_info("%s run %s func!\n", __func__, info->name);
 			kminfo->last_func = info->type;
 			info->func(kminfo);
@@ -620,9 +620,15 @@ static int kq_mesh_parse_feature_user_nad_dt(struct platform_device *pdev,
 free_u32_copy_area_address_arr:
 	kfree(u32_copy_area_address_arr);
 free_copy_area_address_arr:
-	devm_kfree(&pdev->dev, kmn_info->copy_area_address_arr);
+	if (kmn_info->copy_area_address_arr) {
+		devm_kfree(&pdev->dev, kmn_info->copy_area_address_arr);
+		kmn_info->copy_area_address_arr = NULL;
+	}
 free_copy_area_size_arr:
-	devm_kfree(&pdev->dev, kmn_info->copy_area_size_arr);
+	if (kmn_info->copy_area_size_arr) {
+		devm_kfree(&pdev->dev, kmn_info->copy_area_size_arr);
+		kmn_info->copy_area_size_arr = NULL;
+	}
 error_init_area_variables:
 	return -EINVAL;
 }

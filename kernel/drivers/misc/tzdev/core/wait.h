@@ -14,11 +14,12 @@
 #ifndef __TZ_WAIT_H__
 #define __TZ_WAIT_H__
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 14)
-#include <linux/freezer.h>
-#endif
 #include <linux/version.h>
 #include <linux/wait.h>
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+#include <linux/freezer.h>
+#endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
 #include <linux/sched.h>
@@ -62,7 +63,7 @@ do {										\
 #define wait_event_interruptible_nested(wq, condition)				\
 	wait_event_interruptible(wq, condition)
 #else
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 14)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
 #define wait_event_uninterruptible_freezable_nested(wq, condition)		\
 ({										\
 	DEFINE_WAIT_FUNC(wait, woken_wake_function);				\
@@ -80,7 +81,7 @@ do {										\
 	DEFINE_WAIT_FUNC(wait, woken_wake_function);				\
 	add_wait_queue(&wq, &wait);						\
 	while (!(condition))							\
-		wait_woken(&wait, TASK_UNINTERRUPTIBLE,				\
+		wait_woken(&wait, TASK_UNINTERRUPTIBLE|TASK_FREEZABLE,		\
 			MAX_SCHEDULE_TIMEOUT);					\
 	remove_wait_queue(&wq, &wait);						\
 })

@@ -3180,6 +3180,15 @@ fence_driver_init:
 	if (adev->pdev && amdgpu_device_cache_pci_state(adev->pdev))
 		pci_restore_state(pdev);
 
+#if IS_ENABLED(CONFIG_SEC_GPUINFO)
+	adev->gpu_cur_stats[GPU_HANG] = &adev->gpu_reset_counter;
+	adev->gpu_cur_stats[GPU_PAGE_FAULT] = &adev->gpu_page_fault_counter;
+	adev->gpu_cur_stats[GPU_TIMEOUT] = &adev->gpu_job_timeout_counter;
+	adev->gpu_cur_stats[GPU_CPU_PAGE_FAULT] = &adev->gpu_vram_cpu_page_fault_counter;
+	adev->gpu_cur_stats[GPU_RETRY_HANG_DETECT] = &adev->gpu_retry_counter;
+	adev->gpu_cur_stats[GPU_RING_TEST_FAIL] = &adev->gpu_ring_test_fail_counter;
+#endif
+
 	/* unlock to be able to go to IFPO power off */
 	sgpu_ifpo_unlock(adev);
 
@@ -3294,7 +3303,7 @@ void amdgpu_device_fini(struct amdgpu_device *adev)
 int amdgpu_device_suspend(struct drm_device *dev, bool fbcon)
 {
 	struct amdgpu_device *adev;
-	int r;
+	int r, need_to_reset;
 
 	trace_amdgpu_device_suspend_start(0);
 	adev = drm_to_adev(dev);
@@ -3326,7 +3335,7 @@ int amdgpu_device_suspend(struct drm_device *dev, bool fbcon)
 	if (adev->gmc.real_vram_size)
 		amdgpu_bo_evict_vram(adev);
 
-	amdgpu_fence_driver_suspend(adev);
+	need_to_reset = amdgpu_fence_driver_suspend(adev);
 
 #ifdef CONFIG_DRM_SGPU_DVFS
 	sgpu_afm_suspend(adev);
@@ -3338,6 +3347,12 @@ int amdgpu_device_suspend(struct drm_device *dev, bool fbcon)
 
 	r = amdgpu_device_ip_suspend_phase2(adev);
 
+	if (need_to_reset) {
+		DRM_INFO("do hard reset, all fences has not been signaled\n");
+		vangogh_lite_gpu_quiesce(adev);
+		amdgpu_do_hard_reset(adev);
+	}
+
 	/* evict remaining vram memory
 	 * This second call to evict vram is to evict the gart page table
 	 * using the CPU.
@@ -3347,6 +3362,7 @@ int amdgpu_device_suspend(struct drm_device *dev, bool fbcon)
 
 	dev->switch_power_state = DRM_SWITCH_POWER_DYNAMIC_OFF;
 	trace_amdgpu_device_suspend_end(0);
+	sgpu_pm_monitor_update(adev, SGPU_POWER_STATE_SUSPEND);
 	SGPU_LOG(adev, DMSG_INFO, DMSG_POWER, "%s end", __func__);
 	return 0;
 }
@@ -3375,6 +3391,8 @@ int amdgpu_device_resume(struct drm_device *dev, bool fbcon)
 		DRM_INFO("skip resume by drm switch_power_state");
 		return 0;
 	}
+
+	sgpu_pm_monitor_update(adev, SGPU_POWER_STATE_ON);
 
 	r = amdgpu_device_fw_loading(adev);
 	if (r)
@@ -3943,6 +3961,9 @@ out:
 			r = amdgpu_ib_ring_tests(adev);
 			if (r) {
 				dev_err(adev->dev, "ib ring test failed (%d).\n", r);
+#if IS_ENABLED(CONFIG_SEC_GPUINFO)
+				sgpu_hqm_log_event(adev, GPU_RING_TEST_FAIL);
+#endif
 				r = amdgpu_device_ip_suspend(adev);
 				need_full_reset = true;
 				r = -EAGAIN;
@@ -4578,6 +4599,9 @@ static void sgpu_page_fault_recovery(struct work_struct *work)
 	if (!found)
 		DRM_ERROR("No bad job with vmid=%d found, but keep going",
 				adev->page_faulted_vmid);
+
+	if (adev->sgpu_debug.pagefault_to_panic)
+		sgpu_debug_snapshot_expire_watchdog();
 
 	adev->job_hang = true;
 	amdgpu_device_gpu_recover(adev, NULL);

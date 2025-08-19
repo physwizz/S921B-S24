@@ -3,15 +3,10 @@
 #include "../platform_mif.h"
 #include <linux/platform_device.h>
 
-#define freq_qos_update_request(param...) ((void)0)
-#define devm_ioremap_resource(def, res)		((void *)0)
-#define of_property_read_u32(DEV, PROPERTY, VALUE)		kunit_of_property_read_u32(VALUE)
-#define of_property_count_u32_elems(DEV, PROPERTY)		kunit_of_property_count_u32_elems(PROPERTY)
-#define of_property_read_u32_array(DEV, PROPERTY, QOS, LEN)	kunit_of_property_read_u32_array(PROPERTY, QOS, LEN)
-#define platform_get_resource(DEV, OFFSET, OFFSET2)	kunit_platform_get_resource(OFFSET, OFFSET2)
+#define freq_qos_update_request(args...) ((void)0)
+#define devm_ioremap_resource(args...)		((void *)0)
 #define syscon_regmap_lookup_by_phandle(args...)	((void *)1)
-#define devm_kzalloc(DEV, SIZE, OPTION)		kunit_kzalloc(gtest, SIZE, OPTION)
-#define devm_kfree(DEV, PTR)			((void *)0)
+#define devm_kfree(args...)			((void *)0)
 #define devm_request_irq(args...)		((void *)1)
 #define devm_free_irq(args...)			((void *)0)
 #define writel(args...)				((void *)0)
@@ -24,6 +19,11 @@
 #define wait_for_completion_timeout(args...)	(0)
 #define vmalloc_to_pfn(args...)			((void *)0)
 #define NUM_QOS_ELEMENT				12
+#define of_property_read_u32(DEV, PROPERTY, VALUE)		kunit_of_property_read_u32(VALUE)
+#define of_property_count_u32_elems(DEV, PROPERTY)		kunit_of_property_count_u32_elems(PROPERTY)
+#define of_property_read_u32_array(DEV, PROPERTY, QOS, LEN)	kunit_of_property_read_u32_array(PROPERTY, QOS, LEN)
+#define platform_get_resource(DEV, OFFSET, OFFSET2)	kunit_platform_get_resource(OFFSET, OFFSET2)
+#define devm_kzalloc(DEV, SIZE, OPTION)		kunit_kzalloc(gtest, SIZE, OPTION)
 #define of_irq_to_resource(node, i, res) kunit_of_irq_to_resource(node, i, res)
 
 #if defined(SCSC_SEP_VERSION)
@@ -203,17 +203,17 @@ static void test_all(struct kunit *test)
 	platform_mif_get_mifram_phy_ptr(scscmif, NULL);
 	platform->mem_start = val;
 
-	// u8 dst = 0;
-	// u16 size = 0;
-	// u32 value;
-	// char* string;
-	// int vsize = 0;
+	u8 dst = 0;
+	u16 size = 0;
+	u32 value = 0;
+	char* string = "";
+	int vsize = 0;
 
-	// fp_platform_mif_wlbt_property_read_bool(scscmif, "test");
-	// fp_platform_mif_wlbt_property_read_u8(scscmif, "test", &dst, vsize);
-	// fp_platform_mif_wlbt_property_read_u16(scscmif, "test", &size, vsize);
-	// fp_platform_mif_wlbt_property_read_u32(scscmif, "test", &value, vsize);
-	// fp_platform_mif_wlbt_property_read_string(scscmif, "test", &string, vsize);
+	kunit_platform_mif_wlbt_property_read_bool(scscmif, "test");
+	kunit_platform_mif_wlbt_property_read_u8(scscmif, "test", &dst, vsize);
+	kunit_platform_mif_wlbt_property_read_u16(scscmif, "test", &size, vsize);
+	kunit_platform_mif_wlbt_property_read_u32(scscmif, "test", &value, vsize);
+	kunit_platform_mif_wlbt_property_read_string(scscmif, "test", &string, vsize);
 
 	platform_mif_get_mif_pfn(scscmif);
 
@@ -242,6 +242,9 @@ static void test_all(struct kunit *test)
 	platform_mif_reg_write_wpan(platform, 0, 0);
 
 	platform_mif_reg_read_wpan(platform, 0);
+
+	const struct kernel_param *kp = NULL;
+	qos_get_param(string, kp);
 
 	KUNIT_EXPECT_STREQ(test, "OK", "OK");
 }

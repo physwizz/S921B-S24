@@ -795,10 +795,17 @@ struct is_ois_ops {
 	void (*ois_fw_update)(struct is_core *core);
 #endif
 	int (*ois_self_test)(struct is_core *core);
+#if defined(OIS_MGLESS)
+	void (*ois_mgless)(struct is_core *core);
+	bool (*ois_auto_test)(struct is_core *core,
+				int threshold, bool *x_result, bool *y_result, int *sin_x, int *sin_y,
+				bool *xy2_result, int *sin_xy2);
+#else
 	bool (*ois_auto_test)(struct is_core *core,
 				int threshold, bool *x_result, bool *y_result, int *sin_x, int *sin_y,
 				bool *x_result_2nd, bool *y_result_2nd, int *sin_x_2nd, int *sin_y_2nd,
 				bool *x_result_3rd, bool *y_result_3rd, int *sin_x_3rd, int *sin_y_3rd);
+#endif
 #ifdef CAMERA_2ND_OIS
 	bool (*ois_auto_test_rear2)(struct is_core *core,
 				int threshold, bool *x_result, bool *y_result, int *sin_x, int *sin_y,
@@ -1090,7 +1097,7 @@ struct is_cis_ext2_interface_ops {
 				struct is_sensor_mode_info *seamless_mode_info,
 				u32 *seamless_mode_cnt);
 	int (*get_sensor_applied_seamless_mode)(struct is_sensor_interface *itf,
-				struct is_sensor_seamless_ctl *applied_seamless_mode);
+				struct is_sensor_seamless_ctl *applied_seamless_mode, u32 fcount);
 	void *reserved[5];
 };
 

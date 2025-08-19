@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -967,6 +967,16 @@ QDF_STATUS wlan_dp_select_profile_cfg(struct wlan_objmgr_psoc *psoc)
 }
 #endif
 
+/**
+ * wlan_dp_link_cdp_vdev_delete_notification() - CDP vdev delete notification
+ * @context: osif_vdev handle
+ * @cdp_vdev: CDP vdev handle
+ *
+ * Return: None
+ */
+void wlan_dp_link_cdp_vdev_delete_notification(ol_osif_vdev_handle context,
+					       struct cdp_vdev *cdp_vdev);
+
 /* DP CFG APIs - START */
 
 #ifdef WLAN_SUPPORT_RX_FISA
@@ -1009,4 +1019,18 @@ bool wlan_dp_cfg_is_rx_fisa_lru_del_enabled(struct wlan_dp_psoc_cfg *dp_cfg)
 
 
 /* DP CFG APIs - END */
+
+static inline bool wlan_dp_link_check_cdp_vdev(struct wlan_dp_link *dp_link,
+					       struct cdp_vdev *cdp_vdev)
+{
+	struct cdp_vdev *temp_cdp_vdev;
+
+	TAILQ_FOREACH(temp_cdp_vdev, &dp_link->cdp_vdev_list,
+		      cdp_vdev_list_elem) {
+		if (temp_cdp_vdev == cdp_vdev)
+			return true;
+	}
+
+	return false;
+}
 #endif

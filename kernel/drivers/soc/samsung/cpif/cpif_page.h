@@ -10,6 +10,7 @@
 #include "modem_prj.h"
 
 #define CPIF_GFP_MASK	(__GFP_NOWARN | __GFP_NORETRY | __GFP_NOMEMALLOC)
+#define CPIF_PAGE_POOL_MULT      2
 
 struct cpif_page {
 	struct page	*page;
@@ -25,7 +26,9 @@ struct cpif_page_pool {
 	struct cpif_page	*tmp_page;
 	u32			rpage_arr_idx;
 	u32			rpage_arr_len;
+	u32                     rpage_arr_baselen;
 	bool			using_tmp_alloc;
+	bool			page_alloc_complete;
 };
 
 #if IS_ENABLED(CONFIG_CPIF_PAGE_RECYCLING)
@@ -35,6 +38,7 @@ struct cpif_page_pool *cpif_page_pool_create(u64 num_page, u64 page_size);
 struct page *cpif_get_cur_page(struct cpif_page_pool *pool, bool used_tmp_alloc);
 u64 cpif_cur_page_size(struct cpif_page_pool *pool, bool used_tmp_alloc);
 void *cpif_page_alloc(struct cpif_page_pool *pool, u64 alloc_size, bool *used_tmp_alloc);
+int cpif_page_pool_continue(u64 page_size, struct cpif_page_pool *pool);
 #else
 static inline void cpif_page_pool_delete(struct cpif_page_pool *pool) { return; }
 static inline void cpif_page_init_tmp_page(struct cpif_page_pool *pool) { return; }
@@ -46,6 +50,7 @@ static inline u64 cpif_cur_page_size(struct cpif_page_pool *pool, bool used_tmp_
 					{ return 0; }
 static inline void *cpif_page_alloc(struct cpif_page_pool *pool, u64 alloc_size,
 				    bool *used_tmp_alloc) { return NULL; }
+static inline int cpif_page_pool_continue(u64 page_size, struct cpif_page_pool *pool) { return 0; }
 #endif
 
 #endif /* __CPIF_RX_PAGE_H__ */

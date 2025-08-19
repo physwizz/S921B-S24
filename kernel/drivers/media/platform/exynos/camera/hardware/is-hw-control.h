@@ -222,4 +222,17 @@ const struct is_hw_group_ops *is_hw_get_m2m_group_ops(void);
 
 /* otf */
 const struct is_hw_group_ops *is_hw_get_otf_group_ops(void);
+
+#if IS_ENABLED(CONFIG_TIMER_TRACER)
+void trace_frame_done(struct is_hw_ip *hw_ip, struct is_frame *frame);
+int trace_del_timer(struct timer_list *timer);
+int trace_mod_timer(struct timer_list *timer, unsigned long expires);
+int trace_del_timer_sync(struct timer_list *timer);
+#else
+#define trace_frame_done(a, b) do_nothing
+#define trace_mod_timer mod_timer
+#define trace_del_timer del_timer
+#define trace_del_timer_sync del_timer_sync
+#endif
+
 #endif /* IS_DEVICE_HARDWARE_H */

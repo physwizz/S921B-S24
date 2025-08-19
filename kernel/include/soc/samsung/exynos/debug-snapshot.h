@@ -29,10 +29,11 @@ extern bool dbg_snapshot_get_dpm_status(void);
 extern void dbg_snapshot_do_dpm_policy(unsigned int policy);
 /*debug-snapshot-utils functions */
 extern int dbg_snapshot_get_sjtag_status(void);
-extern void dbg_snapshot_ecc_dump(bool call_panic);
+extern void dbg_snapshot_ecc_dump(int policy);
 extern int dbg_snapshot_start_watchdog(int sec);
 extern int dbg_snapshot_expire_watchdog(void);
 extern int dbg_snapshot_expire_watchdog_timeout(int tick);
+extern int dbg_snapshot_expire_watchdog_with_msg(const char *fmt, ...);
 extern int dbg_snapshot_expire_watchdog_safely(void);
 extern int dbg_snapshot_expire_watchdog_timeout_safely(int tick);
 extern int dbg_snapshot_kick_watchdog(void);
@@ -78,6 +79,7 @@ extern void dbg_snapshot_freq(int type, unsigned int old_freq,
 				unsigned int target_freq, int en);
 extern void dbg_snapshot_dm(int type, unsigned int min, unsigned int max,
 				s32 wait_t, s32 t);
+extern void dbg_snapshot_pmic(int irq, const char *str, int data1, int data2);
 extern void dbg_snapshot_printk(const char *fmt, ...);
 extern struct dbg_snapshot_log_item *dbg_snapshot_get_log_item(char *name);
 extern char dss_freq_name[SZ_32][SZ_8];
@@ -121,6 +123,7 @@ extern unsigned long dss_get_vaddr_##item##_log(void)
 #define dbg_snapshot_pmu(a, b, c)		do { } while (0)
 #define dbg_snapshot_freq(a, b, c, d)		do { } while (0)
 #define dbg_snapshot_dm(a, b, c, d, e)		do { } while (0)
+#define dbg_snapshot_pmic(a, b, c, d)		do { } while (0)
 #define dbg_snapshot_printk(...)		do { } while (0)
 
 #define dbg_snapshot_set_item_enable(a, b)	do { } while (0)
@@ -292,6 +295,7 @@ enum dss_item_index {
 	DSS_ITEM_ARRDUMP_PANIC_ID,
 	DSS_ITEM_FIRST_ID,
 	DSS_ITEM_BACKTRACE_ID,
+	DSS_ITEM_WDTMSG_ID,
 };
 
 enum dss_log_item_indx {
@@ -309,7 +313,15 @@ enum dss_log_item_indx {
 	DSS_LOG_REGULATOR_ID,
 	DSS_LOG_THERMAL_ID,
 	DSS_LOG_ACPM_ID,
+	DSS_LOG_PMIC_ID,
 	DSS_LOG_PRINTK_ID,
+};
+
+enum ecc_policy {
+	ECC_GO_PANIC = 0,
+	ECC_SKIP_PANIC,
+	ECC_DUMP_WDT,
+	ECC_DIRECT_WDT,
 };
 
 struct dbg_snapshot_helper_ops {

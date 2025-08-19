@@ -289,6 +289,12 @@ int npu_sync_update_out_fence(struct npu_sync_timeline *obj, int value, int fd)
 	struct npu_sync_pt *pt;
 	struct dma_fence *fence;
 
+	if (!fd) {
+		ret = -EINVAL;
+		npu_err("fd is NULL\n");
+		return ret;
+	}
+
 	fence = npu_sync_file_get_fence(fd);
 	pt = npu_dma_fence_to_sync_pt(fence);
 	sync_file = npu_sync_file_fdget(fd);

@@ -20,7 +20,7 @@ static struct task_struct *suspect;
 
 static char get_state(struct task_struct *p)
 {
-	static const char state_array[] = {'R', 'S', 'D', 'T', 't', 'X', 'Z', 'P', 'x', 'K', 'W', 'I', 'N', 'd', ' ', ' ','F'};
+	static const char state_array[] = {'R', 'S', 'D', 'T', 't', 'X', 'Z', 'P', 'x', 'K', 'W', 'I', 'N', 'd', ' ', ' ', 'F'};
 	unsigned char idx = 0;
 	unsigned long state;
 
@@ -92,8 +92,17 @@ void secdbg_softdog_show_info(void)
 	p = secdbg_softdog_find_key_suspect();
 
 	if (p) {
-		pr_auto(ASL5, "[SOFTDOG] %s:%d %c(%u) exec:%lluns\n",
-			p->comm, p->pid, get_state(p), READ_ONCE(p->__state), p->se.exec_start);
+		unsigned long long last_arrival = p->sched_info.last_arrival;
+		unsigned long long last_queued = p->sched_info.last_queued;
+
+		unsigned long last_arrival_nsec = do_div(last_arrival, 1000000000);
+		unsigned long last_queued_nsec = do_div(last_queued, 1000000000);
+
+
+		pr_auto(ASL5, "[SOFTDOG] %s:%d %c(%u) last_arrival:%5lu.%06lus last_queued:%5lu.%06lus\n",
+			p->comm, p->pid, get_state(p), READ_ONCE(p->__state),
+			(unsigned long)last_arrival, last_arrival_nsec / 1000,
+			(unsigned long)last_queued, last_queued_nsec / 1000);
 
 		if (task_on_cpu(task_rq(p), p)) {
 			INIT_CSD(&csd, show_callstack, NULL);

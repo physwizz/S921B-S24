@@ -800,7 +800,7 @@ static int slsi_txbp_napi(struct napi_struct *napi, int budget)
 				write_unlock(&txbp_priv.cod_lock);
 			}
 
-			if (SLSI_HIP_TX_DATA_SLOTS_NUM - cod < SLSI_TX_BP_MBULK_GUARD)
+			if (bp_mod - cod < SLSI_TX_BP_MBULK_GUARD)
 				goto tx_done_check_q;
 		}
 	}
@@ -849,6 +849,12 @@ static __always_inline void slsi_txbp_trigger_tx(void *data)
 	napi_schedule(&tx->napi);
 }
 #endif
+
+void slsi_hip_setup_post(struct slsi_dev *sdev, u16 tx_slots)
+{
+	bp_mod = tx_slots;
+	bp_queue_scaling_factor = tx_slots / NAPI_POLL_WEIGHT;
+}
 
 void slsi_dev_attach_post(struct slsi_dev *sdev)
 {

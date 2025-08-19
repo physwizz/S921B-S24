@@ -472,7 +472,8 @@ enum slsi_vendor_event_values {
 	SLSI_NL80211_VENDOR_SCHED_PM_LEAKY_AP_DETECT_EVENT = 38,
 	SLSI_NL80211_NAN_INTERFACE_CREATED_EVENT = 39,
 	SLSI_NL80211_NAN_INTERFACE_DELETED_EVENT = 40,
-	SLSI_NL80211_VENDOR_DELAY_WAKEUP_EVENT = 41
+	SLSI_NL80211_VENDOR_DELAY_WAKEUP_EVENT = 41,
+	SLSI_NL80211_VENDOR_SPATIAL_REUSE_PARAM_CHANGE_EVENT = 42
 };
 
 enum slsi_lls_interface_mode {
@@ -728,6 +729,14 @@ enum slsi_vendor_attr_delayed_wakeup_ind {
 	SLSI_VENDOR_ATTR_DELAYED_WAKEUP_COUNT,
 	SLSI_VENDOR_ATTR_DELAYED_WAKEUP_LENGTH,
 	SLSI_VENDOR_ATTR_DELAYED_WAKEUP_PACKET
+};
+
+enum slsi_vendor_attr_spatial_reuse_parameter_ind {
+	SLSI_VENDOR_ATTR_SRG_OBSS_PD_MIN_OFFSET = 0,
+	SLSI_VENDOR_ATTR_SRG_OBSS_PD_MAX_OFFSET,
+	SLSI_VENDOR_ATTR_NON_SRG_OBSS_PD_MAX_OFFSET,
+	SLSI_VENDOR_ATTR_HESIGA_SPATIAL_REUSE_VAL15_DISALLOWED,
+	SLSI_VENDOR_ATTR_NON_SRG_OBSS_PD_SR_DISALLOWED
 };
 
 enum wifi_dtim_config_attr {
@@ -1166,6 +1175,14 @@ struct slsi_delayed_wakeup_ind {
 	u8 delayed_pkt_count;
 };
 
+struct slsi_spatial_reuse_params {
+	u8 srg_obss_pd_min_offset;
+	u8 srg_obss_pd_max_offset;
+	u8 non_srg_obss_pd_max_offset;
+	u8 hesiga_sr_value15allowed;
+	u8 non_srg_obss_pd_sr_allowed;
+};
+
 void slsi_nl80211_vendor_init(struct slsi_dev *sdev);
 void slsi_nl80211_vendor_deinit(struct slsi_dev *sdev);
 u8 slsi_gscan_get_scan_policy(enum wifi_band band);
@@ -1189,7 +1206,8 @@ char *slsi_print_event_name(int event_id);
 #endif
 void slsi_vendor_delay_wakeup_event(struct slsi_dev *sdev, struct net_device *dev,
 				    struct slsi_delayed_wakeup_ind delayed_wakeup_ind);
-
+void slsi_vendor_change_sr_parameter_event(struct slsi_dev *sdev, struct net_device *dev,
+					   struct slsi_spatial_reuse_params spatial_reuse_ind);
 static inline bool slsi_is_gscan_id(u16 scan_id)
 {
 	if ((scan_id >= SLSI_GSCAN_SCAN_ID_START) && (scan_id <= SLSI_GSCAN_SCAN_ID_END))

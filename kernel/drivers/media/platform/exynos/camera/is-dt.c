@@ -1044,6 +1044,7 @@ static void is_cis_opt_parse_dt(struct device_node *dnode,
 static enum is_csi_otf_out_ch img_otf_out_ch;
 static enum is_csi_otf_out_ch hpd_otf_out_ch;
 static enum is_csi_otf_out_ch vpd_otf_out_ch;
+static enum is_csi_otf_out_ch emb_otf_out_ch;
 
 static int is_cis_modes_dma_parse_dt(struct device_node *next, struct is_sensor_cfg *cfg,
 				     u32 idx_mode, u32 idx_dma)
@@ -1095,6 +1096,9 @@ static int is_cis_modes_dma_parse_dt(struct device_node *next, struct is_sensor_
 			break;
 		case DATA_VPD:
 			cfg->vpd_vc[vpd_otf_out_ch++] = idx_link_vc;
+			break;
+		case DATA_EMB:
+			cfg->emb_vc[emb_otf_out_ch++] = idx_link_vc;
 			break;
 		}
 
@@ -1187,6 +1191,7 @@ static int is_cis_modes_parse_dt(struct device_node *dnode, struct exynos_platfo
 		img_otf_out_ch = CSI_OTF_OUT_SINGLE;
 		hpd_otf_out_ch = CSI_OTF_OUT_SINGLE;
 		vpd_otf_out_ch = CSI_OTF_OUT_SINGLE;
+		emb_otf_out_ch = CSI_OTF_OUT_SINGLE;
 		if (of_get_child_by_name(next, "dma0")) {
 			for_each_child_of_node (next, next_dma) {
 				if (next_dma->name && (of_node_cmp(next_dma->name, "option") == 0))

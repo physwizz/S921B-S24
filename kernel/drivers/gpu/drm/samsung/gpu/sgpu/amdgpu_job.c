@@ -109,6 +109,10 @@ static enum drm_gpu_sched_stat amdgpu_job_timedout(struct drm_sched_job *s_job)
 			sec_abc_send_event("MODULE=gpu@WARN=gpu_job_timeout");
 #endif
 
+#if IS_ENABLED(CONFIG_SEC_GPUINFO)
+	sgpu_hqm_log_event(adev, GPU_TIMEOUT);
+#endif
+
 	if (AMDGPU_IS_MGFX2_EVT1(adev->grbm_chip_rev)) {
 		/* Logs to check if job timeout occurred by back-pressure issue */
 		uint32_t idx;

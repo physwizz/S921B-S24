@@ -40,16 +40,21 @@ int stm_ts_set_custom_library(struct stm_ts_data *ts)
 	if (ret < 0)
 		input_err(true, ts->dev, "%s: Failed to write sponge\n", __func__);
 
+	/* aod noti rect enable */
+	data[0] = STM_TS_CMD_SPONGE_OFFSET_MODE_01;
+	data[2] = ts->plat_data->sponge_mode;
 #if !IS_ENABLED(CONFIG_SAMSUNG_PRODUCT_SHIP)
 	/* inf dump enable */
-	data[0] = STM_TS_CMD_SPONGE_OFFSET_MODE_01;
 	data[2] = ts->plat_data->sponge_mode |= SEC_TS_MODE_SPONGE_INF_DUMP;
+#endif
+	input_info(true, ts->dev, "%s: Sponge_01 (0x%02x)\n",
+			__func__, ts->plat_data->sponge_mode);
 
 	ret = ts->stm_ts_write_sponge(ts, data, 3);
 	if (ret < 0)
 		input_err(true, ts->dev, "%s: Failed to write sponge\n", __func__);
-#endif
-		/* read dump info */
+
+	/* read dump info */
 	data[0] = STM_TS_CMD_SPONGE_LP_DUMP;
 
 	ret = ts->stm_ts_read_sponge(ts, data, 2);
@@ -100,6 +105,8 @@ void stm_ts_get_custom_library(struct stm_ts_data *ts)
 
 	sec_input_set_fod_info(ts->dev, data[0], data[1], data[2], data[3]);
 
+	memset(data, 0x00, 6);
+
 	data[0] = STM_TS_CMD_SPONGE_OFFSET_MODE_01;
 	ret = ts->stm_ts_read_sponge(ts, data, 2);
 	if (ret < 0) {
@@ -107,7 +114,7 @@ void stm_ts_get_custom_library(struct stm_ts_data *ts)
 		return;
 	}
 	ts->plat_data->sponge_mode = data[0];
-	input_info(true, ts->dev, "%s: sponge_mode %x\n", __func__, ts->plat_data->sponge_mode);
+	input_info(true, ts->dev, "%s: sponge_mode 0x%02x\n", __func__, ts->plat_data->sponge_mode);
 }
 
 void stm_ts_set_fod_finger_merge(struct stm_ts_data *ts)
@@ -1068,14 +1075,6 @@ void stm_ts_read_info_work(struct work_struct *work)
 
 	stm_ts_run_rawdata_all(ts);
 
-	/* read cmoffset & fail history data at booting time */
-	input_info(true, ts->dev, "%s: read cm data in tsp ic\n", __func__);
-	if (ts->plat_data->bringup == 0) {
-		get_cmoffset_dump(ts, ts->cmoffset_sdc_proc, OFFSET_FW_SDC);
-		get_cmoffset_dump(ts, ts->cmoffset_sub_proc, OFFSET_FW_SUB);
-		get_cmoffset_dump(ts, ts->cmoffset_main_proc, OFFSET_FW_MAIN);
-	}
-
 	ts->info_work_done = true;
 
 	/* reinit */
@@ -1157,6 +1156,23 @@ int stm_ts_set_aod_rect(struct stm_ts_data *ts)
 	for (i = 0; i < 4; i++) {
 		data[i * 2 + 2] = ts->plat_data->aod_data.rect_data[i] & 0xFF;
 		data[i * 2 + 3] = (ts->plat_data->aod_data.rect_data[i] >> 8) & 0xFF;
+	}
+
+	ret = ts->stm_ts_write_sponge(ts, data, 10);
+	if (ret < 0)
+		input_err(true, ts->dev, "%s: Failed to write sponge\n", __func__);
+
+	return ret;
+}
+
+int stm_ts_set_aod_noti_rect(struct stm_ts_data *ts)
+{
+	u8 data[10] = {0x53, 0};
+	int ret, i;
+
+	for (i = 0; i < 4; i++) {
+		data[i * 2 + 2] = ts->plat_data->aod_noti_data.rect_data[i] & 0xFF;
+		data[i * 2 + 3] = (ts->plat_data->aod_noti_data.rect_data[i] >> 8) & 0xFF;
 	}
 
 	ret = ts->stm_ts_write_sponge(ts, data, 10);

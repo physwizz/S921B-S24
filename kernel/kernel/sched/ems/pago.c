@@ -14,6 +14,7 @@
 #include "ems.h"
 #include <soc/samsung/exynos_pm_qos.h>
 #include <linux/exynos-dsufreq.h>
+#include <linux/perf/arm_pmuv3.h>
 
 #include <trace/events/ems.h>
 #include <trace/events/ems_debug.h>

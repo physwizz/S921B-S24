@@ -41,32 +41,6 @@ config SEC_RELOC_GPIO
 	help
 	  TODO: help is not ready.	  
 
-source "drivers/samsung/pm/Kconfig"
-
-# drivers/samsung/Kconfig
-#
-# Copyright (c) 2010-2020 Samsung Electronics Co., Ltd.
-#               http://www.samsung.com/
-#
-# Licensed under GPLv2
-config SEC_REBOOT
-	tristate "Enable Samsung reboot features"
-	default n
-	help
-	  Samsung TN reboot extension Feature. Do additional work when reboot.
-
-config SEC_KEY_NOTIFIER
-	tristate "Enable Samsung key event notifier"
-	default n
-	help
-	  Samsung Key input event notifier
-
-config DRV_SAMSUNG
-	tristate "Samsung sec class/sysfs Feature"
-	default n
-	help
-	  Samsung sysfs name 'sec' directory create.
-
 config SEC_FACTORY
 	bool "SAMSUNG Factory build option"
 	default n
@@ -88,3 +62,18 @@ config SAMSUNG_PRODUCT_SHIP
 	help
 	  This option is enabled by SHIP build option.
 	  In samsung build script, '-s' enables this option.
+
+source "drivers/samsung/pm/Kconfig"
+
+# drivers/samsung/Kconfig
+#
+# Copyright (c) 2010-2020 Samsung Electronics Co., Ltd.
+#               http://www.samsung.com/
+#
+# Licensed under GPLv2
+config SEC_REBOOT
+	tristate "Enable Samsung reboot features"
+	default n
+	help
+	  Samsung TN reboot extension Feature. Do additional work when reboot.
+

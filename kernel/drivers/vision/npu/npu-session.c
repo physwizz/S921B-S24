@@ -155,7 +155,7 @@ static save_result_func get_notify_func(const nw_cmd_e nw_cmd)
 		return npu_session_save_result;
 }
 
-static int npu_session_put_nw_req(struct npu_session *session, nw_cmd_e nw_cmd)
+int npu_session_put_nw_req(struct npu_session *session, nw_cmd_e nw_cmd)
 {
 	int ret = 0;
 
@@ -851,12 +851,6 @@ int npu_session_NW_CMD_UNLOAD(struct npu_session *session)
 		session->ncp_payload = NULL;
 	}
 
-#if IS_ENABLED(CONFIG_SOC_S5E9945)
-	if (device->sched->mode != NPU_PERF_MODE_NPU_BOOST &&
-			device->sched->mode != NPU_PERF_MODE_NPU_BOOST_PRUNE) {
-		npu_precision_active_hash_delete(session);
-	}
-#endif
 	return 0;
 }
 
@@ -1784,7 +1778,7 @@ int __update_iova_of_load_message_of_dsp(struct npu_session *session)
 			goto p_err;
 		}
 		ret = dsp_graph_add_kernel(device, session,
-				session->kernel_name, session->dl_unique_id);
+				session->kernel_name, session->kernel_param_size, session->dl_unique_id);
 		if (ret) {
 			npu_err("Failed(%d) to add user kernel\n", ret);
 			goto p_err;
@@ -2330,7 +2324,7 @@ int __pilot_parsing_ncp(struct npu_session *session, u32 *IFM_cnt, u32 *OFM_cnt,
 			session->io_workload = ncp->io_workload;
 			session->featuremapdata_type = ncp->featuremapdata_type;
 			strncpy(session->model_name, ncp->model_name, NCP_MODEL_NAME_LEN);
-			npu_precision_hash_check(session);
+			ret = npu_precision_hash_check(session);
 		}
 	}
 #else
@@ -2646,50 +2640,19 @@ p_err:
 }
 
 #if IS_ENABLED(CONFIG_NPU_USE_IMB_ALLOCATOR)
-int __make_IMB_info(struct npu_session *session, struct addr_info **temp_IMB_av)
+int __prepare_IMB_info(struct npu_session *session, struct addr_info *IMB_av, struct npu_memory_buffer *IMB_mem_buf)
 {
 	int ret = 0;
 	u32 i = 0;
 	u32 IMB_cnt = session->IMB_cnt;
-	struct addr_info *IMB_info;
 
-	IMB_info = session->IMB_info;
-	for (i = 0; i < IMB_cnt; i++) {
-		(IMB_info + i)->av_index = (*temp_IMB_av + i)->av_index;
-		(IMB_info + i)->vaddr = (*temp_IMB_av + i)->vaddr;
-		(IMB_info + i)->daddr = (*temp_IMB_av + i)->daddr;
-		(IMB_info + i)->size = (*temp_IMB_av + i)->size;
-		(IMB_info + i)->pixel_format = (*temp_IMB_av + i)->pixel_format;
-		(IMB_info + i)->width = (*temp_IMB_av + i)->width;
-		(IMB_info + i)->height = (*temp_IMB_av + i)->height;
-		(IMB_info + i)->channels = (*temp_IMB_av + i)->channels;
-		(IMB_info + i)->stride = (*temp_IMB_av + i)->stride;
-	}
-	return ret;
-}
-
-int __prepare_IMB_info(struct npu_session *session, struct addr_info **IMB_av, struct npu_memory_buffer *IMB_mem_buf)
-{
-	int ret = 0;
-	u32 i = 0;
-	u32 IMB_cnt = session->IMB_cnt;
-	struct addr_info *IMB_info;
-
-	IMB_info = kcalloc(IMB_cnt, sizeof(struct addr_info), GFP_KERNEL);
-	if (unlikely(!IMB_info)) {
-		npu_err("IMB: IMB_info alloc is fail\n");
-		ret = -ENOMEM;
-		goto p_err;
-	}
-
-	session->IMB_info = IMB_info;
-	__make_IMB_info(session, IMB_av);
+	session->IMB_info = IMB_av;
 
 	for (i = 0; i < IMB_cnt; i++) {
 #if IS_ENABLED(CONFIG_NPU_USE_IMB_ALLOCATOR)
-		IMB_mem_buf->ncp_max_size = max(IMB_mem_buf->ncp_max_size, ALIGN((*IMB_av + i)->size, NPU_IMB_ALIGN));
+		IMB_mem_buf->ncp_max_size = max(IMB_mem_buf->ncp_max_size, ALIGN((IMB_av + i)->size, NPU_IMB_ALIGN));
 #endif
-		IMB_mem_buf->size += ALIGN((*IMB_av + i)->size, NPU_IMB_ALIGN);
+		IMB_mem_buf->size += ALIGN((IMB_av + i)->size, NPU_IMB_ALIGN);
 	}
 	session->IMB_size = IMB_mem_buf->size;
 	session->IMB_mem_buf = IMB_mem_buf;
@@ -2706,10 +2669,10 @@ int __prepare_IMB_info(struct npu_session *session, struct addr_info **IMB_av, s
 	return ret;
 
 p_err:
-	if (likely(IMB_info))
-		kfree(IMB_info);
-	if (likely(IMB_mem_buf))
+	if (likely(IMB_mem_buf)) {
 		kfree(IMB_mem_buf);
+		IMB_mem_buf = NULL;
+	}
 	return ret;
 }
 #endif
@@ -2859,7 +2822,7 @@ int __config_session_info(struct npu_session *session)
 	}
 	strcpy(IMB_mem_buf->name, "IMB");
 
-	ret = __prepare_IMB_info(session, &IMB_av, IMB_mem_buf);
+	ret = __prepare_IMB_info(session, IMB_av, IMB_mem_buf);
 	if (unlikely(ret)) {
 		npu_uerr("IMB: fail(%d) in __prepare_IMB_info\n", session, ret);
 		goto p_err;
@@ -2890,11 +2853,6 @@ int __config_session_info(struct npu_session *session)
 
 #if IS_ENABLED(CONFIG_SOC_S5E9945)
 	__cfifo_sync_for_device(session);
-#endif
-
-#if !IS_ENABLED(CONFIG_NPU_IMB_ASYNC_ALLOC)
-	if (likely(IMB_av))
-		kfree(IMB_av);
 #endif
 
 	return ret;

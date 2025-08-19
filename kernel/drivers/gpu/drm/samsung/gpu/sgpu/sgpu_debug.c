@@ -114,4 +114,6 @@ void sgpu_debug_init(struct amdgpu_device *adev)
 {
 	sgpu_register_s2mpu_notifier(adev);
 	sgpu_debug_set_gl2acem_address(adev);
+
+	adev->sgpu_debug.pagefault_to_panic = false;
 }

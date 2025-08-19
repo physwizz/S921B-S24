@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2015, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -87,6 +87,17 @@ QDF_STATUS wlan_cm_bss_peer_create_rsp(struct wlan_objmgr_vdev *vdev,
 		return cm_roam_bss_peer_create_rsp(vdev, status, peer_mac);
 	else
 		return cm_bss_peer_create_rsp(vdev, status, peer_mac);
+}
+
+void wlan_cm_update_scan_mlme_info(struct wlan_objmgr_vdev *vdev,
+				   struct wlan_cm_connect_resp *resp)
+{
+	struct cnx_mgr *cm_ctx = cm_get_cm_ctx(vdev);
+
+	if (!cm_ctx)
+		return;
+
+	return cm_update_scan_mlme_info(cm_ctx, resp);
 }
 
 QDF_STATUS wlan_cm_connect_rsp(struct wlan_objmgr_vdev *vdev,
@@ -420,7 +431,8 @@ QDF_STATUS wlan_cm_get_rnr(struct wlan_objmgr_vdev *vdev, wlan_cm_id cm_id,
 }
 
 struct scan_cache_entry *
-wlan_cm_get_curr_candidate_entry(struct wlan_objmgr_vdev *vdev, wlan_cm_id cm_id)
+wlan_cm_get_curr_candidate_entry(struct wlan_objmgr_vdev *vdev,
+				 wlan_cm_id cm_id)
 {
 	return cm_get_curr_candidate_entry(vdev, cm_id);
 }

@@ -20,7 +20,7 @@
  */
 
 #include <linux/input.h>
-#include <stk6d2x.h>
+#include "stk6d2x.h"
 #include "stk6d2x_sec.h"
 
 #ifdef STK_FIFO_ENABLE
@@ -812,6 +812,7 @@ int32_t stk6d2x_enable_fifo(struct stk6d2x_data * alps_data, bool en)
 		i2c_data_reg[0] = (max_frame_count >> 8) & 0x03;
 		i2c_data_reg[1] = max_frame_count & 0xFF;
 		alps_data->fifo_info.fft_buf_idx = 0;
+		alps_data->index_last = 0;
 	}
 	else
 	{

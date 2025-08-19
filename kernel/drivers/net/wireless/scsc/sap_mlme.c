@@ -351,6 +351,9 @@ static int slsi_rx_netdev_mlme(struct slsi_dev *sdev, struct net_device *dev, st
 	case MLME_DELAYED_WAKEUP_IND:
 		slsi_rx_delayed_wakeup_indication(sdev, dev, skb);
 		break;
+	case MLME_SPATIAL_REUSE_PARAMETERS_IND:
+		slsi_rx_sr_params_changed_indication(sdev, dev, skb);
+		break;
 #if defined(CONFIG_SCSC_WLAN_TAS)
 	case MLME_SAR_IND:
 		slsi_tas_notify_sar_ind(sdev, dev, skb);

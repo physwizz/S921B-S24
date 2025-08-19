@@ -178,7 +178,7 @@ int mfc_core_sysmmu_fault_handler(struct iommu_fault *fault, void *param)
 			core->id, fault->event.addr,
 			core->logging_data->fault_trans_info);
 
-	call_dop(core, dump_and_broadcast, core);
+	call_dop(core, dump_and_stop_always, core);
 
 	/*
 	 * if return 0, sysmmu occurs kernel panic for debugging
@@ -270,6 +270,9 @@ static int __mfc_core_parse_dt(struct device_node *np, struct mfc_core *core)
 	}
 	of_property_read_u32(np_qos, "num_cluster",
 			&pdata->qos_boost_table->num_cluster);
+	of_property_read_u32_array(np_qos, "num_cpu",
+			&pdata->qos_boost_table->num_cpu[0],
+			pdata->qos_boost_table->num_cluster);
 	of_property_read_u32(np_qos, "freq_mfc",
 			&pdata->qos_boost_table->freq_mfc);
 	of_property_read_u32(np_qos, "freq_int",
@@ -583,15 +586,8 @@ static int __mfc_core_s2mpu_fault_notifier(struct s2mpu_notifier_block *nb_block
 	}
 
 	dev_err(core->device, "__mfc_core_s2mpu_fault_notifier: +\n");
-	call_dop(core, dump_and_broadcast, core);
+	call_dop(core, dump_and_stop_always, core);
 	dev_err(core->device, "__mfc_core_s2mpu_fault_notifier: -\n");
-
-	if (!core->dev->pdata->debug_mode && !core->dev->debugfs.debug_mode_en) {
-		mfc_core_handle_error(core);
-		if (core->dev->otf_inst_bits)
-			mfc_core_otf_notify_error(core);
-		return S2MPU_NOTIFY_OK;
-	}
 
 	return S2MPU_NOTIFY_BAD;
 }

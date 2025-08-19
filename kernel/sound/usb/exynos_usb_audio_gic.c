@@ -75,6 +75,7 @@ struct audio_work {
 
 	int is_conn;
 	bool sysmmu_mapping_done;
+	bool force_unmap;
 };
 
 struct audio_work audio_work_data;
@@ -176,7 +177,6 @@ static int usb_audio_iommu_unmap(unsigned long iova, size_t bytes)
 static void exynos_usb_audio_set_device(struct usb_device *udev)
 {
 	usb_audio.udev = udev;
-	usb_audio.is_audio = 1;
 }
 
 static int exynos_usb_audio_map_buf(struct usb_device *udev)
@@ -414,6 +414,9 @@ static int exynos_usb_audio_conn(struct usb_device *udev)
 	int ret = 0;
 #ifdef CONFIG_USB_AUDIO_ENHANCED_DETECT_TIME
 	struct snd_usb_audio *chip = dev_get_drvdata(&udev->dev);
+
+	set_usb_audio_cardnum(chip->card->number, 0, 1);
+	send_usb_audio_uevent(udev, chip->card->number, 1);
 #endif
 
 	if (DEBUG)
@@ -440,10 +443,6 @@ static int exynos_usb_audio_conn(struct usb_device *udev)
 
 err:
 	mutex_unlock(&usb_audio.lock);
-#ifdef CONFIG_USB_AUDIO_ENHANCED_DETECT_TIME
-	set_usb_audio_cardnum(chip->card->number, 0, 1);
-	send_usb_audio_uevent(udev, chip->card->number, 1);
-#endif
 	return ret;
 }
 
@@ -460,11 +459,7 @@ static int exynos_usb_audio_disconn(void)
 	usb_msg.type = GIC_USB_CONN;
 	usb_msg.param1 = false;
 
-	if (usb_audio.is_audio == 0) {
-		pr_err("Is not USB Audio device\n");
-		ret = -ENODEV;
-		goto err;
-	} else {
+	if (usb_audio.is_audio || audio_work_data.force_unmap) {
 		usb_audio.is_audio = 0;
 		usb_audio.usb_audio_state = USB_AUDIO_REMOVING;
 		ret = usb_msg_to_uram(&usb_audio.phy->dev);
@@ -473,8 +468,13 @@ static int exynos_usb_audio_disconn(void)
 			goto err;
 		}
 		exynos_usb_audio_unmap_all();
-	}
+		audio_work_data.force_unmap = false;
+	} else {
 
+		pr_err("Is not USB Audio device\n");
+		ret = -ENODEV;
+		goto err;
+	}
 err:
 	mutex_unlock(&usb_audio.lock);
 	return ret;
@@ -491,8 +491,9 @@ static int exynos_usb_audio_pcm(bool is_open, bool direction)
 
 	mutex_lock(&usb_audio.lock);
 
-	if (usb_audio.is_audio == 0) {
-		dev_info(dev, "USB_AUDIO_IPC : is_audio is 0. return!\n");
+	if (usb_audio.is_audio == 0 || audio_work_data.sysmmu_mapping_done == 0) {
+		dev_info(dev, "USB_AUDIO_IPC : is_audio = %d, sysmmu mapping = %d. return!\n",
+				usb_audio.is_audio, audio_work_data.sysmmu_mapping_done);
 		mutex_unlock(&usb_audio.lock);
 		return -ENODEV;
 	}
@@ -501,6 +502,16 @@ static int exynos_usb_audio_pcm(bool is_open, bool direction)
 		atomic_set(&usb_audio.pcm_open_done, 1);
 
 	dev_info(dev, "PCM %s %s\n", direction? "IN" : "OUT", is_open ? "OPEN" : "CLOSE");
+
+	if (usb_audio.user_scenario == AUDIO_MODE_IN_CALL &&
+				!is_open && !direction) {
+		dev_info(dev, "%s, pcm close in call. change mode\n", __func__);
+		snd_usb_autosuspend(usb_audio.chip);
+		phy_set_mode_ext(usb_audio.phy,
+				 PHY_MODE_CALL_EXIT, AUDIO_MODE_NORMAL);
+
+		usb_audio.user_scenario = AUDIO_MODE_NORMAL;
+	}
 
 	usb_msg.type = GIC_USB_PCM_OPEN;
 	usb_msg.param1 = is_open;
@@ -543,6 +554,7 @@ static int exynos_usb_scenario_ctl_put(struct snd_kcontrol *kcontrol,
 	u32 new_mode;
 	int err = 0;
 
+	mutex_lock(&usb_audio.lock);
 	if (usb->user_scenario !=
 	     ucontrol->value.integer.value[0]) {
 		pr_info("%s, scenario = %d, set = %ld\n", __func__,
@@ -570,6 +582,7 @@ static int exynos_usb_scenario_ctl_put(struct snd_kcontrol *kcontrol,
 		usb->user_scenario = ucontrol->value.integer.value[0];
 		changed = 1;
 	}
+	mutex_unlock(&usb_audio.lock);
 
 	return changed;
 }
@@ -739,8 +752,9 @@ int exynos_usb_audio_pcmbuf(struct usb_device *udev)
 
 	mutex_lock(&usb_audio.lock);
 
-	if (usb_audio.is_audio == 0) {
-		dev_info(dev, "USB_AUDIO_IPC : is_audio is 0. return!\n");
+	if (usb_audio.is_audio == 0 || audio_work_data.sysmmu_mapping_done == 0) {
+		dev_info(dev, "USB_AUDIO_IPC : is_audio = %d, sysmmu mapping = %d. return!\n",
+				usb_audio.is_audio, audio_work_data.sysmmu_mapping_done);
 		mutex_unlock(&usb_audio.lock);
 		return -ENODEV;
 	}
@@ -796,8 +810,9 @@ int exynos_usb_audio_setintf(struct usb_device *udev, int iface, int alt, int di
 		goto err;
 	}
 
-	if (usb_audio.is_audio == 0) {
-		dev_info(dev, "USB_AUDIO_IPC : is_audio = 0. return!\n");
+	if (usb_audio.is_audio == 0 || audio_work_data.sysmmu_mapping_done == 0) {
+		dev_info(dev, "USB_AUDIO_IPC : is_audio = %d, sysmmu mapping = %d. return!\n",
+				usb_audio.is_audio, audio_work_data.sysmmu_mapping_done);
 		ret = -ENODEV;
 		goto err;
 	}
@@ -981,6 +996,7 @@ void usb_probe_work(struct work_struct *data)
 		pr_info("%s, already disconnected, return \n", __func__);
 		return;
 	}
+
 	exynos_usb_audio_hcd(audio_work_data.work_udev);
 	exynos_usb_audio_conn(audio_work_data.work_udev);
 	exynos_usb_audio_desc(audio_work_data.work_udev);
@@ -1114,54 +1130,64 @@ void exynos_usb_audio_connect(void *data, struct usb_interface *intf, struct snd
 		pr_info("USB_AUDIO_IPC : %s - No MIDI device detected!\n", __func__);
 
 		if (usb_audio.usb_audio_state == USB_AUDIO_REMOVING) {
-			/* wait for completion */
-			if (usb_audio.usb_audio_state == USB_AUDIO_REMOVING) {
-				usb_audio.usb_audio_state =
-					USB_AUDIO_TIMEOUT_PROBE;
-				pr_err("%s: timeout for disconnect\n", __func__);
-			}
+				usb_audio.usb_audio_state = USB_AUDIO_TIMEOUT_PROBE;
+				pr_info("%s: skip usb_audio_init\n", __func__);
 		}
 
-		if ((usb_audio.usb_audio_state == USB_AUDIO_DISCONNECT)
-			|| (usb_audio.usb_audio_state == USB_AUDIO_TIMEOUT_PROBE)) {
-			pr_info("USB_AUDIO_IPC : %s - USB Audio set!\n", __func__);
-			exynos_usb_audio_set_device(udev);
-
-			audio_work_data.work_udev = udev;
-			audio_work_data.is_conn = 1;
-			queue_work(usb_audio_wq, &audio_work_data.probe_work);
-
-			if (!audio_work_data.is_conn) {
-				pr_info("%s, already disconnected, return\n", __func__);
-				return;
-			}
-
-			for (int timeout = 300;(audio_work_data.sysmmu_mapping_done != 1); timeout--) {
-				mdelay(1);
-				if (!timeout) {
-					pr_info("%s - USB Audio is no set!\n", __func__);
-					break;
-				}
-			}
-
-			exynos_usb_audio_map_buf(udev);
-			if (udev->do_remote_wakeup)
-				usb_enable_autosuspend(udev);
-			ret = exynos_usb_audio_add_control(chip);
-		} else {
-			pr_err("USB audio is can not support second device!!");
+		if ((usb_audio.usb_audio_state != USB_AUDIO_DISCONNECT)
+			&& (usb_audio.usb_audio_state != USB_AUDIO_TIMEOUT_PROBE)) {
+			exynos_usb_audio_disconnect(NULL, NULL);
+			pr_info("USB_AUDIO_IPC : %s - disconnect previous device!\n", __func__);
 		}
+
+		if (audio_work_data.is_conn == 1) {
+			audio_work_data.force_unmap = true;
+			exynos_usb_audio_disconnect(NULL, NULL);
+			pr_info("USB_AUDIO_IPC : %s - remove previous device!\n", __func__);
+		}
+
+		pr_info("USB_AUDIO_IPC : %s - USB Audio set!\n", __func__);
+		exynos_usb_audio_set_device(udev);
+
+		audio_work_data.work_udev = udev;
+		audio_work_data.is_conn = 1;
+		queue_work(usb_audio_wq, &audio_work_data.probe_work);
+
+		if (!audio_work_data.is_conn) {
+			pr_info("%s, already disconnected, return\n", __func__);
+			return;
+		}
+
+		for (int timeout = 500;(audio_work_data.sysmmu_mapping_done != 1); timeout--) {
+			mdelay(1);
+			if (!timeout) {
+				pr_info("%s - USB Audio is no set!\n", __func__);
+				break;
+			}
+		}
+		usb_audio.is_audio = 1;
+
+		exynos_usb_audio_map_buf(udev);
+		if (udev->do_remote_wakeup)
+			usb_enable_autosuspend(udev);
+		ret = exynos_usb_audio_add_control(chip);
 	}
 }
 
 void exynos_usb_audio_disconnect(void *data, struct usb_interface *intf)
 {
 #ifdef CONFIG_USB_AUDIO_ENHANCED_DETECT_TIME
-	struct usb_device *udev = interface_to_usbdev(intf);
-	struct snd_usb_audio *chip = dev_get_drvdata(&udev->dev);
+	struct usb_device *udev;
+	struct snd_usb_audio *chip;
 
+	if (!intf)
+		goto out;
+
+	udev = interface_to_usbdev(intf);
+	chip = dev_get_drvdata(&udev->dev);
 	send_usb_audio_uevent(udev, chip->card->number, 0);
 	set_usb_audio_cardnum(chip->card->number, 0, 0);
+out:
 #endif
 	audio_work_data.is_conn = 0;
 	audio_work_data.sysmmu_mapping_done = 0;
@@ -1234,8 +1260,9 @@ int exynos_usb_audio_set_rate(int iface, int rate, int alt)
 
 	mutex_lock(&usb_audio.lock);
 
-	if (!usb_audio.is_audio) {
-		dev_info(dev, "USB_AUDIO_IPC : is_audio is 0. return!\n");
+	if (usb_audio.is_audio == 0 || audio_work_data.sysmmu_mapping_done == 0) {
+		dev_info(dev, "USB_AUDIO_IPC : is_audio = %d, sysmmu mapping = %d. return!\n",
+				usb_audio.is_audio, audio_work_data.sysmmu_mapping_done);
 		mutex_unlock(&usb_audio.lock);
 		return -ENODEV;
 	}

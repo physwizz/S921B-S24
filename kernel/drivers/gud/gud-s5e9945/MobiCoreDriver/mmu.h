@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) 2013-2022 TRUSTONIC LIMITED
+ * Copyright (c) 2013-2023 TRUSTONIC LIMITED
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -15,6 +15,8 @@
 
 #ifndef MC_MMU_H
 #define MC_MMU_H
+
+#include "platform.h"
 
 struct tee_mmu;
 struct mcp_buffer_map;
@@ -53,4 +55,30 @@ void tee_mmu_buffer(struct tee_mmu *mmu, struct mcp_buffer_map *map);
 int tee_mmu_debug_structs(struct kasnprintf_buf *buf,
 			  const struct tee_mmu *mmu);
 
+#ifdef MC_SHADOW_BUFFER
+/*
+ * Copy forward shadow buffer from client application.
+ */
+int tee_mmu_copy_to_shadow(struct tee_mmu *mmu);
+
+/*
+ * Copy back shadow buffer to client application.
+ */
+int tee_mmu_copy_from_shadow(struct tee_mmu *mmu);
+
+/*
+ * Free allocated shadow buffer
+ */
+void tee_mmu_free_shadow(struct tee_mmu *mmu);
+
+/*
+ * Free allocated mmu zombie list
+ */
+void tee_mmu_delete_zombies(void);
+
+/*
+ * Initialize mmu mutex
+ */
+void mmu_init(void);
+#endif /* MC_SHADOW_BUFFER */
 #endif /* MC_MMU_H */

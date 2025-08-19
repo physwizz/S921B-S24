@@ -1542,7 +1542,7 @@ err_fcmd_exit:
 err_exit:
 	mutex_unlock(&dsim->cmd_lock);
 	DPU_EVENT_LOG("DSIM_FAST_COMMAND", exynos_crtc, 0,
-			"CMD_ID(%#x) TX_LEN(%d) buf_vaddr(%#x)",
+			"CMD_ID(%#x) TX_LEN(%d) buf_vaddr(%#lx)",
 			id, d1, (unsigned long)dsim->fcmd_buf_vaddr);
 
 	return ret;

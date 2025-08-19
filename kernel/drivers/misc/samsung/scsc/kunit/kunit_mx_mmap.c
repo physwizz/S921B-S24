@@ -31,13 +31,13 @@ struct mx_mmap_dev *test_alloc_mx_dev(struct kunit *test)
 	set_test_in_platform_mif(test);
 	set_property(0x99);
 	scscmif = get_mif();
-	
+
 	mx_dev = kunit_kzalloc(test, sizeof(*mx_dev), GFP_KERNEL);
 	mx_dev->mif_abs = scscmif;
 	mx_dev->gdb_transport = kunit_kzalloc(test, sizeof(struct gdb_transport), GFP_KERNEL);
 
 	platform = container_of(scscmif, struct platform_mif, interface);
-	platform_mif_map(scscmif, 0x00);
+	// platform_mif_map(scscmif, 0x00);
 
 	return mx_dev;
 }

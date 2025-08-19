@@ -46,7 +46,6 @@ enum scsc_logring_tags {
 	CLK20,
 	CLK20_TEST,
 	FM,
-	FM_TEST,
 	MX_FILE,
 	MX_FW,
 	MX_SAMPLER,

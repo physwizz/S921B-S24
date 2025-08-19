@@ -417,7 +417,7 @@ static void profiler_enable_profiler_govs(int enable)
 		}
 	} else {
 		/* Disable governors */
-		if (profiler.dm_dynamic == 0) {
+		if (profiler.dm_dynamic == 0 && psd.enable_gfx && (profiler.profiler_state & PROFILER_STATE_GFX)) {
 			profiler.dm_dynamic = 1;
 			exynos_dm_dynamic_disable(profiler.dm_dynamic);
 		}

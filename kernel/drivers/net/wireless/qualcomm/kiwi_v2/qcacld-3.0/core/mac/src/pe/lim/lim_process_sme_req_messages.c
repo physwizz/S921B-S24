@@ -2144,6 +2144,48 @@ lim_get_bss_dot11_mode(struct mac_context *mac_ctx,
 }
 
 static QDF_STATUS
+lim_handle_11abg_dot11_mode(enum mlme_dot11_mode bss_dot11_mode,
+			    enum mlme_dot11_mode *intersected_mode,
+			    struct bss_description *bss_desc)
+{
+	if (!WLAN_REG_IS_24GHZ_CH_FREQ(bss_desc->chan_freq) &&
+	    !WLAN_REG_IS_5GHZ_CH_FREQ(bss_desc->chan_freq)) {
+		pe_err("self Dot11mode is 11ABG, BSS freq %d not 2.4 or 5 GHz",
+		       bss_desc->chan_freq);
+		return QDF_STATUS_E_INVAL;
+	}
+
+	switch (bss_dot11_mode) {
+	case MLME_DOT11_MODE_11B:
+		*intersected_mode = MLME_DOT11_MODE_11B;
+		break;
+	case MLME_DOT11_MODE_11A:
+		*intersected_mode = MLME_DOT11_MODE_11A;
+		break;
+	case MLME_DOT11_MODE_11G:
+		*intersected_mode = MLME_DOT11_MODE_11G;
+		break;
+	case MLME_DOT11_MODE_11N:
+		fallthrough;
+	case MLME_DOT11_MODE_11AC:
+		fallthrough;
+	case MLME_DOT11_MODE_11AX:
+		fallthrough;
+	case MLME_DOT11_MODE_11BE:
+		if (WLAN_REG_IS_24GHZ_CH_FREQ(bss_desc->chan_freq))
+			*intersected_mode = MLME_DOT11_MODE_11G;
+		else
+			*intersected_mode = MLME_DOT11_MODE_11A;
+		break;
+	default:
+		pe_err("Invalid bss dot11mode %d passed", bss_dot11_mode);
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	return QDF_STATUS_SUCCESS;
+}
+
+static QDF_STATUS
 lim_handle_11a_dot11_mode(enum mlme_dot11_mode bss_dot11_mode,
 			  enum mlme_dot11_mode *intersected_mode,
 			  struct bss_description *bss_desc)
@@ -2673,6 +2715,9 @@ lim_get_intersected_dot11_mode_sta_ap(struct mac_context *mac_ctx,
 	case MLME_DOT11_MODE_11BE_ONLY:
 		return lim_handle_11be_only_dot11_mode(bss_dot11_mode,
 						       intersected_mode);
+	case MLME_DOT11_MODE_ABG:
+		return lim_handle_11abg_dot11_mode(bss_dot11_mode,
+						   intersected_mode, bss_desc);
 	default:
 		pe_err("Invalid self dot11mode %d not supported",
 		       self_dot11_mode);
@@ -2834,7 +2879,8 @@ lim_update_sae_single_pmk_ap_cap(struct mac_context *mac,
 	akm = wlan_crypto_get_param(session->vdev,
 				    WLAN_CRYPTO_PARAM_KEY_MGMT);
 
-	if (QDF_HAS_PARAM(akm, WLAN_CRYPTO_KEY_MGMT_SAE) &&
+	if ((QDF_HAS_PARAM(akm, WLAN_CRYPTO_KEY_MGMT_SAE) ||
+	     QDF_HAS_PARAM(akm, WLAN_CRYPTO_KEY_MGMT_SAE_EXT_KEY)) &&
 	    mac->mlme_cfg->lfr.sae_single_pmk_feature_enabled)
 		wlan_mlme_set_sae_single_pmk_bss_cap(mac->psoc,
 			session->vdev_id,
@@ -3134,7 +3180,8 @@ lim_disable_bformee_for_iot_ap(struct mac_context *mac_ctx,
 
 QDF_STATUS
 lim_fill_pe_session(struct mac_context *mac_ctx, struct pe_session *session,
-		    struct bss_description *bss_desc)
+		    struct bss_description *bss_desc,
+		    enum wlan_status_code *req_fail_status_code)
 {
 	uint8_t bss_chan_id;
 	tDot11fBeaconIEs *ie_struct;
@@ -3417,9 +3464,13 @@ lim_fill_pe_session(struct mac_context *mac_ctx, struct pe_session *session,
 				session->ap_defined_power_type_6g,
 				bss_desc->chan_freq);
 		if (QDF_IS_STATUS_ERROR(status)) {
+			if (req_fail_status_code)
+				*req_fail_status_code =
+					STATUS_PWR_CAPABILITY_NOT_VALID;
 			status = QDF_STATUS_E_NOSUPPORT;
 			goto send;
 		}
+
 		session->best_6g_power_type = power_type_6g;
 		mlme_set_best_6g_power_type(session->vdev, power_type_6g);
 
@@ -4433,6 +4484,7 @@ lim_fill_session_params(struct mac_context *mac_ctx,
 	struct mlme_legacy_priv *mlme_priv;
 	uint32_t assoc_ie_len;
 	bool eht_capab;
+	enum wlan_status_code req_fail_status_code = STATUS_UNSPECIFIED_FAILURE;
 
 	ie_len = util_scan_entry_ie_len(req->entry);
 	bss_len = (uint16_t)(offsetof(struct bss_description,
@@ -4474,15 +4526,14 @@ lim_fill_session_params(struct mac_context *mac_ctx,
 	qdf_mem_copy(session->ssId.ssId, req->entry->ssid.ssid,
 		     session->ssId.length);
 	session->ssidHidden = req->is_ssid_hidden;
-
 	session->force_24ghz_in_ht20 = req->force_24ghz_in_ht20;
-
-	status = lim_fill_pe_session(mac_ctx, session, bss_desc);
+	status = lim_fill_pe_session(mac_ctx, session, bss_desc, NULL);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		pe_err("Failed to fill pe session vdev id %d",
 		       session->vdev_id);
 		qdf_mem_free(session->lim_join_req);
 		session->lim_join_req = NULL;
+		req->req_fail_status_code = req_fail_status_code;
 		return QDF_STATUS_E_FAILURE;
 	}
 
@@ -5869,7 +5920,7 @@ void lim_calculate_tpc(struct mac_context *mac,
 	bool is_tpe_present = false, is_6ghz_freq = false;
 	uint8_t i = 0;
 	int8_t max_tx_power;
-	uint16_t reg_max = 0, psd_power = 0;
+	uint16_t reg_max = 0, reg_psd_pwr_max = 0;
 	uint16_t tx_power_within_bw = 0, psd_power_within_bw = 0;
 	uint16_t local_constraint, bw_val = 0;
 	uint32_t num_pwr_levels, ap_power_type_6g = 0;
@@ -5959,11 +6010,13 @@ void lim_calculate_tpc(struct mac_context *mac,
 					wlan_reg_get_client_power_for_connecting_ap(
 					mac->pdev, ap_power_type_6g,
 					mlme_obj->reg_tpc_obj.frequency[i],
-					is_psd_power, &reg_max, &psd_power);
+					is_psd_power, &reg_max,
+					&reg_psd_pwr_max);
 				} else {
 					wlan_reg_get_client_power_for_connecting_ap(
 					mac->pdev, ap_power_type_6g, oper_freq,
-					is_psd_power, &reg_max, &psd_power);
+					is_psd_power, &reg_max,
+					&reg_psd_pwr_max);
 				}
 			}
 		} else {
@@ -5980,7 +6033,8 @@ void lim_calculate_tpc(struct mac_context *mac,
 					wlan_reg_get_client_power_for_connecting_ap
 					(mac->pdev, ap_power_type_6g,
 					 mlme_obj->reg_tpc_obj.frequency[i],
-					 is_psd_power, &reg_max, &psd_power);
+					 is_psd_power, &reg_max,
+					 &reg_psd_pwr_max);
 				} else {
 					if (wlan_reg_decide_6ghz_power_within_bw_for_freq(
 							mac->pdev, oper_freq,
@@ -5994,7 +6048,8 @@ void lim_calculate_tpc(struct mac_context *mac,
 							QDF_STATUS_SUCCESS) {
 						pe_debug("get pwr attr from secondary list");
 						reg_max = tx_power_within_bw;
-						psd_power = psd_power_within_bw;
+						reg_psd_pwr_max =
+							psd_power_within_bw;
 					} else {
 						wlan_reg_get_cur_6g_ap_pwr_type(
 							mac->pdev,
@@ -6005,7 +6060,7 @@ void lim_calculate_tpc(struct mac_context *mac,
 							frequency[i],
 							&is_psd_power,
 							&reg_max,
-							&psd_power);
+							&reg_psd_pwr_max);
 					}
 				}
 			}
@@ -6033,7 +6088,10 @@ void lim_calculate_tpc(struct mac_context *mac,
 		pe_debug("local constraint: %d power constraint absolute %d",
 			 local_constraint,
 			 mlme_obj->reg_tpc_obj.is_power_constraint_abs);
-		if (mlme_obj->reg_tpc_obj.is_power_constraint_abs) {
+
+		if (is_psd_power) {
+			max_tx_power = reg_psd_pwr_max;
+		} else if (mlme_obj->reg_tpc_obj.is_power_constraint_abs) {
 			if (!local_constraint) {
 				pe_debug("ignore abs ap constraint power 0!");
 				max_tx_power = reg_max;
@@ -6064,11 +6122,7 @@ void lim_calculate_tpc(struct mac_context *mac,
 			pe_debug("TPE: %d", tpe_power);
 		}
 
-		if (is_psd_power)
-			mlme_obj->reg_tpc_obj.chan_power_info[i].tx_power =
-						(uint8_t)psd_power;
-		else
-			mlme_obj->reg_tpc_obj.chan_power_info[i].tx_power =
+		mlme_obj->reg_tpc_obj.chan_power_info[i].tx_power =
 						(uint8_t)max_tx_power;
 
 		pe_debug("freq: %d reg power: %d, max_tx_power(eirp/psd): %d",

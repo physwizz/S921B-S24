@@ -279,22 +279,25 @@ int thr_func(void *data)
 	return 0;
 }
 
-void start_cmdq_table_read(struct cmdq_table_info *cmdq_info)
+int start_cmdq_table_read(struct cmdq_table_info *cmdq_info)
 {
 
 	if (npu_governor_is_unavailable()) {
 		npu_cmdq_table_read_close(cmdq_info);
-		return;
+		return 0;
 	}
 
 	mutex_lock(&cmdq_info->lock);
 	if (!cmdq_info->kthread) {
 		cmdq_info->kthread = kthread_run(thr_func, &cmdq_info->thr_data, "thr");
-		if (!cmdq_info->kthread) {
-			BUG();
+		if (IS_ERR_OR_NULL(cmdq_info->kthread)) {
+			cmdq_info->kthread = NULL;
+			mutex_unlock(&cmdq_info->lock);
+			return -ENOMEM;
 		}
 	}
 	mutex_unlock(&cmdq_info->lock);
+	return 0;
 }
 
 static inline u32 npu_get_predict_time(struct npu_session *session, u32 freq_index)
@@ -980,7 +983,7 @@ void npu_cmdq_table_read_close(struct cmdq_table_info *cmdq_info)
 	mutex_unlock(&sess_mgr->cmdq_lock);
 
 	mutex_lock(&cmdq_info->lock);
-	if (cmdq_info->kthread) {
+	if (!IS_ERR_OR_NULL(cmdq_info->kthread)) {
 		kthread_stop(cmdq_info->kthread);
 	}
 	cmdq_info->kthread = NULL;

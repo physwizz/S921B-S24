@@ -128,6 +128,43 @@ err:
 	return ret;
 }
 
+int tusb2e11_repeater_set_bypass(void *_data, bool enable)
+{
+	struct tusb2e11_ddata *ddata = (struct tusb2e11_ddata *)_data;
+	struct tusb2e11_pdata *pdata = NULL;
+	unsigned char data = 0, write_data = 0;
+
+	if (!ddata)
+		return -EEXIST;
+
+	pdata = ddata->pdata;
+
+	// REV_ID
+	tusb2e11_read_reg(ddata, 0xB0, &data, 1);
+
+	// set bypass mode (UART)
+	switch (data) {
+	case 1:
+		if (enable)
+			write_data = 0x9;
+		else
+			write_data = 0x0;
+
+		tusb2e11_write_reg(ddata, 0x50, &write_data, 1);
+		break;
+	default:
+		if (enable)
+			write_data = 0xB;
+		else
+			write_data = 0xA;
+
+		tusb2e11_write_reg(ddata, 0x50, &write_data, 1);
+		pr_info("%s:REV_ID: %d\n", __func__, data);
+		break;
+	}
+	return 0;
+}
+
 static ssize_t tusb2e11_repeater_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
@@ -308,6 +345,7 @@ static int tusb2e11_probe(struct i2c_client *client,
 
 	ddata->rdata.enable = tusb2e11_power;
 	ddata->rdata.private_data = ddata;
+	ddata->rdata.set_bypass = tusb2e11_repeater_set_bypass;
 	repeater_core_register(&ddata->rdata);
 
 	return 0;

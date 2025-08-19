@@ -74,8 +74,8 @@ struct is_core;
 #define DEBUG_EXT_MAX			2
 
 #define DUMP_SPLIT_MAX			10
-#define IS_MAX_SCENARIO             (140)
-#define IS_MAX_SETFILE              (140)
+#define IS_MAX_SCENARIO             (210)
+#define IS_MAX_SETFILE              (210)
 /*
  * This enum will be used in order to know the size ratio based upon RATIO mecro return value.
  */
@@ -736,6 +736,8 @@ void is_hw_update_pcfi(struct is_hardware *hardware, struct is_group *group,
 			struct is_frame *frame, struct pablo_crta_buf_info *pcfi_buf);
 void is_hw_check_iteration_state(struct is_frame *frame,
 	struct is_dvfs_ctrl *dvfs_ctrl, struct is_group *group);
+void is_hw_check_psm_state(struct is_frame *frame,
+	struct is_dvfs_ctrl *dvfs_ctrl, struct is_group *group);
 #if IS_ENABLED(CONFIG_PABLO_KUNIT_TEST)
 irqreturn_t is_hw_isr_check(int hw_id, int irq, void *data);
 #endif
@@ -762,5 +764,21 @@ int is_ischain_runtime_resume(struct device *dev);
 int is_runtime_suspend_pre(struct device *dev);
 int is_runtime_suspend_post(struct device *dev);
 int is_runtime_resume_post(struct device *dev);
+
+
+#if IS_ENABLED(CONFIG_TIMER_TRACER)
+#define is_hw_trace_logger(_hw_ip, _status) \
+{ \
+	u32 instance = atomic_read(&_hw_ip->instance); \
+	u32 fcount = atomic_read(&_hw_ip->fcount); \
+	if (_hw_ip->stm[instance] && _hw_ip->stm[instance][7] == 'R') \
+		is_memlog_info("[%d:%s][HW:%s][TRACE][F%d]isr status: %08x\n", \
+				instance, _hw_ip->stm[instance], _hw_ip->name, \
+				fcount, _status); \
+}
+#else
+#define is_hw_trace_logger(a, b) do_nothing
+#endif
+
 
 #endif

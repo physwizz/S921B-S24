@@ -1907,7 +1907,7 @@ TRACE_EVENT(emstune_task_boost,
 		__array(	char,		comm,	TASK_COMM_LEN	)
 		__field(	pid_t,		pid			)
 		__array(	char,		val,	10		)
-		__array(    char,       label,  64      )
+		__array( 	char,		label,	64		)
 	),
 
 	TP_fast_assign(

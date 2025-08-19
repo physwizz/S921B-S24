@@ -16,7 +16,7 @@
 #include "blk-sec.h"
 #include "ssg.h"
 
-struct ssg_wb_data {
+struct wb_params {
 	int on_rqs;
 	int off_rqs;
 	int on_dirty_bytes;
@@ -26,15 +26,17 @@ struct ssg_wb_data {
 	int on_dirty_busy_written_pages;
 	int on_dirty_busy_jiffies;
 	int off_delay_jiffies;
-
 	unsigned long dirty_busy_start_jiffies;
 	unsigned long dirty_busy_start_written_pages;
+};
 
-	atomic_t wb_triggered;
-
+struct ssg_wb_data {
+	struct wb_params params;
 	struct request_queue *queue;
 	struct delayed_work wb_ctrl_work;
 	struct delayed_work wb_deferred_off_work;
+
+	atomic_t wb_triggered;
 };
 
 struct io_amount_data {
@@ -59,17 +61,18 @@ static const int _on_dirty_busy_written_bytes = 100*1024*1024;
 static const int _on_dirty_busy_msecs = 1000;
 static const int _off_delay_msecs = 5000;
 
-#define may_wb_on(io_amount, ssg_wb) \
-	((io_amount).allocated_rqs >= (ssg_wb)->on_rqs || \
-	(io_amount).dirty_bytes >= (ssg_wb)->on_dirty_bytes || \
-	(io_amount).sync_write_bytes >= (ssg_wb)->on_sync_write_bytes || \
-	(ssg_wb->dirty_busy_start_written_pages && \
-	(global_node_page_state(NR_WRITTEN) - (ssg_wb)->dirty_busy_start_written_pages) \
-	> (ssg_wb)->on_dirty_busy_written_pages))
-#define may_wb_off(io_amount, ssg_wb) \
-	((io_amount).allocated_rqs < (ssg_wb)->off_rqs && \
-	(io_amount).dirty_bytes < (ssg_wb)->off_dirty_bytes && \
-	(io_amount).sync_write_bytes < (ssg_wb)->off_sync_write_bytes)
+#define may_wb_on(io_amount, params) \
+	((io_amount).allocated_rqs >= params.on_rqs || \
+	(io_amount).dirty_bytes >= params.on_dirty_bytes || \
+	(io_amount).sync_write_bytes >= params.on_sync_write_bytes || \
+	(params.dirty_busy_start_written_pages && \
+	(global_node_page_state(NR_WRITTEN) - params.dirty_busy_start_written_pages) \
+	> params.on_dirty_busy_written_pages))
+
+#define may_wb_off(io_amount, params) \
+	((io_amount).allocated_rqs < params.off_rqs && \
+	(io_amount).dirty_bytes < params.off_dirty_bytes && \
+	(io_amount).sync_write_bytes < params.off_sync_write_bytes)
 
 static void trigger_wb_on(struct ssg_wb_data *ssg_wb)
 {
@@ -86,9 +89,24 @@ static void wb_off_work(struct work_struct *work)
 static void trigger_wb_off(struct ssg_wb_data *ssg_wb)
 {
 	queue_delayed_work(blk_sec_common_wq,
-				&ssg_wb->wb_deferred_off_work, ssg_wb->off_delay_jiffies);
+				&ssg_wb->wb_deferred_off_work, ssg_wb->params.off_delay_jiffies);
 
 	atomic_set(&ssg_wb->wb_triggered, false);
+}
+
+static void init_wb_params(struct ssg_wb_data *ssg_wb)
+{
+	ssg_wb->params.on_rqs = ssg_wb->queue->nr_requests * _on_rqs_ratio / 100U;
+	ssg_wb->params.off_rqs = ssg_wb->queue->nr_requests * _off_rqs_ratio / 100U;
+	ssg_wb->params.on_dirty_bytes = _on_dirty_bytes;
+	ssg_wb->params.off_dirty_bytes = _off_dirty_bytes;
+	ssg_wb->params.on_sync_write_bytes = _on_sync_write_bytes;
+	ssg_wb->params.off_sync_write_bytes = _off_sync_write_bytes;
+	ssg_wb->params.on_dirty_busy_written_pages = _on_dirty_busy_written_bytes / PAGE_SIZE;
+	ssg_wb->params.on_dirty_busy_jiffies = msecs_to_jiffies(_on_dirty_busy_msecs);
+	ssg_wb->params.off_delay_jiffies = msecs_to_jiffies(_off_delay_msecs);
+	ssg_wb->params.dirty_busy_start_written_pages = 0;
+	ssg_wb->params.dirty_busy_start_jiffies = 0;
 }
 
 static bool wb_count_io(struct sbitmap *bitmap, unsigned int bitnr, void *data)
@@ -113,27 +131,29 @@ static bool wb_count_io(struct sbitmap *bitmap, unsigned int bitnr, void *data)
 	return true;
 }
 
+static void wb_all_tag_iter(struct blk_mq_tags *tags, struct io_amount_data *io_amount)
+{
+	struct ssg_wb_iter_data iter_data = {
+		.data = io_amount,
+		.tags = tags,
+	};
+
+	if (tags->nr_reserved_tags) {
+		iter_data.reserved = true;
+		sbitmap_for_each_set(&tags->breserved_tags.sb, wb_count_io, &iter_data);
+	}
+
+	iter_data.reserved = false;
+	sbitmap_for_each_set(&tags->bitmap_tags.sb, wb_count_io, &iter_data);
+}
+
 static void wb_get_io_amount(struct request_queue *q, struct io_amount_data *io_amount)
 {
 	struct blk_mq_hw_ctx *hctx;
-	struct blk_mq_tags *tags;
 	unsigned long i;
-	struct ssg_wb_iter_data iter_data = {
-		.data = io_amount,
-	};
 
 	if (blk_mq_is_shared_tags(q->tag_set->flags)) {
-		tags = q->sched_shared_tags;
-		iter_data.tags = tags;
-
-		if (tags->nr_reserved_tags) {
-			iter_data.reserved = true;
-			sbitmap_for_each_set(&tags->breserved_tags.sb,
-					wb_count_io, &iter_data);
-		}
-		iter_data.reserved = false;
-		sbitmap_for_each_set(&tags->bitmap_tags.sb,
-				wb_count_io, &iter_data);
+		wb_all_tag_iter(q->sched_shared_tags, io_amount);
 	} else {
 		queue_for_each_hw_ctx(q, hctx, i) {
 			/*
@@ -143,18 +163,24 @@ static void wb_get_io_amount(struct request_queue *q, struct io_amount_data *io_
 			if (!blk_mq_hw_queue_mapped(hctx))
 				continue;
 
-			tags = hctx->sched_tags;
-			iter_data.tags = tags;
-
-			if (tags->nr_reserved_tags) {
-				iter_data.reserved = true;
-				sbitmap_for_each_set(&tags->breserved_tags.sb,
-						wb_count_io, &iter_data);
-			}
-			iter_data.reserved = false;
-			sbitmap_for_each_set(&tags->bitmap_tags.sb,
-					wb_count_io, &iter_data);
+			wb_all_tag_iter(hctx->sched_tags, io_amount);
 		}
+	}
+
+	io_amount->dirty_bytes = (global_node_page_state(NR_FILE_DIRTY) +
+			global_node_page_state(NR_WRITEBACK)) * PAGE_SIZE;
+}
+
+static void update_dirty_busy_status(struct ssg_wb_data *ssg_wb, struct io_amount_data *io_amount)
+{
+	if (time_after(jiffies, ssg_wb->params.dirty_busy_start_jiffies + ssg_wb->params.on_dirty_busy_jiffies)) {
+		ssg_wb->params.dirty_busy_start_jiffies = 0;
+		ssg_wb->params.dirty_busy_start_written_pages = 0;
+	}
+
+	if (!ssg_wb->params.dirty_busy_start_jiffies && io_amount->dirty_bytes >= ssg_wb->params.off_dirty_bytes) {
+		ssg_wb->params.dirty_busy_start_jiffies = jiffies;
+		ssg_wb->params.dirty_busy_start_written_pages = global_node_page_state(NR_WRITTEN);
 	}
 }
 
@@ -168,33 +194,22 @@ static void wb_ctrl_work(struct work_struct *work)
 	};
 
 	wb_get_io_amount(ssg_wb->queue, &io_amount);
-	io_amount.dirty_bytes = (global_node_page_state(NR_FILE_DIRTY) +
-			global_node_page_state(NR_WRITEBACK)) * PAGE_SIZE;
-
-	if (time_after(jiffies, ssg_wb->dirty_busy_start_jiffies + ssg_wb->on_dirty_busy_jiffies)) {
-		ssg_wb->dirty_busy_start_jiffies = 0;
-		ssg_wb->dirty_busy_start_written_pages = 0;
-	}
-
-	if (!ssg_wb->dirty_busy_start_jiffies && io_amount.dirty_bytes >= ssg_wb->off_dirty_bytes) {
-		ssg_wb->dirty_busy_start_jiffies = jiffies;
-		ssg_wb->dirty_busy_start_written_pages = global_node_page_state(NR_WRITTEN);
-	}
+	update_dirty_busy_status(ssg_wb, &io_amount);
 
 	if (atomic_read(&ssg_wb->wb_triggered)) {
-		if (may_wb_off(io_amount, ssg_wb))
+		if (may_wb_off(io_amount, ssg_wb->params))
 			trigger_wb_off(ssg_wb);
 	} else {
-		if (may_wb_on(io_amount, ssg_wb))
+		if (may_wb_on(io_amount, ssg_wb->params))
 			trigger_wb_on(ssg_wb);
 	}
 
 	if (atomic_read(&ssg_wb->wb_triggered))
 		queue_delayed_work(blk_sec_common_wq, &ssg_wb->wb_ctrl_work,
-				ssg_wb->off_delay_jiffies);
+				ssg_wb->params.off_delay_jiffies);
 }
 
-void ssg_wb_ctrl(struct ssg_data *ssg)
+void ssg_wb_run_ctrl_work(struct ssg_data *ssg, struct request *rq)
 {
 	struct ssg_wb_data *ssg_wb = ssg->wb_data;
 
@@ -202,6 +217,10 @@ void ssg_wb_ctrl(struct ssg_data *ssg)
 		return;
 
 	if (atomic_read(&ssg_wb->wb_triggered))
+		return;
+
+	if (((rq->cmd_flags & REQ_OP_MASK) == REQ_OP_READ)
+			&& atomic_read(&ssg->allocated_rqs) < ssg_wb->params.on_rqs)
 		return;
 
 	if (!work_busy(&ssg_wb->wb_ctrl_work.work))
@@ -219,8 +238,8 @@ void ssg_wb_depth_updated(struct blk_mq_hw_ctx *hctx)
 		return;
 
 	nr_rqs = hctx->sched_tags->bitmap_tags.sb.depth;
-	ssg_wb->on_rqs = nr_rqs * _on_rqs_ratio / 100U;
-	ssg_wb->off_rqs = nr_rqs * _off_rqs_ratio / 100U;
+	ssg_wb->params.on_rqs = nr_rqs * _on_rqs_ratio / 100U;
+	ssg_wb->params.off_rqs = nr_rqs * _off_rqs_ratio / 100U;
 }
 
 void ssg_wb_init(struct ssg_data *ssg)
@@ -237,25 +256,16 @@ void ssg_wb_init(struct ssg_data *ssg)
 	ssg_wb = kzalloc(sizeof(*ssg_wb), GFP_KERNEL);
 	if (!ssg_wb)
 		return;
-	ssg->wb_data = ssg_wb;
+
+	ssg_wb->queue = ssg->queue;
 
 	INIT_DELAYED_WORK(&ssg_wb->wb_ctrl_work, wb_ctrl_work);
 	INIT_DELAYED_WORK(&ssg_wb->wb_deferred_off_work, wb_off_work);
 
-	ssg_wb->on_rqs = ssg->queue->nr_requests * _on_rqs_ratio / 100U;
-	ssg_wb->off_rqs = ssg->queue->nr_requests * _off_rqs_ratio / 100U;
-	ssg_wb->on_dirty_bytes = _on_dirty_bytes;
-	ssg_wb->off_dirty_bytes = _off_dirty_bytes;
-	ssg_wb->on_sync_write_bytes = _on_sync_write_bytes;
-	ssg_wb->off_sync_write_bytes = _off_sync_write_bytes;
-	ssg_wb->on_dirty_busy_written_pages = _on_dirty_busy_written_bytes / PAGE_SIZE;
-	ssg_wb->on_dirty_busy_jiffies = msecs_to_jiffies(_on_dirty_busy_msecs);
-	ssg_wb->dirty_busy_start_written_pages = 0;
-	ssg_wb->dirty_busy_start_jiffies = 0;
-	ssg_wb->off_delay_jiffies = msecs_to_jiffies(_off_delay_msecs);
-	ssg_wb->queue = ssg->queue;
+	init_wb_params(ssg_wb);
 
 	atomic_set(&ssg_wb->wb_triggered, false);
+	ssg->wb_data = ssg_wb;
 }
 
 void ssg_wb_exit(struct ssg_data *ssg)
@@ -295,15 +305,15 @@ ssize_t ssg_wb_##__NAME##_show(struct elevator_queue *e, char *page)	\
 									\
 	return snprintf(page, PAGE_SIZE, "%d\n", val);			\
 }
-SHOW_FUNC(on_rqs, ssg_wb->on_rqs, 0);
-SHOW_FUNC(off_rqs, ssg_wb->off_rqs, 0);
-SHOW_FUNC(on_dirty_bytes, ssg_wb->on_dirty_bytes, 0);
-SHOW_FUNC(off_dirty_bytes, ssg_wb->off_dirty_bytes, 0);
-SHOW_FUNC(on_sync_write_bytes, ssg_wb->on_sync_write_bytes, 0);
-SHOW_FUNC(off_sync_write_bytes, ssg_wb->off_sync_write_bytes, 0);
-SHOW_FUNC(on_dirty_busy_written_bytes, ssg_wb->on_dirty_busy_written_pages, 2);
-SHOW_FUNC(on_dirty_busy_msecs, ssg_wb->on_dirty_busy_jiffies, 1);
-SHOW_FUNC(off_delay_msecs, ssg_wb->off_delay_jiffies, 1);
+SHOW_FUNC(on_rqs, ssg_wb->params.on_rqs, 0);
+SHOW_FUNC(off_rqs, ssg_wb->params.off_rqs, 0);
+SHOW_FUNC(on_dirty_bytes, ssg_wb->params.on_dirty_bytes, 0);
+SHOW_FUNC(off_dirty_bytes, ssg_wb->params.off_dirty_bytes, 0);
+SHOW_FUNC(on_sync_write_bytes, ssg_wb->params.on_sync_write_bytes, 0);
+SHOW_FUNC(off_sync_write_bytes, ssg_wb->params.off_sync_write_bytes, 0);
+SHOW_FUNC(on_dirty_busy_written_bytes, ssg_wb->params.on_dirty_busy_written_pages, 2);
+SHOW_FUNC(on_dirty_busy_msecs, ssg_wb->params.on_dirty_busy_jiffies, 1);
+SHOW_FUNC(off_delay_msecs, ssg_wb->params.off_delay_jiffies, 1);
 #undef SHOW_FUNC
 
 #define STORE_FUNC(__NAME, __PTR, __VAR, __COND, __CONV)	\
@@ -332,23 +342,23 @@ ssize_t ssg_wb_##__NAME##_store(struct elevator_queue *e,	\
 								\
 	return count;						\
 }
-STORE_FUNC(on_rqs, &ssg_wb->on_rqs, val,
-		val >= ssg_wb->off_rqs, 0);
-STORE_FUNC(off_rqs, &ssg_wb->off_rqs, val,
-		val >= 0 && val <= ssg_wb->on_rqs, 0);
-STORE_FUNC(on_dirty_bytes, &ssg_wb->on_dirty_bytes, val,
-		val >= ssg_wb->off_dirty_bytes, 0);
-STORE_FUNC(off_dirty_bytes, &ssg_wb->off_dirty_bytes, val,
-		val >= 0 && val <= ssg_wb->on_dirty_bytes, 0);
-STORE_FUNC(on_sync_write_bytes, &ssg_wb->on_sync_write_bytes, val,
-		val >= ssg_wb->off_sync_write_bytes, 0);
-STORE_FUNC(off_sync_write_bytes, &ssg_wb->off_sync_write_bytes, val,
-		val >= 0 && val <= ssg_wb->on_sync_write_bytes, 0);
-STORE_FUNC(on_dirty_busy_written_bytes, &ssg_wb->on_dirty_busy_written_pages, val,
+STORE_FUNC(on_rqs, &ssg_wb->params.on_rqs, val,
+		val >= ssg_wb->params.off_rqs, 0);
+STORE_FUNC(off_rqs, &ssg_wb->params.off_rqs, val,
+		val >= 0 && val <= ssg_wb->params.on_rqs, 0);
+STORE_FUNC(on_dirty_bytes, &ssg_wb->params.on_dirty_bytes, val,
+		val >= ssg_wb->params.off_dirty_bytes, 0);
+STORE_FUNC(off_dirty_bytes, &ssg_wb->params.off_dirty_bytes, val,
+		val >= 0 && val <= ssg_wb->params.on_dirty_bytes, 0);
+STORE_FUNC(on_sync_write_bytes, &ssg_wb->params.on_sync_write_bytes, val,
+		val >= ssg_wb->params.off_sync_write_bytes, 0);
+STORE_FUNC(off_sync_write_bytes, &ssg_wb->params.off_sync_write_bytes, val,
+		val >= 0 && val <= ssg_wb->params.on_sync_write_bytes, 0);
+STORE_FUNC(on_dirty_busy_written_bytes, &ssg_wb->params.on_dirty_busy_written_pages, val,
 		val >= 0, 2);
-STORE_FUNC(on_dirty_busy_msecs, &ssg_wb->on_dirty_busy_jiffies, val,
+STORE_FUNC(on_dirty_busy_msecs, &ssg_wb->params.on_dirty_busy_jiffies, val,
 		val >= 0, 1);
-STORE_FUNC(off_delay_msecs, &ssg_wb->off_delay_jiffies, val, val >= 0, 1);
+STORE_FUNC(off_delay_msecs, &ssg_wb->params.off_delay_jiffies, val, val >= 0, 1);
 #undef STORE_FUNC
 
 ssize_t ssg_wb_triggered_show(struct elevator_queue *e, char *page)

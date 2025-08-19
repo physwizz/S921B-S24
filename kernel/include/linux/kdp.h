@@ -5,6 +5,7 @@
 #include <linux/mm_types.h>
 #include <linux/stddef.h>
 #include <linux/uh.h>
+#include <linux/dcache.h>
 
 #define __kdp_ro __section(".kdp_ro")
 #define __lsm_ro_after_init_kdp __section(".kdp_ro")

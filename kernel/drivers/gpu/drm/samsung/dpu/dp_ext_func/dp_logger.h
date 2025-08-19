@@ -12,7 +12,7 @@
 #ifndef _DP_LOGGER_H_
 #define _DP_LOGGER_H_
 
-#define MAX_DPLOG_STR_LEN	160
+#define MAX_DPLOG_STR_LEN	256
 
 #define SEND_OPT_TOAST	0
 #define SEND_OPT_MESSAGE 1

@@ -15,7 +15,9 @@
 #include <linux/of.h>
 #include <linux/of_reserved_mem.h>
 #include <linux/sec_debug.h>
+#if IS_ENABLED(CONFIG_DEBUG_SNAPSHOT)
 #include <soc/samsung/exynos/debug-snapshot.h>
+#endif
 
 #include "sec_debug_internal.h"
 
@@ -91,6 +93,7 @@ static void secdbg_base_set_kconstants(void)
 	pr_info("%s: end to get kernel constants\n", __func__);
 }
 
+#if IS_ENABLED(CONFIG_DEBUG_SNAPSHOT)
 dss_extern_get_log_by_cpu(task);
 dss_extern_get_log_by_cpu(work);
 dss_extern_get_log_by_cpu(cpuidle);
@@ -98,6 +101,7 @@ dss_extern_get_log_by_cpu(freq);
 dss_extern_get_log_by_cpu(irq);
 dss_extern_get_log(thermal);
 dss_extern_get_log(acpm);
+dss_extern_get_log(pmic);
 
 static void secdbg_base_get_kevent_info(struct ess_info_offset *p, int type)
 {
@@ -161,6 +165,14 @@ static void secdbg_base_get_kevent_info(struct ess_info_offset *p, int type)
 		p->last = dss_get_last_paddr_acpm_log();
 		break;
 
+	case DSS_KEVENT_PMIC:
+		p->base = kevent_base_pa + dss_get_vaddr_pmic_log() - kevent_base_va;
+		p->nr = (unsigned int)dss_get_len_pmic_log();
+		p->size = (unsigned int)dss_get_sizeof_pmic_log();
+		p->per_core = 0;
+		p->last = dss_get_last_paddr_pmic_log();
+		break;
+
 	default:
 		p->base = 0;
 		p->nr = 0;
@@ -170,6 +182,12 @@ static void secdbg_base_get_kevent_info(struct ess_info_offset *p, int type)
 		break;
 	}
 }
+#else
+static void secdbg_base_get_kevent_info(struct ess_info_offset *p, int type)
+{
+	pr_crit("%s: dss disabled\n", __func__);
+}
+#endif
 
 static void init_ess_info(struct secdbg_snapshot_offset *ss_info, unsigned int index, char *key)
 {
@@ -191,19 +209,24 @@ static void secdbg_base_set_essinfo(void)
 
 	memset(ss_info, 0, sizeof(struct sec_debug_ess_info));
 
-	init_ess_info(ss_info, index++, "kevnt-task");
-	init_ess_info(ss_info, index++, "kevnt-work");
-	init_ess_info(ss_info, index++, "kevnt-irq");
-	init_ess_info(ss_info, index++, "kevnt-freq");
-	init_ess_info(ss_info, index++, "kevnt-idle");
+	/* set all as Default */
+	for (index = 0; index < SD_NR_ESSINFO_ITEMS; index++)
+		init_ess_info(ss_info, index, "empty");
+
+#if IS_ENABLED(CONFIG_DEBUG_SNAPSHOT)
+	init_ess_info(ss_info, DSS_KEVENT_TASK, "kevnt-task");
+	init_ess_info(ss_info, DSS_KEVENT_WORK, "kevnt-work");
+	init_ess_info(ss_info, DSS_KEVENT_IRQ, "kevnt-irq");
+	init_ess_info(ss_info, DSS_KEVENT_FREQ, "kevnt-freq");
+	init_ess_info(ss_info, DSS_KEVENT_IDLE, "kevnt-idle");
 
 	if (!dbg_snapshot_is_minized_kevents()) {
-		init_ess_info(ss_info, index++, "kevnt-thrm");
-		init_ess_info(ss_info, index++, "kevnt-acpm");
+		init_ess_info(ss_info, DSS_KEVENT_THRM, "kevnt-thrm");
+		init_ess_info(ss_info, DSS_KEVENT_ACPM, "kevnt-acpm");
 	}
 
-	for (; index < SD_NR_ESSINFO_ITEMS;)
-		init_ess_info(ss_info, index++, "empty");
+	init_ess_info(ss_info, DSS_KEVENT_PMIC, "kevnt-pmic");
+#endif /* CONFIG_DEBUG_SNAPSHOT */
 
 	for (index = 0; index < SD_NR_ESSINFO_ITEMS; index++)
 		pr_info("%s: key: %s offset: %lx nr: %x last: %lx\n", __func__,

@@ -93,7 +93,6 @@ int amdgpu_bo_list_create(struct amdgpu_device *adev, struct drm_file *filp,
 		struct amdgpu_bo_list_entry *entry;
 		struct drm_gem_object *gobj;
 		struct amdgpu_bo *bo;
-		struct mm_struct *usermm;
 
 		gobj = drm_gem_object_lookup(filp, info[i].bo_handle);
 		if (!gobj) {
@@ -104,13 +103,7 @@ int amdgpu_bo_list_create(struct amdgpu_device *adev, struct drm_file *filp,
 		bo = amdgpu_bo_ref(gem_to_amdgpu_bo(gobj));
 		drm_gem_object_put(gobj);
 
-		usermm = amdgpu_ttm_tt_get_usermm(bo->tbo.ttm);
-		if (usermm) {
-			if (usermm != current->mm) {
-				amdgpu_bo_unref(&bo);
-				r = -EPERM;
-				goto error_free;
-			}
+		if (amdgpu_ttm_tt_is_userptr(bo->tbo.ttm)) {
 			entry = &array[--first_userptr];
 		} else {
 			entry = &array[last_entry++];

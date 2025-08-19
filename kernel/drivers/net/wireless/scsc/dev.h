@@ -932,11 +932,17 @@ struct slsi_vif_sta {
 	u16                     sae_auth_type;
 	bool                    twt_allowed;
 	u16                     twt_peer_cap;
+	u8                      srg_obss_pd_min_offset;
+	u8                      srg_obss_pd_max_offset;
+	u8                      non_srg_obss_pd_max_offset;
+	u8                      hesiga_spatial_reuse_value15allowed;
+	u8                      non_srg_obss_pd_sr_allowed;
 	u8                      *fils_realm;
 	int                     fils_realm_len;
 	int                     store_elna_value;
 	int                     current_elna_value;
 	bool                    set_elna_after_connect;
+	u16                     owe_group_during_connection;
 };
 
 struct multi_link_elem {
@@ -1943,6 +1949,9 @@ struct slsi_dev {
 	struct slsi_tas_info       tas_info;
 #endif
 	bool                       monitor_mode;
+	bool                       fw_eht_enabled;
+	int                        dynamic_bw_type;
+	int                        dynamic_bw_index;
 };
 
 /* Compact representation of channels a ESS has been seen on
@@ -2261,6 +2270,8 @@ static inline int slsi_get_group_key_idx(char *name)
 	kfree(to_free);
 	return (group_key_index + SLSI_VLAN_GROUPKEY_START_IDX - 1);
 }
+
+#define SLSI_WAKEUP_PKT_MARK 0x80000000
 
 /* Names of full mode HCF files */
 extern char *slsi_mib_file;

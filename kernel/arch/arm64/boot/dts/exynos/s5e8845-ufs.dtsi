@@ -67,7 +67,7 @@
 		/* UFS support Auto hibern8 */
 		samsung,support-ah8;
 		/* gear scale flags */
-		samsung,ufs-gear-scale;
+//		samsung,ufs-gear-scale;
 		devfreq = <&devfreq_1>;
 		/* ----------------------- */
 		/* 4. ADDITIONAL NODES     */
@@ -77,7 +77,6 @@
 		ufs,phy_iso = <0x618 0x1 0x1>; /* UFS_BIT(0) */
 
 		ufs-pm-qos {
-			freq-int = <266000>;
 			perf-int = <666000>;
 			perf-mif = <3172000>;
 			cpufreq-qos-levels = <8 7>; /* 1690000 1690000 */

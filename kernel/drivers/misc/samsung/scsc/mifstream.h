@@ -26,7 +26,7 @@
 
 #include "cpacket_buffer.h"
 #include "mifintrbit.h"
-#include "scsc_logring_common.h"
+#include "logs/scsc_logring_common.h"
 
 /* Public Types */
 

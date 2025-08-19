@@ -438,7 +438,7 @@ int is_vendor_ois_init(struct v4l2_subdev *subdev)
 	u8 tele_xcoef[2];
 	u8 tele_ycoef[2];
 	long efs_size = 0;
-#ifndef OIS_DUAL_CAL_DEFAULT_EEPROM_VALUE_TELE
+#if !defined(OIS_DUAL_CAL_DEFAULT_EEPROM_VALUE_TELE)
 	int rom_id = 0;
 	char *cal_buf;
 	struct is_vendor_rom *rom_info = NULL;
@@ -629,14 +629,14 @@ int is_vendor_ois_init(struct v4l2_subdev *subdev)
 					is_mcu_set_reg_u8(mcu->regs[OM_REG_CORE], OIS_CMD_REAR_YGG1 + i, ois_pinfo->wide_romdata.ygg[i]);
 				}
 				for (i = 0; i < 2; i++) {
-#ifdef OIS_DUAL_CAL_DEFAULT_VALUE_WIDE
+#if defined(OIS_DUAL_CAL_DEFAULT_VALUE_WIDE)
 					is_mcu_set_reg_u8(mcu->regs[OM_REG_CORE], OIS_CMD_XCOEF_M1_1 + i, OIS_DUAL_CAL_DEFAULT_VALUE_WIDE);
 #else
 					is_mcu_set_reg_u8(mcu->regs[OM_REG_CORE], OIS_CMD_XCOEF_M1_1 + i, ois_pinfo->wide_romdata.xcoef[i]);
 #endif
 				}
 				for (i = 0; i < 2; i++) {
-#ifdef OIS_DUAL_CAL_DEFAULT_VALUE_WIDE
+#if defined(OIS_DUAL_CAL_DEFAULT_VALUE_WIDE)
 					is_mcu_set_reg_u8(mcu->regs[OM_REG_CORE], OIS_CMD_YCOEF_M1_1 + i, OIS_DUAL_CAL_DEFAULT_VALUE_WIDE);
 #else
 					is_mcu_set_reg_u8(mcu->regs[OM_REG_CORE], OIS_CMD_YCOEF_M1_1 + i, ois_pinfo->wide_romdata.ycoef[i]);
@@ -693,7 +693,7 @@ int is_vendor_ois_init(struct v4l2_subdev *subdev)
 				info_mcu("%s tele use default coef value", __func__);
 #else
 				if (!test_bit(IS_EFS_STATE_READ, &efs_info.efs_state)) {
-#ifdef OIS_DUAL_CAL_DEFAULT_EEPROM_VALUE_TELE
+#if defined(OIS_DUAL_CAL_DEFAULT_EEPROM_VALUE_TELE)
 					is_mcu_set_reg_u8(mcu->regs[OM_REG_CORE], tele_cmd_xcoef, OIS_DUAL_CAL_DEFAULT_EEPROM_VALUE_TELE);
 					is_mcu_set_reg_u8(mcu->regs[OM_REG_CORE], tele_cmd_xcoef + 1, OIS_DUAL_CAL_DEFAULT_EEPROM_VALUE_TELE);
 					is_mcu_set_reg_u8(mcu->regs[OM_REG_CORE], tele_cmd_ycoef, OIS_DUAL_CAL_DEFAULT_EEPROM_VALUE_TELE);
@@ -705,10 +705,22 @@ int is_vendor_ois_init(struct v4l2_subdev *subdev)
 					is_sec_get_rom_info(&rom_info, rom_id);
 					cal_buf = rom_info->buf;
 
-					eeprom_xcoef[0] = *((u8 *)&cal_buf[rom_info->rom_dualcal_slave1_oisshift_x_addr]);
-					eeprom_xcoef[1] = *((u8 *)&cal_buf[rom_info->rom_dualcal_slave1_oisshift_x_addr + 1]);
-					eeprom_ycoef[0] = *((u8 *)&cal_buf[rom_info->rom_dualcal_slave1_oisshift_y_addr]);
-					eeprom_ycoef[1] = *((u8 *)&cal_buf[rom_info->rom_dualcal_slave1_oisshift_y_addr + 1]);
+					if (rom_info->rom_dualcal_slave1_oisshift_x_addr != 0xFFFF
+						&& rom_info->rom_dualcal_slave1_oisshift_x_addr < rom_info->rom_size) {
+						eeprom_xcoef[0] = *((u8 *)&cal_buf[rom_info->rom_dualcal_slave1_oisshift_x_addr]);
+						eeprom_xcoef[1] = *((u8 *)&cal_buf[rom_info->rom_dualcal_slave1_oisshift_x_addr + 1]);
+					} else {
+						eeprom_xcoef[0] = 0;
+						eeprom_xcoef[1] = 0;
+					}
+					if (rom_info->rom_dualcal_slave1_oisshift_y_addr != 0xFFFF
+						&& rom_info->rom_dualcal_slave1_oisshift_y_addr < rom_info->rom_size) {
+						eeprom_ycoef[0] = *((u8 *)&cal_buf[rom_info->rom_dualcal_slave1_oisshift_y_addr]);
+						eeprom_ycoef[1] = *((u8 *)&cal_buf[rom_info->rom_dualcal_slave1_oisshift_y_addr + 1]);
+					} else {
+						eeprom_ycoef[0] = 0;
+						eeprom_ycoef[1] = 0;
+					}
 
 					is_mcu_set_reg_u8(mcu->regs[OM_REG_CORE], tele_cmd_xcoef, eeprom_xcoef[0]);
 					is_mcu_set_reg_u8(mcu->regs[OM_REG_CORE], tele_cmd_xcoef + 1, eeprom_xcoef[1]);

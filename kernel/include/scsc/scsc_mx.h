@@ -347,8 +347,7 @@ void *scsc_mx_service_mif_addr_to_phys(struct scsc_service *service, scsc_mifram
 int scsc_mx_service_mif_ptr_to_addr(struct scsc_service *service, void *mem_ptr, scsc_mifram_ref *ref);
 
 #if defined(CONFIG_SCSC_PCIE_CHIP)
-__iomem void *scsc_mx_service_get_scoreboard(struct scsc_service *service);
-int scsc_mx_service_get_scoreboard_ref(struct scsc_service *service, __iomem void *addr, uintptr_t *addr_ref);
+__iomem void *scsc_mx_service_get_ramrp_ptr(struct scsc_service *service);
 void pcie_users_print(void);
 #endif
 

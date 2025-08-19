@@ -20,7 +20,7 @@ void pcie_sysmmu_enable(int ch_num);
 void pcie_sysmmu_disable(int ch_num);
 void pcie_sysmmu_set_use_iocc(int ch_num);
 void pcie_sysmmu_all_buff_free(int ch_num);
-int pcie_sysmmu_add_pcie_fault_handler(void (*func)(int));
+int pcie_sysmmu_add_pcie_fault_handler(void (*func)(int, int));
 #else
 static void __maybe_unused pcie_sysmmu_enable(int ch_num)
 {
@@ -52,7 +52,7 @@ static void __maybe_unused pcie_sysmmu_all_buff_free(int ch_num)
 {
 	pr_err("PCIe SysMMU is NOT Enabled!!!\n");
 }
-static int pcie_sysmmu_add_pcie_fault_handler(void (*func)(int))
+static int pcie_sysmmu_add_pcie_fault_handler(void (*func)(int, int))
 {
 	pr_err("PCIe SysMMU is NOT Enabled!!!\n");
 

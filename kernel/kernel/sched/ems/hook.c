@@ -320,8 +320,7 @@ static void ems_hook_binder_wake_up_ilocked(void *data, struct task_struct *p,
 	    (is_top_app_task(p) && is_rt_task(current->group_leader)))
 		ems_binder_task(p) = 1;
 
-	if (p && current->signal &&
-			is_important_task(current))
+	if (current->signal && is_important_task(current))
 		ems_binder_task(p) = 1;
 }
 

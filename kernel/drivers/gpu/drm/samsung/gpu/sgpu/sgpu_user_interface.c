@@ -599,6 +599,33 @@ static ssize_t total_kernel_pages_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(total_kernel_pages);
 
+
+static ssize_t polling_ms_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	ssize_t count = 0;
+
+	count = scnprintf(buf, PAGE_SIZE, "%d\n", gpu_dvfs_get_polling_interval());
+
+	return count;
+}
+
+static ssize_t polling_ms_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	unsigned int polling_ms, ret;
+
+	ret = sscanf(buf, "%d", &polling_ms);
+	if (ret < 0)
+		return -EINVAL;
+
+	gpu_dvfs_set_polling_interval(polling_ms);
+
+	return count;
+}
+static DEVICE_ATTR_RW(polling_ms);
+
 #if IS_ENABLED(CONFIG_EXYNOS_GPU_PROFILER)
 /* sysfs for sgpu_profiler */
 static ssize_t egp_profile_show(struct device *dev,
@@ -761,6 +788,7 @@ static struct attribute *sgpu_devfreq_sysfs_entries[] = {
 	&dev_attr_downstay_times.attr,
 	&dev_attr_power_ratio.attr,
 	&dev_attr_compute_weight.attr,
+	&dev_attr_polling_ms.attr,
 	NULL,
 };
 

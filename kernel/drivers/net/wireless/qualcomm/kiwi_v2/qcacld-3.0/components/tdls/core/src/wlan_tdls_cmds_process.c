@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -39,6 +39,8 @@
 #include "wlan_policy_mgr_api.h"
 #include "nan_ucfg_api.h"
 #include "wlan_mlme_main.h"
+#include "wlan_policy_mgr_i.h"
+#include "wlan_mlo_mgr_link_switch.h"
 
 static uint16_t tdls_get_connected_peer_count(struct tdls_soc_priv_obj *soc_obj)
 {
@@ -889,6 +891,12 @@ int tdls_validate_mgmt_request(struct tdls_action_frame_request *tdls_mgmt_req)
 		return -EAGAIN;
 	}
 
+	if (mlo_mgr_is_link_switch_in_progress(vdev)) {
+		tdls_notice("vdev:%d Link Switch in progress. TDLS is not allowed",
+			    wlan_vdev_get_id(vdev));
+		return -EAGAIN;
+	}
+
 	/* other than teardown frame, mgmt frames are not sent if disabled */
 	if (TDLS_TEARDOWN != tdls_validate->action_code) {
 		if (!tdls_check_is_tdls_allowed(vdev)) {
@@ -896,6 +904,7 @@ int tdls_validate_mgmt_request(struct tdls_action_frame_request *tdls_mgmt_req)
 				tdls_validate->action_code);
 			return -EPERM;
 		}
+
 		/* if tdls_mode is disabled, then decline the peer's request */
 		if (TDLS_SUPPORT_DISABLED == tdls_soc->tdls_current_mode ||
 		    TDLS_SUPPORT_SUSPENDED == tdls_soc->tdls_current_mode) {
@@ -1028,6 +1037,12 @@ QDF_STATUS tdls_process_add_peer(struct tdls_add_peer_request *req)
 	vdev = req->vdev;
 	if (!tdls_check_is_tdls_allowed(vdev)) {
 		tdls_err("TDLS not allowed, reject add station for vdev: %d",
+			 wlan_vdev_get_id(vdev));
+		goto error;
+	}
+
+	if (mlo_mgr_is_link_switch_in_progress(vdev)) {
+		tdls_err("Link Switch in progress, reject add sta for vdev: %d",
 			 wlan_vdev_get_id(vdev));
 		goto error;
 	}
@@ -1755,6 +1770,18 @@ QDF_STATUS tdls_process_del_peer_rsp(struct tdls_del_sta_rsp *rsp)
 				tdls_decrement_peer_count(vdev, soc_obj);
 		}
 		tdls_reset_peer(vdev_obj, macaddr);
+		/*
+		 * Avoid TDLS with peer if STA kickout threshold is reached.
+		 * Some IOT devices establish TDLS but immediately teardown.
+		 * To avoid that set the tdls_support as not supported for that
+		 * peer
+		 */
+		if (curr_peer->sta_kickout_count >=
+				WLAN_TDLS_STA_KICKOUT_THRESHOLD) {
+			curr_peer->tdls_support = TDLS_CAP_NOT_SUPPORTED;
+			tdls_debug("Sta Kickout Threshold reached, set cap to unsupported");
+		}
+
 		conn_rec[sta_idx].valid_entry = false;
 		conn_rec[sta_idx].session_id = 0xff;
 		conn_rec[sta_idx].index = INVALID_TDLS_PEER_INDEX;
@@ -2074,6 +2101,13 @@ QDF_STATUS tdls_process_setup_peer(struct tdls_oper_request *req)
 		goto error;
 	}
 
+	if (mlo_mgr_is_link_switch_in_progress(vdev)) {
+		tdls_err("TDLS not allowed on vdev:%d, Link switch in progress",
+			 wlan_vdev_get_id(vdev));
+		status = QDF_STATUS_E_INVAL;
+		goto error;
+	}
+
 	tdls_debug("vdev:%d Configure external TDLS peer " QDF_MAC_ADDR_FMT,
 		   wlan_vdev_get_id(vdev),
 		   QDF_MAC_ADDR_REF(req->peer_addr));
@@ -2377,6 +2411,8 @@ int tdls_process_set_responder(struct tdls_set_responder_req *set_req)
 {
 	struct tdls_peer *curr_peer;
 	struct tdls_vdev_priv_obj *tdls_vdev;
+	struct wlan_objmgr_psoc *psoc;
+	QDF_STATUS status;
 
 	tdls_vdev = wlan_vdev_get_tdls_vdev_obj(set_req->vdev);
 	if (!tdls_vdev) {
@@ -2390,6 +2426,21 @@ int tdls_process_set_responder(struct tdls_set_responder_req *set_req)
 	}
 
 	curr_peer->is_responder = set_req->responder;
+
+	psoc = wlan_vdev_get_psoc(tdls_vdev->vdev);
+	if (!psoc) {
+		tdls_err("psoc not found");
+		return -EINVAL;
+	}
+
+	status = policy_mgr_update_nss_req(psoc,
+					   wlan_vdev_get_id(tdls_vdev->vdev),
+					   HW_MODE_SS_2x2, HW_MODE_SS_2x2);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		tdls_err("Unable to process NSS request");
+		return -EINVAL;
+	}
+
 	return 0;
 }
 

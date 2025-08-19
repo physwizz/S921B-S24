@@ -20,6 +20,7 @@
 #define DSS_ITEM_ARRDUMP_PANIC          "log_arrdumppnc"
 #define DSS_ITEM_FIRST		        "log_first"
 #define DSS_ITEM_BACKTRACE	        "log_backtrace"
+#define DSS_ITEM_WDTMSG			"wdtmsg"
 
 #define DSS_LOG_TASK                    "task_log"
 #define DSS_LOG_WORK                    "work_log"
@@ -35,6 +36,7 @@
 #define DSS_LOG_REGULATOR               "regulator_log"
 #define DSS_LOG_THERMAL                 "thermal_log"
 #define DSS_LOG_ACPM                    "acpm_log"
+#define DSS_LOG_PMIC                    "pmic_log"
 #define DSS_LOG_PRINTK                  "printk_log"
 
 /* MODE */

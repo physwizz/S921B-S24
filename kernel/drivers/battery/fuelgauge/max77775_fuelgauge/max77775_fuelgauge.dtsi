@@ -59,6 +59,8 @@
 		battery1,capacity = <0x0610>;
 					/* fullcapnom dPacc dQacc RCOMP0 TempCo */
 		battery1,fg_reset_wa_data = <0x0610 0x3200 0x0184 0x04E0 0x0D02>;
+							/* tempnom misccfg tempnom_wa misccfg_wa */
+		battery1,wrl_mode4_data = <0x1403 0x3850 0x1401 0x3910>;
 
 		battery1,data_ver = <0x3>;
 
@@ -89,6 +91,8 @@
 		battery0,capacity = <0x0617>;
 					/* fullcapnom dPacc dQacc RCOMP0 TempCo */
 		battery0,fg_reset_wa_data = <0x0616 0x3200 0x0185 0x0440 0x0B02>;
+							/* tempnom misccfg tempnom_wa misccfg_wa */
+		battery0,wrl_mode4_data = <0x1403 0x3850 0x1401 0x3910>;
 
 		battery0,data_ver = <0x3>;
 

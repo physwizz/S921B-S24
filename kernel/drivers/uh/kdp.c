@@ -71,9 +71,9 @@ void kdp_init(void)
 	cred.bp_cred_secptr	= offsetof(struct task_security_struct, bp_cred);
 	cred.verifiedbootstate	= (u64)verifiedbootstate;
 
-	uh_call(UH_APP_KDP, KDP_INIT, (u64)&cred, (u64)&kdp_enable, 0, 0);
 	uh_call(UH_APP_KDP, JARRO_TSEC_SIZE, (u64)cred_jar_ro->size,
 		(u64)tsec_jar->size, 0, 0);
+	uh_call(UH_APP_KDP, KDP_INIT, (u64)&cred, (u64)&kdp_enable, 0, 0);
 
 #ifdef CONFIG_KDP_NS
 	memset((void *)&nsparam, 0, sizeof(struct ns_param));
@@ -144,13 +144,6 @@ void __init kdp_cred_init(void)
 {
 	slab_flags_t flags = SLAB_HWCACHE_ALIGN|SLAB_PANIC|SLAB_ACCOUNT;
 
-	/*
-	if (!kdp_enable) {
-		pr_info("kdp_disable");
-		return;
-	}
-	*/
-	pr_info("kdp_cred_init called");
 	cred_jar_ro = kmem_cache_create("cred_jar_ro",
 					sizeof(struct cred_kdp),
 					0, flags, cred_ctor);
@@ -309,7 +302,7 @@ void kdp_put_cred_rcu(struct cred *cred, void *put_cred_rcu)
 struct cred *prepare_ro_creds(struct cred *old, int kdp_cmd, u64 p)
 {
 	u64 pgd = (u64)(current->mm ? current->mm->pgd : swapper_pg_dir);
-	struct cred_kdp temp_old;
+	struct cred_kdp temp_old __aligned(256);
 	struct cred_kdp *new_ro = NULL;
 	struct cred_param param_data __aligned(64);
 	void *use_cnt_ptr = NULL;
@@ -433,7 +426,7 @@ void kdp_assign_pgd(struct task_struct *p)
 
 	if (!is_kdp_protect_addr((u64)p->cred) || p_cred->bp_pgd == (void *)pgd)
 		return;
-	pr_info("%llx %llx %llx %llx", (u64)p_cred->bp_pgd, (u64)((void *)pgd), (u64)p_cred, (u64)pgd);
+
 	uh_call(UH_APP_KDP, SET_CRED_PGD, (u64)p_cred, (u64)pgd, 0, 0);
 }
 

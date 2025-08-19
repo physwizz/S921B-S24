@@ -741,6 +741,7 @@ static int is_sensor_start(struct is_device_sensor *device)
 	struct v4l2_subdev *subdev_module;
 	struct is_sysfs_debug *sysfs_debug;
 	bool sensor_only = test_bit(IS_SENSOR_ONLY, &device->state);
+	bool fast_launch;
 
 	ischain = device->ischain;
 	if (!ischain) {
@@ -754,7 +755,8 @@ static int is_sensor_start(struct is_device_sensor *device)
 	 */
 	set_bit(IS_SENSOR_START, &device->state);
 	scenario_id = is_hw_dvfs_get_scenario(ischain, IS_DVFS_STATIC);
-	scn = is_set_static_dvfs(&ischain->resourcemgr->dvfs_ctrl, scenario_id, true);
+	fast_launch = is_hw_dvfs_get_fast_launch(&ischain->resourcemgr->dvfs_ctrl);
+	scn = is_set_static_dvfs(&ischain->resourcemgr->dvfs_ctrl, scenario_id, true, fast_launch);
 	/* set bts_scen by scenario, even though it is error value */
 	is_hw_configure_bts_scen(ischain->resourcemgr, scn);
 
@@ -812,7 +814,7 @@ p_err_csi_pattern_en:
 p_err_itf_stream_on:
 	clear_bit(IS_SENSOR_START, &device->state);
 	scenario_id = is_hw_dvfs_get_scenario(ischain, IS_DVFS_STATIC);
-	is_set_static_dvfs(&ischain->resourcemgr->dvfs_ctrl, scenario_id, false);
+	is_set_static_dvfs(&ischain->resourcemgr->dvfs_ctrl, scenario_id, false, false);
 
 	return ret;
 }
@@ -891,7 +893,7 @@ static int is_sensor_stop(struct is_device_sensor *device)
 p_err:
 	clear_bit(IS_SENSOR_START, &device->state);
 	scenario_id = is_hw_dvfs_get_scenario(ischain, IS_DVFS_STATIC);
-	is_set_static_dvfs(&ischain->resourcemgr->dvfs_ctrl, scenario_id, false);
+	is_set_static_dvfs(&ischain->resourcemgr->dvfs_ctrl, scenario_id, false, false);
 
 	return ret;
 }
@@ -1370,6 +1372,10 @@ static int is_sensor_notify_by_dma_end(struct is_device_sensor *device, void *ar
 			}
 
 			if (sensor_peri->subdev_cis && !csi->f_id_dec) {
+				/* cache invalidate */
+				CALL_BUFOP(frame->pb_output, sync_for_cpu, frame->pb_output, 0,
+					frame->pb_output->size, DMA_FROM_DEVICE);
+
 				cis = (struct is_cis *)v4l2_get_subdevdata(sensor_peri->subdev_cis);
 
 				CALL_CISOPS(cis, cis_get_frame_id, sensor_peri->subdev_cis,
@@ -1737,6 +1743,7 @@ static void is_sensor_reset_state(struct is_device_sensor *device)
 	clear_bit(SENSOR_MODULE_GOT_INTO_TROUBLE, &device->state);
 	clear_bit(IS_SENSOR_ASSERT_CRASH, &device->state);
 	clear_bit(IS_SENSOR_S_POWER, &device->state);
+	clear_bit(IS_SENSOR_SUSPEND, &device->state);
 
 	device->smc_state = IS_SENSOR_SMC_INIT;
 	device->vctx = NULL;
@@ -1899,6 +1906,7 @@ int is_sensor_close(struct is_device_sensor *device)
 	clear_bit(IS_SENSOR_OPEN, &device->state);
 	clear_bit(IS_SENSOR_S_INPUT, &device->state);
 	clear_bit(IS_SENSOR_ITF_REGISTER, &device->state);
+	clear_bit(IS_SENSOR_SUSPEND, &device->state);
 
 p_err:
 	minfo("[SS%d:D] %s():%d\n", device, device->device_id,  __func__, ret);
@@ -3736,6 +3744,7 @@ int is_sensor_runtime_suspend(struct device *dev)
 	if (ret)
 		mwarn("is_sensor_iclk_off is fail(%d)", device, ret);
 
+	set_bit(IS_SENSOR_SUSPEND, &device->state);
 	v4l2_device_unregister_subdev(device->subdev_module);
 	device->subdev_module = NULL;
 
@@ -3790,6 +3799,8 @@ int is_sensor_runtime_resume(struct device *dev)
 		merr("is_sensor_iclk_on is fail(%d)", device, ret);
 		goto p_err;
 	}
+
+	clear_bit(IS_SENSOR_SUSPEND, &device->state);
 
 p_err:
 	minfo("[SS%d:D] %s():%d\n", device, device->device_id, __func__, ret);

@@ -37,6 +37,7 @@
 	cirrus,dbc-tx-lvl-hold-off-ms = <0>;
 #endif
 #if 1
+	samsung,mv_support;
 	svc-le1 {
 		cirrus,min = <671>;
 		cirrus,max = <1509>;

@@ -554,8 +554,9 @@ int pablo_crta_bufmgr_probe(void)
 {
 	struct is_core *core;
 	struct is_mem *mem;
-	u32 buf_type, size, bufmgr_idx;
+	u32 size, bufmgr_idx;
 	int ret;
+	int buf_type;
 
 	if (!IS_ENABLED(CRTA_CALL)) {
 		probe_info("crta is not supported");
@@ -583,7 +584,7 @@ int pablo_crta_bufmgr_probe(void)
 		}
 	}
 
-	for (buf_type = 0; buf_type < PABLO_CRTA_BUF_MAX; buf_type++) {
+	for (buf_type = PABLO_CRTA_BUF_BASE; buf_type < PABLO_CRTA_BUF_MAX; buf_type++) {
 		size = array_size(sizeof(struct pablo_crta_bufmgr), bufmgr_info[buf_type].bufmgr_num);
 		__crta_bufmgr[buf_type] = vzalloc(size);
 		if (!__crta_bufmgr[buf_type]) {
@@ -600,7 +601,7 @@ int pablo_crta_bufmgr_probe(void)
 	return 0;
 
 err_alloc:
-	while (buf_type-- > 0)
+	while (buf_type-- > PABLO_CRTA_BUF_BASE)
 		vfree(__crta_bufmgr[buf_type]);
 
 	return -ENOMEM;

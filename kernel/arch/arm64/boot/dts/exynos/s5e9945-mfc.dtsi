@@ -508,10 +508,11 @@
 			/* QoS table for performance boost mode */
 			mfc_perf_boost_table {
 				num_cluster = <3>;
-				freq_cluster = <1728000 1824000 1920000>;
+				num_cpu = <0 4 7>;
+				freq_cluster = <1959000 2208000 2208000>;
 				freq_mfc = <800000>;
 				freq_int = <800000>;
-				freq_mif = <3172000>;
+				freq_mif = <4206000>;
 				bts_scen = "mfc_8k_dec30";
 			};
 		};
@@ -722,10 +723,11 @@
 			/* QoS table for performance boost mode */
 			mfc_perf_boost_table {
 				num_cluster = <3>;
-				freq_cluster = <1728000 1824000 1920000>;
+				num_cpu = <0 4 7>;
+				freq_cluster = <1959000 2208000 2208000>;
 				freq_mfc = <800000>;
 				freq_int = <800000>;
-				freq_mif = <3172000>;
+				freq_mif = <4206000>;
 				bts_scen = "mfc_8k_dec30";
 			};
 		};

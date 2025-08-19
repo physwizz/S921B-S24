@@ -40,7 +40,7 @@ enum cis_dual_sync_mode {
 	DUAL_SYNC_MAX,
 };
 
-#define DUAL_SYNC_MASTER_POS_MASK	0x3F
+#define DUAL_SYNC_MAIN_POS_MASK		0x3F
 #define DUAL_SYNC_TYPE_SHIFT		8
 
 /* used for SW frame sync */

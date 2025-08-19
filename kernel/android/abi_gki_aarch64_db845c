@@ -197,6 +197,8 @@
   dma_async_device_register
   dma_async_tx_descriptor_init
   dma_buf_export
+  dma_buf_map_attachment_unlocked
+  dma_buf_unmap_attachment_unlocked
   dma_fence_context_alloc
   dma_fence_init
   dma_fence_release
@@ -445,6 +447,7 @@
   misc_register
   mod_delayed_work_on
   mod_timer
+  __module_get
   module_layout
   __msecs_to_jiffies
   msleep
@@ -523,6 +526,7 @@
   param_ops_uint
   pci_clear_master
   pci_disable_device
+  pcie_capability_clear_and_set_word
   pcie_capability_read_word
   pcie_capability_write_word
   pci_enable_device
@@ -562,6 +566,7 @@
   pm_runtime_forbid
   pm_runtime_force_resume
   pm_runtime_force_suspend
+  pm_runtime_get_if_active
   __pm_runtime_idle
   __pm_runtime_resume
   pm_runtime_set_autosuspend_delay
@@ -770,6 +775,7 @@
   sysfs_emit
   sysfs_remove_link
   system_power_efficient_wq
+  system_unbound_wq
   system_wq
   tasklet_init
   tasklet_kill
@@ -843,6 +849,7 @@
   vunmap
   vzalloc
   wait_for_completion_interruptible
+  wait_for_completion_interruptible_timeout
   wait_for_completion_timeout
   __wake_up
   wake_up_process
@@ -860,6 +867,7 @@
   device_get_dma_attr
   device_match_fwnode
   devm_krealloc
+  devm_tegra_memory_controller_get
   driver_find_device
   generic_device_group
   iommu_alloc_resv_region
@@ -876,6 +884,7 @@
   pci_device_group
   platform_irq_count
   report_iommu_fault
+  tegra_mc_probe_device
 
 # required by ath10k_core.ko
   cpu_latency_qos_add_request

@@ -69,6 +69,7 @@ struct memlog_ba_file_data {
 	void *data;
 	size_t size;
 	struct list_head list;
+	pid_t pid;
 };
 
 struct memlog_obj_prv {
@@ -2909,14 +2910,15 @@ static ssize_t memlog_cmd_info_store(struct kobject *kobj,
 
 static struct memlog_ba_file_data *memlog_ba_search_file(
 					struct list_head *list,
-					struct mutex *lock, void *file)
+					struct mutex *lock,
+					void *file, pid_t pid)
 {
 	struct memlog_ba_file_data *entry;
 	struct memlog_ba_file_data *ret = NULL;
 
 	mutex_lock(lock);
 	list_for_each_entry(entry, list, list) {
-		if (entry->file == file) {
+		if (entry->file == file && entry->pid == pid) {
 			ret = entry;
 			break;
 		}
@@ -2992,7 +2994,7 @@ static ssize_t memlog_total_obj_info_read(struct file *file,
 	struct memlog_ba_file_data *data;
 
 	data = memlog_ba_search_file(&main_desc.total_info_file_list,
-				&main_desc.total_info_file_lock, file);
+				&main_desc.total_info_file_lock, file, current->pid);
 	if (data == NULL) {
 		size_t size = file_inode(file)->i_size;
 
@@ -3000,6 +3002,7 @@ static ssize_t memlog_total_obj_info_read(struct file *file,
 		data->data = kzalloc(size, GFP_KERNEL);
 		data->size = memlog_total_obj_info_set(data->data, size);
 		data->file = file;
+		data->pid = current->pid;
 		memlog_ba_file_add(
 			&main_desc.total_info_file_list, &main_desc.total_info_file_lock, data);
 	}
@@ -3059,7 +3062,7 @@ static ssize_t memlog_dead_obj_info_read(struct file *file,
 	struct memlog_ba_file_data *data;
 
 	data = memlog_ba_search_file(&main_desc.dead_info_file_list,
-				&main_desc.dead_info_file_lock, file);
+				&main_desc.dead_info_file_lock, file, current->pid);
 
 	if (data == NULL) {
 		size_t size = file_inode(file)->i_size;
@@ -3068,6 +3071,7 @@ static ssize_t memlog_dead_obj_info_read(struct file *file,
 		data->data = kzalloc(size, GFP_KERNEL);
 		data->size = memlog_dead_obj_info_set(data->data, size);
 		data->file = file;
+		data->pid = current->pid;
 		memlog_ba_file_add(&main_desc.dead_info_file_list,
 				   &main_desc.dead_info_file_lock, data);
 	}
@@ -3408,7 +3412,7 @@ static ssize_t memlog_dumpstate_read(struct file *file,
 	struct memlog_ba_file_data *data;
 
 	data = memlog_ba_search_file(&main_desc.dumpstate_file_list,
-				&main_desc.dumpstate_file_lock, file);
+				&main_desc.dumpstate_file_lock, file, current->pid);
 
 	if (data == NULL) {
 		size_t size = file_inode(file)->i_size;
@@ -3424,6 +3428,7 @@ static ssize_t memlog_dumpstate_read(struct file *file,
 		}
 		data->size = memlog_dumpstate_data_set(data->data, size);
 		data->file = file;
+		data->pid = current->pid;
 		memlog_ba_file_add(&main_desc.dumpstate_file_list,
 				&main_desc.dumpstate_file_lock, data);
 	}
@@ -3453,7 +3458,7 @@ static ssize_t memlog_obj_dumpstate_read(struct file *file,
 	struct memlog_prv *prvdesc = desc_to_data(prvobj->obj.parent);
 
 	data = memlog_ba_search_file(&prvdesc->obj_dumpstate_file_list,
-				     &prvdesc->obj_dumpstate_file_lock, file);
+				     &prvdesc->obj_dumpstate_file_lock, file, current->pid);
 
 	if (data == NULL) {
 		size_t size = file_inode(file)->i_size;
@@ -3469,6 +3474,7 @@ static ssize_t memlog_obj_dumpstate_read(struct file *file,
 		}
 		data->size = memlog_dumpstate_copy_data(prvobj, data->data, size - 1);
 		data->file = file;
+		data->pid = current->pid;
 		memlog_ba_file_add(&prvdesc->obj_dumpstate_file_list,
 				   &prvdesc->obj_dumpstate_file_lock, data);
 	}

@@ -10,6 +10,9 @@
 #include "fwhdr.h"
 #include "mxmgmt_transport.h"
 #include <linux/version.h>
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+#include <linux/kfifo.h>
+#endif
 #include "mxproc.h"
 #if defined(CONFIG_SCSC_INDEPENDENT_SUBSYSTEM)
 #include "mxman_res.h"
@@ -65,6 +68,9 @@ void mxman_set_last_syserr_recovery_time(struct mxman *mxman, unsigned long valu
 bool mxman_get_syserr_recovery_in_progress(struct mxman *mxman);
 u16 mxman_get_last_syserr_subsys(struct mxman *mxman);
 
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+bool mxman_warm_reset_in_progress(void);
+#endif
 bool mxman_subsys_in_failed_state(struct mxman *mxman, enum scsc_subsystem sub);
 bool mxman_subsys_active(struct mxman *mxman, enum scsc_subsystem sub);
 bool mxman_users_active(struct mxman *mxman);
@@ -82,6 +88,11 @@ int mxman_fm_set_params(struct wlbt_fm_params *params);
 #endif
 int mxman_lerna_send(struct mxman *mxman, void *data, u32 size);
 
+#ifdef CONFIG_HDM_WLBT_SUPPORT
+int mxman_get_hdm_wlan_support(void);
+int mxman_get_hdm_bt_support(void);
+#endif
+
 #if !defined(CONFIG_SCSC_INDEPENDENT_SUBSYSTEM)
 enum mxman_state {
 	MXMAN_STATE_STOPPED,
@@ -93,6 +104,50 @@ enum mxman_state {
 #endif
 
 #define SCSC_FAILURE_REASON_LEN 256
+
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+enum recovery_state {
+	RCVRY_STATE_NONE = 0,
+	RCVRY_STATE_COLD_RESET,
+	RCVRY_STATE_WARM_RESET,
+	RCVRY_STATE_REOPEN,
+	RCVRY_STATE_FAILED,
+
+	RCVRY_STATE_MAX,
+};
+
+enum recovery_event {
+	RCVRY_EVT_ERR_WLAN = 0,
+	RCVRY_EVT_ERR_WPAN,
+	RCVRY_EVT_ERR_HOST,
+	RCVRY_EVT_ERR_CHIP,
+
+	RCVRY_EVT_FAILURE_WORK_DONE,
+	RCVRY_EVT_FAILURE_WORK_ERR,
+
+	RCVRY_EVT_REOPEN_DONE,
+	RCVRY_EVT_REOPEN_ERR,
+	RCVRY_EVT_REOPEN_TIMEOUT,
+
+	RCVRY_EVT_MAX
+};
+
+struct rcvry_fsm_thread {
+	spinlock_t 			kfifo_lock;
+	struct task_struct 	*task;
+	wait_queue_head_t 	evt_wait_q;
+	struct completion 	reopen_completion;
+	struct kfifo 		evt_queue;
+
+	int					err_count;
+	enum scsc_subsystem target_sub;
+
+	enum scsc_subsystem last_panic_sub;
+	u16 				last_panic_code;
+	u8      			last_panic_level;
+	char				last_failure_reason[SCSC_FAILURE_REASON_LEN];
+};
+#endif
 
 struct mxman {
 	struct scsc_mx          *mx;
@@ -134,7 +189,7 @@ struct mxman {
 	struct mutex            mxman_mutex;
 	/* Syserr sub-sytem and full chip restart co-ordination */
 	struct mutex            mxman_recovery_mutex;
-#if defined(CONFIG_SCSC_INDEPENDENT_SUBSYSTEM)
+#if defined(CONFIG_SCSC_INDEPENDENT_SUBSYSTEM) && !defined(CONFIG_WLBT_SPLIT_RECOVERY)
 	bool                    panic_in_progress;
 #endif
 	struct mxproc           mxproc;
@@ -187,6 +242,13 @@ struct mxman {
 	struct notifier_block sysevent_nb;
 #endif
 
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	struct rcvry_fsm_thread	rcvry_thread;
+#endif
+
+#if defined(CONFIG_SCSC_XO_CDAC_CON)
+	bool is_dcxo_set;
+#endif
 };
 
 void mxman_register_gdb_channel(struct scsc_mx *mx, mxmgmt_channel_handler handler, void *data);

@@ -19,6 +19,9 @@
 #include "npu-session.h"
 #include "npu-log.h"
 #include "npu-hw-device.h"
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+#include "npu-pm.h"
+#endif
 
 /*
  * queue: npu_queue instance strucure
@@ -111,10 +114,11 @@ int npu_queue_stop(struct npu_queue *queue)
 	return ret;
 }
 
-static void fill_vs4l_buffer(struct npu_queue_list *queue_list, struct vs4l_container_list *c, bool fill)
+static int fill_vs4l_buffer(struct npu_queue_list *queue_list, struct vs4l_container_list *c, bool fill)
 {
 	struct nq_container *container;
 	u32 i, j, k;
+	int ret = 0;
 
 	c->flags &= ~(1 << VS4L_CL_FLAG_TIMESTAMP);
 	c->flags &= ~(1 << VS4L_CL_FLAG_PREPARE);
@@ -147,15 +151,29 @@ static void fill_vs4l_buffer(struct npu_queue_list *queue_list, struct vs4l_cont
 		c->flags |= (1 << VS4L_CL_FLAG_CANCEL_DD);
 
 	if (!fill)
-		return;
+		return ret;
+
+	if (queue_list->count != c->count) {
+		ret = -EINVAL;
+		npu_err("container_list count should not vary than queue_list count\n");
+		return ret;
+	}
 
 	/* sync buffers */
 	for (i = 0; i < queue_list->count; ++i) {
 		container = &queue_list->containers[i];
 		k = container->count;
+		if (k != c->containers[i].count) {
+			ret = -EINVAL;
+			npu_err("container_list count should not vary than queue_list count\n");
+			return ret;
+		}
+
 		for (j = 0; j < k; ++j)
 			c->containers[i].buffers[j].reserved = container->buffers[j].reserved;
 	}
+
+	return ret;
 }
 
 static void dma_buf_sync(struct nq_buffer *buffers, u32 direction, u32 action)
@@ -231,6 +249,7 @@ int npu_queue_unmap(struct npu_memory *memory, struct nq_buffer *buffer)
 	}
 
 	buffer->attachment = NULL;
+	buffer->dma_buf = NULL;
 	buffer->sgt = NULL;
 	buffer->daddr = 0;
 	buffer->base_daddr = 0;
@@ -476,6 +495,12 @@ static int npu_queue_update(struct npu_queue_list *queue_list, struct vs4l_conta
 	queue_list->id = c->id;
 	queue_list->flags = c->flags;
 
+	if (queue_list->count != c->count) {
+		ret = -EINVAL;
+		npu_err("container_list count should not vary than queue_list count\n");
+		return ret;
+	}
+
 	for (i = 0; i < c->count; ++i) {
 		container = &c->containers[i];
 		q_container = &queue_list->containers[i];
@@ -508,6 +533,13 @@ int npu_queue_qbuf_cancel(struct npu_queue *queue, struct vs4l_container_bundle 
 	struct npu_queue_list *inqueue;
 	struct npu_queue_list *otqueue;
 
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+	struct npu_vertex_ctx *vctx = container_of(queue, struct npu_vertex_ctx, queue);
+	struct npu_session *session = container_of(vctx, struct npu_session, vctx);
+
+	npu_pm_wake_lock(session);
+#endif
+
 	inqueue = &queue->inqueue[cbundle->m[0].clist->index];
 	otqueue = &queue->otqueue[cbundle->m[1].clist->index];
 
@@ -536,8 +568,16 @@ int npu_queue_qbuf_cancel(struct npu_queue *queue, struct vs4l_container_bundle 
 	set_bit(VS4L_CL_FLAG_DONE, &otqueue->flags);
 
 p_err:
-	fill_vs4l_buffer(inqueue, cbundle->m[0].clist, true);
-	fill_vs4l_buffer(otqueue, cbundle->m[1].clist, true);
+	ret = fill_vs4l_buffer(inqueue, cbundle->m[0].clist, true);
+	if (ret)
+		npu_err("fails to fill vs4l buffer for output");
+
+	ret = fill_vs4l_buffer(otqueue, cbundle->m[1].clist, true);
+	if (ret)
+		npu_err("fails to fill vs4l buffer for output");
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+	npu_pm_wake_unlock(session);
+#endif
 	return ret;
 }
 
@@ -548,6 +588,10 @@ int npu_queue_qbuf(struct npu_queue *queue, struct vs4l_container_bundle *cbundl
 	struct npu_session *session = container_of(vctx, struct npu_session, vctx);
 	struct npu_queue_list *inqueue;
 	struct npu_queue_list *otqueue;
+
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+	npu_pm_wake_lock(session);
+#endif
 
 	npu_profile_record_start(PROFILE_DD_QUEUE, cbundle->m[0].clist->index, ktime_to_us(ktime_get_boottime()), 2, session->uid);
 
@@ -607,13 +651,20 @@ int npu_queue_qbuf(struct npu_queue *queue, struct vs4l_container_bundle *cbundl
 	}
 
 #if IS_ENABLED(CONFIG_NPU_USE_FENCE_SYNC)
-	fill_vs4l_buffer(otqueue, cbundle->m[1].clist, true);
+	ret = fill_vs4l_buffer(otqueue, cbundle->m[1].clist, true);
+	if (ret) {
+		npu_err("fails to fill vs4l buffer for output");
+		goto p_err;
+	}
 #endif
 
 	set_bit(NPU_QUEUE_STATE_QUEUED, &inqueue->state);
 	set_bit(NPU_QUEUE_STATE_QUEUED, &otqueue->state);
 
 p_err:
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+	npu_pm_wake_unlock(session);
+#endif
 	return ret;
 }
 
@@ -624,8 +675,11 @@ int npu_queue_alloc(struct npu_queue_list *queue_list, struct vs4l_container_lis
 	struct nq_buffer *temp_buffer;
 	struct nq_buffer *temp_buffer_pool;
 
-	if (test_bit(NPU_QUEUE_STATE_ALLOC, &queue_list->state))
+	if (test_bit(NPU_QUEUE_STATE_ALLOC, &queue_list->state)) {
+		npu_err("inqueue/otqueue is already in alloc state\n");
+		ret = -EINVAL;
 		return ret;
+	}
 
 	temp_container = kzalloc(c->count * sizeof(struct nq_container), GFP_KERNEL);
 	if (temp_container == NULL) {
@@ -835,6 +889,10 @@ int npu_queue_dqbuf(struct npu_session *session, struct npu_queue *queue, struct
 	struct npu_queue_list *inqueue;
 	struct npu_queue_list *otqueue;
 
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+	npu_pm_wake_lock(session);
+#endif
+
 	inqueue = &queue->inqueue[cbundle->m[0].clist->index];
 	otqueue = &queue->otqueue[cbundle->m[1].clist->index];
 
@@ -856,8 +914,17 @@ int npu_queue_dqbuf(struct npu_session *session, struct npu_queue *queue, struct
 	clear_bit(NPU_QUEUE_STATE_DONE, &inqueue->state);
 	clear_bit(NPU_QUEUE_STATE_DONE, &otqueue->state);
 
-	fill_vs4l_buffer(inqueue, cbundle->m[0].clist, false);
-	fill_vs4l_buffer(otqueue, cbundle->m[1].clist, false);
+	ret = fill_vs4l_buffer(inqueue, cbundle->m[0].clist, false);
+	if (ret) {
+		npu_err("fails to fill vs4l buffer for output");
+		goto p_err;
+	}
+
+	ret = fill_vs4l_buffer(otqueue, cbundle->m[1].clist, false);
+	if (ret) {
+		npu_err("fails to fill vs4l buffer for output");
+		goto p_err;
+	}
 
 	npu_queue_buf_sync(inqueue, NPU_FRAME_DQBUF);
 	npu_queue_buf_sync(otqueue, NPU_FRAME_DQBUF);
@@ -873,8 +940,10 @@ int npu_queue_dqbuf(struct npu_session *session, struct npu_queue *queue, struct
 	clear_bit(NPU_QUEUE_STATE_QUEUED, &inqueue->state);
 	clear_bit(NPU_QUEUE_STATE_QUEUED, &otqueue->state);
 
-	return ret;
 p_err:
+#if IS_ENABLED(CONFIG_NPU_PM_SLEEP_WAKEUP)
+	npu_pm_wake_unlock(session);
+#endif
 	return ret;
 }
 

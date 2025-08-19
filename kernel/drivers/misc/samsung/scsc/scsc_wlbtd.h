@@ -49,6 +49,7 @@ enum events {
 	EVENT_SYSTEM_PROPERTY,
 	EVENT_WRITE_FILE,
 	EVENT_SABLE,
+	EVENT_RAMSD,
 #if defined(SCSC_SEP_VERSION) && SCSC_SEP_VERSION >= 12
 	EVENT_CHIPSET_LOGGING,
 #endif
@@ -68,6 +69,10 @@ enum scsc_wlbtd_response_codes {
 	SCSC_WLBTD_FW_PANIC_ERR_MMAP,
 	SCSC_WLBTD_FW_PANIC_ERR_SABLE_FILE,
 	SCSC_WLBTD_FW_PANIC_ERR_TAR,
+
+	/* ramsd dump */
+	SCSC_WLBTD_RAMSD_DUMP_GENERATED,
+	SCSC_WLBTD_RAMSD_DUMP_ERR,
 
 	/* other triggers */
 	SCSC_WLBTD_OTHER_SBL_GENERATED,
@@ -96,4 +101,5 @@ int wlbtd_chipset_logging(const char *content, size_t bytes, bool over_mmap);
 int call_wlbtd_sable(u8 trigger_code, u16 reason_code);
 void scsc_wlbtd_wait_for_sable_logging(void);
 int scsc_wlbtd_get_and_print_build_type(void);
+int call_wlbtd_ramsd(u32 s2m_size_octets);
 #endif

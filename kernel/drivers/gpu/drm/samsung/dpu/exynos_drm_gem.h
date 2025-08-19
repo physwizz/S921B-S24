@@ -29,7 +29,6 @@ struct exynos_drm_gem {
 	unsigned int flags;
 #if IS_ENABLED(CONFIG_EXYNOS_DRM_BUFFER_SANITY_CHECK)
 	void *vaddr;
-	int acq_fence;
 	u64 checksum64;
 #endif
 };

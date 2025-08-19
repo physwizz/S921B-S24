@@ -99,7 +99,7 @@ int update_encryption_context_with_dd_policy(
 
 int dd_oem_page_crypto_inplace(struct dd_info *info, struct page *page, int dir)
 {
-	return fscrypt_crypt_block(info->inode,
+	return fscrypt_crypt_data_unit(info->inode->i_crypt_info,
 			(dir == WRITE) ? FS_ENCRYPT:FS_DECRYPT, 0, page, page, PAGE_SIZE, 0, GFP_NOFS);
 }
 

@@ -168,13 +168,17 @@ enum exynos_pm_qos_flags_status {
 	exynos_pm_qos_add_request_trace((char *)__func__, __LINE__, ##arg);	\
 } while(0)
 
+#define PM_QOS_NAME_MAX		(16)
+
 struct exynos_pm_qos_request {
 	struct plist_node node;
 	int exynos_pm_qos_class;
 	struct delayed_work work; /* for exynos_pm_qos_update_request_timeout */
+	char process_name[PM_QOS_NAME_MAX];
 	char *func;
 	unsigned int line;
 	ktime_t time;
+	bool nosync;
 };
 
 struct exynos_pm_qos_flags_request {
@@ -191,13 +195,14 @@ enum exynos_pm_qos_type {
 
 struct exynos_pm_qos_log {
 	ktime_t time;
+	char process_name[PM_QOS_NAME_MAX];
 	char *func;
 	unsigned int line;
 	unsigned int prio;
 	unsigned int target;
 	unsigned int action;
 };
-#define EXYNOS_PM_QOS_LOG_LENGTH	128
+#define EXYNOS_PM_QOS_LOG_LENGTH	96
 /*
  * Note: The lockless read path depends on the CPU accessing target_value
  * or effective_flags atomically.  Atomic access is only guaranteed on all CPU

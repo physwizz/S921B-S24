@@ -996,6 +996,7 @@ static int is_hw_cstat_open(struct is_hw_ip *hw_ip, u32 instance)
 	clear_bit(CR_SET_CONFIG, &hw->iq_set.state);
 	set_bit(CR_SET_EMPTY, &hw->iq_set.state);
 	spin_lock_init(&hw->iq_set.slock);
+	spin_lock_init(&hw->slock_shot);
 
 	hw->hw_fro_en = false;
 	hw->input = CSTST_INPUT_PATH_NUM;
@@ -1383,6 +1384,7 @@ static int is_hw_cstat_disable(struct is_hw_ip *hw_ip, u32 instance, ulong hw_ma
 {
 	int ret = 0;
 	struct is_hw_cstat *hw;
+	unsigned long flag;
 
 	if (!test_bit_variables(hw_ip->id, &hw_map)) {
 		mswarn_hw("Not mapped. hw_map 0x%lx", instance, hw_ip, hw_map);
@@ -1403,7 +1405,11 @@ static int is_hw_cstat_disable(struct is_hw_ip *hw_ip, u32 instance, ulong hw_ma
 		if ((atomic_read(&hw_ip->instance) == instance) &&
 			(test_bit(HW_CONFIG, &hw_ip->state))) {
 			ret = is_hw_cstat_stop(hw_ip, instance);
+
+			spin_lock_irqsave(&hw->slock_shot, flag);
 			is_hw_cstat_clear(hw_ip, instance);
+			spin_unlock_irqrestore(&hw->slock_shot, flag);
+
 			return ret;
 		}
 		mswarn_hw("Occupied by S%d", instance, hw_ip, atomic_read(&hw_ip->instance));
@@ -1411,7 +1417,10 @@ static int is_hw_cstat_disable(struct is_hw_ip *hw_ip, u32 instance, ulong hw_ma
 	}
 
 	ret = is_hw_cstat_stop(hw_ip, instance);
+
+	spin_lock_irqsave(&hw->slock_shot, flag);
 	is_hw_cstat_clear(hw_ip, instance);
+	spin_unlock_irqrestore(&hw->slock_shot, flag);
 
 	clear_bit(HW_RUN, &hw_ip->state);
 
@@ -2360,8 +2369,7 @@ static int is_hw_cstat_set_config(struct is_hw_ip *hw_ip, u32 chain_id,
 	return 0;
 }
 
-static int is_hw_cstat_shot(struct is_hw_ip *hw_ip, struct is_frame *frame,
-	ulong hw_map)
+static int _is_hw_cstat_shot(struct is_hw_ip *hw_ip, struct is_frame *frame, ulong hw_map)
 {
 	int ret;
 	struct is_hw_cstat *hw;
@@ -2377,6 +2385,11 @@ static int is_hw_cstat_shot(struct is_hw_ip *hw_ip, struct is_frame *frame,
 
 	if (!test_bit(HW_INIT, &hw_ip->state)) {
 		mserr_hw("not initialized!!", instance, hw_ip);
+		return -EINVAL;
+	}
+
+	if (!test_bit(instance, &hw_ip->run_rsc_state)) {
+		mserr_hw("not run!!", instance, hw_ip);
 		return -EINVAL;
 	}
 
@@ -2468,6 +2481,19 @@ static int is_hw_cstat_shot(struct is_hw_ip *hw_ip, struct is_frame *frame,
 	return 0;
 
 shot_fail_recovery:
+	return ret;
+}
+
+static int is_hw_cstat_shot(struct is_hw_ip *hw_ip, struct is_frame *frame, ulong hw_map)
+{
+	int ret;
+	unsigned long flag;
+	struct is_hw_cstat *hw = (struct is_hw_cstat *)hw_ip->priv_info;
+
+	spin_lock_irqsave(&hw->slock_shot, flag);
+	ret = _is_hw_cstat_shot(hw_ip, frame, hw_map);
+	spin_unlock_irqrestore(&hw->slock_shot, flag);
+
 	return ret;
 }
 

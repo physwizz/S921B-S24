@@ -399,6 +399,7 @@ static void __handle_icpu_fw_msg(u32 *rx_data, u32 len)
 
 	if (cmd == PABLO_IHC_READY) {
 		__transit_state(ITF_STATE_RUNNING);
+		ICPU_INFO("Debug RUNNING state, current state(%d)", itf->state);
 		__send_timestamp_msg();
 	} else if (cmd == PABLO_IHC_ERROR) {
 		__ihc_error_handler("ICPU/CRTA ASSERT", rx_data, len);
@@ -708,6 +709,7 @@ static int pablo_icpu_itf_open(bool secure_mode)
 	}
 
 	__transit_state(ITF_STATE_WAIT_FW_READY);
+	ICPU_INFO("Debug READ state, current state(%d)", itf->state);
 
 	ret = pablo_icpu_boot(secure_mode);
 	if (ret)
@@ -719,6 +721,7 @@ static int pablo_icpu_itf_open(bool secure_mode)
 
 err_icpu_boot:
 	__transit_state(ITF_STATE_INIT);
+	ICPU_INFO("Debug err INIT state, current state(%d)", itf->state);
 	__reset_wq(itf);
 
 err_init_wq:
@@ -732,13 +735,16 @@ err_request_mbox_channels:
 
 static void pablo_icpu_itf_close(void)
 {
-	if (!itf)
+	if (!itf) {
+		ICPU_ERR("itf is NULL!!!");
 		return;
+	}
 
 	if (__check_current_state(ITF_STATE_INIT))
 		return;
 
 	__transit_state(ITF_STATE_CLOSING);
+	ICPU_INFO("Debug CLOSING state, current state(%d)", itf->state);
 
 	pablo_register_change_dvfs_cb(IS_DVFS_ICPU, NULL);
 
@@ -752,6 +758,7 @@ static void pablo_icpu_itf_close(void)
 	__reset_client(itf);
 
 	__transit_state(ITF_STATE_INIT);
+	ICPU_INFO("Debug INIT state, current state(%d)", itf->state);
 }
 
 static int __send_message_pre(unsigned int num, u32 *data)
@@ -1160,6 +1167,7 @@ int pablo_icpu_itf_init(void)
 		return -ENOMEM;
 
 	__transit_state(ITF_STATE_INIT);
+	ICPU_INFO("Debug INIT state, current state(%d)", itf->state);
 
 	ret = platform_driver_register(pablo_icpu_get_platform_driver());
 	if (ret) {

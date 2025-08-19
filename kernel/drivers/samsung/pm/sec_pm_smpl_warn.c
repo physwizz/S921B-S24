@@ -15,9 +15,12 @@
  */
 
 #include <linux/module.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 #include <linux/slab.h>
 #include <linux/cpufreq.h>
 #include <linux/pm_qos.h>
+#include <linux/interrupt.h>
 #include <linux/sec_pm_smpl_warn.h>
 #include <soc/samsung/freq-qos-tracer.h>
 
@@ -33,9 +36,12 @@ struct cpufreq_dev {
 };
 
 struct sec_pm_smpl_warn_info {
-	struct device			*dev;
-	int				num_policy_cpus;
-	u32				*policy_cpus;
+	struct device		*dev;
+	int			num_policy_cpus;
+	u32			*policy_cpus;
+	int			ocp_warn_gpio;
+	int			ocp_warn_irq;
+	unsigned int		ocp_warn_cnt;
 };
 
 static DEFINE_MUTEX(cpufreq_dev_list_lock);
@@ -149,6 +155,18 @@ static unsigned int find_next_max(struct cpufreq_frequency_table *table,
 	return max;
 }
 
+static irqreturn_t sec_pm_ocp_warn_irq_thread(int irq, void *data)
+{
+	struct sec_pm_smpl_warn_info *info = data;
+	int state = gpio_get_value(info->ocp_warn_gpio);
+
+	info->ocp_warn_cnt++;
+	dev_info(info->dev, "OCP_WARN: %d, cnt: %u\n", state,
+			info->ocp_warn_cnt);
+
+	return IRQ_HANDLED;
+}
+
 static int sec_pm_smpl_warn_parse_dt(struct sec_pm_smpl_warn_info *info)
 {
 	struct device_node *dn;
@@ -158,6 +176,12 @@ static int sec_pm_smpl_warn_parse_dt(struct sec_pm_smpl_warn_info *info)
 		return -ENODEV;
 
 	dn = info->dev->of_node;
+
+	info->ocp_warn_gpio = of_get_named_gpio(dn, "if-pmic-ocp-warn-gpio", 0);
+	if (info->ocp_warn_gpio < 0) {
+		dev_info(info->dev, "%s: No ocp_warn pin\n", __func__);
+		info->ocp_warn_gpio = -1;
+	}
 
 	info->num_policy_cpus = of_property_count_u32_elems(dn, "policy_cpus");
 	if (info->num_policy_cpus <= 0)
@@ -268,6 +292,18 @@ static int sec_pm_smpl_warn_probe(struct platform_device *pdev)
 					__func__, i);
 			return ret;
 		}
+	}
+
+	if (info->ocp_warn_gpio >= 0) {
+		info->ocp_warn_irq = gpio_to_irq(info->ocp_warn_gpio);
+		ret = devm_request_threaded_irq(info->dev, info->ocp_warn_irq,
+			NULL, sec_pm_ocp_warn_irq_thread,
+			IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+			"OCP_WARN", info);
+
+		if (ret)
+			dev_err(info->dev,
+				"Failed to register OCP_WARN IRQ: %d\n", ret);
 	}
 
 	smpl_warn_init_done = true;

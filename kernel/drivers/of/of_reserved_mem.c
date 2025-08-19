@@ -77,32 +77,6 @@ void __init fdt_reserved_mem_save_node(unsigned long node, const char *uname,
 	return;
 }
 
-#ifdef CONFIG_RBIN
-static phys_addr_t __init get_expand_size(unsigned long node)
-{
-	int len;
-	const __be32 *prop;
-	phys_addr_t size;
-
-	prop = of_get_flat_dt_prop(node, "expand_size", &len);
-	if (!prop)
-		return -EINVAL;
-
-	if (len != dt_root_size_cells * sizeof(__be32)) {
-		pr_err("invalid expand_size property in 'rbin' node.\n");
-		return -EINVAL;
-	}
-	size = dt_mem_next_cell(dt_root_size_cells, &prop);
-
-	return size;
-}
-static bool __init under_8GB_device(void)
-{
-	phys_addr_t threshold_size = 8UL << 30;
-	return memblock_phys_mem_size() <= threshold_size;
-}
-#endif
-
 /*
  * __reserved_mem_alloc_size() - allocate reserved memory described by
  *	'size', 'alignment'  and 'alloc-ranges' properties.
@@ -127,15 +101,6 @@ static int __init __reserved_mem_alloc_size(unsigned long node,
 		return -EINVAL;
 	}
 	size = dt_mem_next_cell(dt_root_size_cells, &prop);
-
-#ifdef CONFIG_RBIN
-	if (!strncmp(uname, "rbin", 4) && !under_8GB_device()) {
-		phys_addr_t size_temp = get_expand_size(node);
-
-		if (size_temp > 0)
-			size = size_temp;
-	}
-#endif
 
 	prop = of_get_flat_dt_prop(node, "alignment", &len);
 	if (prop) {
@@ -325,7 +290,7 @@ void __init fdt_init_reserved_mem(void)
 			} else {
 				phys_addr_t end = rmem->base + rmem->size - 1;
 
-				pr_info("%pa..%pa ( %lu KB ) %s %s %s\n",
+				pr_info("%pa..%pa (%lu KiB) %s %s %s\n",
 					&rmem->base, &end, (unsigned long)(rmem->size / SZ_1K),
 					nomap ? "nomap" : "map",
 					reusable ? "reusable" : "non-reusable",

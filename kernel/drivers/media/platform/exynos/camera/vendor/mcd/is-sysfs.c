@@ -73,6 +73,8 @@ ssize_t camera_af_hall_show(char *buf, enum is_cam_info_index cam_index)
 {
 	int ret;
 	int position;
+	int retry_count = 0;
+	int max_retry_count = 20;
 	struct is_cam_info *cam_info;
 	struct is_module_enum *module;
 	struct is_device_sensor *device;
@@ -91,7 +93,14 @@ ssize_t camera_af_hall_show(char *buf, enum is_cam_info_index cam_index)
 	WARN_ON(!module->subdev);
 	device = v4l2_get_subdev_hostdata(module->subdev);
 
-	if (!test_bit(IS_SENSOR_FRONT_START, &device->state)) {
+	do {
+		if (test_bit(IS_SENSOR_FRONT_START, &device->state))
+			break;
+		usleep_range(10000, 11000);
+		retry_count++;
+	} while (retry_count < max_retry_count);
+
+	if (retry_count == max_retry_count) {
 		err("%s: Camera is not started yet : %d", __func__, sensor_id);
 		goto p_err;
 	}
@@ -560,6 +569,7 @@ static int test_phy_margin_check(char *buffer, int cam_index)
 	int ret;
 	u32 position = cam_index + SP_REAR;
 	char const *phy_tune_default_mode;
+	char const *phy_tune_cmd;
 	char sensor_run_args[20] = {0, };
 	char phy_tune_args[10] = {0, };
 	char tmpChar[5] = {0, };
@@ -594,10 +604,15 @@ static int test_phy_margin_check(char *buffer, int cam_index)
 	strncat(sensor_run_args, phy_tune_default_mode, strlen(phy_tune_default_mode)); // camera default mode
 	pablo_test_set_sensor_run(sensor_run_args, NULL);
 
-	if (device->pdata->use_cphy)
-		strcpy(phy_tune_args, "32 200 0"); // default phy tune command
-	else
-		strcpy(phy_tune_args, "12 100 0"); // dphy tune command
+	ret = of_property_read_string(dnode, "phy_tune_cmd", &phy_tune_cmd);
+	if (ret) {
+		if (device->pdata->use_cphy)
+			strcpy(phy_tune_args, "32 200 0"); // default phy tune command
+		else
+			strcpy(phy_tune_args, "12 100 0"); // dphy tune command
+	} else {
+		strncpy(phy_tune_args, phy_tune_cmd, strlen(phy_tune_cmd));
+	}
 
 	pablo_test_set_phy_tune(phy_tune_args, NULL);
 

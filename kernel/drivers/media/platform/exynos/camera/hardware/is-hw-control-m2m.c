@@ -112,6 +112,8 @@ static int is_hardware_frame_done(struct is_hw_ip *hw_ip, struct is_frame *frame
 	last_end = !frame->core_flag;
 	framemgr_x_barrier_common(framemgr, 0, flags);
 
+	trace_frame_done(hw_ip, frame);
+
 	if (!last_end)
 		return 0;
 
@@ -119,10 +121,10 @@ static int is_hardware_frame_done(struct is_hw_ip *hw_ip, struct is_frame *frame
 	frame->frame_info[INFO_FRAME_END_PROC].pid = current->pid;
 	frame->frame_info[INFO_FRAME_END_PROC].when = local_clock();
 
-	if (frame->hw_slot_id[0] < HW_SLOT_MAX) {
-		ldr_hw_ip = &hw_ip->hardware->hw_ip[frame->hw_slot_id[0]];
+	if (frame->ldr_hw_slot_id < HW_SLOT_MAX) {
+		ldr_hw_ip = &hw_ip->hardware->hw_ip[frame->ldr_hw_slot_id];
 
-		del_timer(&ldr_hw_ip->shot_timer);
+		trace_del_timer(&ldr_hw_ip->shot_timer);
 
 		if (frame->type == SHOT_TYPE_MULTI) {
 			framemgr_e_barrier_common(framemgr, 0, flags);
@@ -325,7 +327,7 @@ static int is_hw_m2m_grp_shot(struct is_hardware *hardware, u32 instance, struct
 		return -EINVAL;
 	}
 
-	mod_timer(&hw_ip->shot_timer,
+	trace_mod_timer(&hw_ip->shot_timer,
 		  jiffies + msecs_to_jiffies(is_get_shot_timeout(&is_get_is_core()->resourcemgr)));
 
 	return ret;
@@ -353,7 +355,7 @@ static void tasklet_mshot(unsigned long data)
 
 	msdbgs_hw(2, "%s\n", instance, hw_ip, __func__);
 
-	mod_timer(&hw_ip->shot_timer,
+	trace_mod_timer(&hw_ip->shot_timer,
 		  jiffies + msecs_to_jiffies(is_get_shot_timeout(&is_get_is_core()->resourcemgr)));
 
 	is_fpsimd_get_func();

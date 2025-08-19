@@ -205,3 +205,9 @@ config DRM_SGPU_BPMD_MEMLOGGER_TEXT
 	depends on EXYNOS_MEMORY_LOGGER
 	select DRM_SGPU_BPMD
 	default n
+
+config SEC_GPUINFO
+	bool "Enable gpuinfo sysfs nodes for hqm"
+	default y
+	help
+	  Enable the additional sysfs node for hqm big data collection

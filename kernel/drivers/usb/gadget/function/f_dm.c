@@ -58,6 +58,7 @@ struct dm_direct {
 	int				req_pool_size;
 	/* Request pool for DM direct path */
 	struct list_head		req_pool;
+	spinlock_t			req_dm_lock;
 	/* Function pointer to notify request completion */
 	void (*check_status)(void *buf, int length, void *context);
 	/* Function pointer to notify dm function bind */
@@ -518,8 +519,11 @@ static void dm_req_complete(struct usb_ep *ep, struct usb_request *req)
 {
 	struct list_head *pool = &dm_direct_path.req_pool;
 	int status = req->status;
+	unsigned long flags;
 
+	spin_lock_irqsave(&dm_direct_path.req_dm_lock, flags);
 	list_add_tail(&req->list, pool);
+	spin_unlock_irqrestore(&dm_direct_path.req_dm_lock, flags);
 	atomic_dec(&dm_direct_path.queued_size);
 
 	switch (status) {
@@ -544,6 +548,7 @@ int usb_dm_request(void *buf, unsigned  int length)
 	struct list_head *pool = &dm_direct_path.req_pool;
 	struct usb_request *req;
 	int ret, q_size;
+	unsigned long flags;
 
 	if (dm == NULL || list_empty(&dm_direct_path.req_pool)) {
 		q_size = atomic_read(&dm_direct_path.queued_size);
@@ -570,6 +575,7 @@ int usb_dm_request(void *buf, unsigned  int length)
 		return -EBUSY;
 	}
 
+	spin_lock_irqsave(&dm_direct_path.req_dm_lock, flags);
 	req = list_first_entry(pool, struct usb_request, list);
 	g_dm_req = req;
 
@@ -579,12 +585,26 @@ int usb_dm_request(void *buf, unsigned  int length)
 		req->zero = 1;
 	else
 		req->zero = 0;
+
+	if (dm == NULL) {
+		spin_unlock_irqrestore(&dm_direct_path.req_dm_lock, flags);
+		return -EBUSY;
+	}
+
 	list_del(&req->list);
+	spin_unlock_irqrestore(&dm_direct_path.req_dm_lock, flags);
 
 	ret = usb_ep_queue(dm->port.in, req, GFP_ATOMIC);
 	if (ret < 0) {
-		pr_err_ratelimited("[DM Direct Path] usb_ep_queue fail!(%d)\n", ret);
+		if (dm == NULL) {
+			pr_err("[DM Direct Path] DM is disabled(%d)\n", ret);
+			return -EBUSY;
+		}
+
+		spin_lock_irqsave(&dm_direct_path.req_dm_lock, flags);
 		list_add(&req->list, pool);
+		spin_unlock_irqrestore(&dm_direct_path.req_dm_lock, flags);
+		pr_err_ratelimited("[DM Direct Path] usb_ep_queue fail!(%d)\n", ret);
 		return -EIO;
 	}
 
@@ -627,13 +647,16 @@ static int alloc_dm_direct_path(struct f_dm *dm)
 
 	dm_direct_path.dm = dm;
 	INIT_LIST_HEAD(&dm_direct_path.req_pool);
+	spin_lock_init(&dm_direct_path.req_dm_lock);
 	atomic_set(&dm_direct_path.queued_size, 0);
 
+	spin_lock(&dm_direct_path.req_dm_lock);
 	for (i = 0; i < dm_direct_path.req_pool_size; i++) {
 		req = usb_ep_alloc_request(dm->port.in, GFP_KERNEL);
 		if (!req) {
 			pr_err("can't alloc request for dm direct path!\n");
-			return -ENOMEM;
+			ret =  -ENOMEM;
+			break;
 		}
 
 		req->complete = dm_req_complete;
@@ -641,6 +664,7 @@ static int alloc_dm_direct_path(struct f_dm *dm)
 
 		list_add_tail(&req->list, &dm_direct_path.req_pool);
 	}
+	spin_unlock(&dm_direct_path.req_dm_lock);
 
 	return ret;
 
@@ -661,11 +685,13 @@ static void free_dm_direct_path(void)
 	req_pool = &dm_direct_path.req_pool;
 	dm_direct_path.dm = NULL;
 
+	spin_lock(&dm_direct_path.req_dm_lock);
 	while (!list_empty(&dm_direct_path.req_pool)) {
 		req = list_entry(req_pool->next, struct usb_request, list);
 		list_del(&req->list);
 		usb_ep_free_request(dm->port.in, req);
 	}
+	spin_unlock(&dm_direct_path.req_dm_lock);
 }
 
 struct usb_function *function_alloc_dm(struct usb_function_instance *fi, bool dm_config)

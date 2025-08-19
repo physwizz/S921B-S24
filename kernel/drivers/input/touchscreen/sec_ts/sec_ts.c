@@ -1532,13 +1532,12 @@ static int sec_ts_power(void *data, bool on)
 {
 	struct sec_ts_data *ts = (struct sec_ts_data *)data;
 	const struct sec_ts_plat_data *pdata = ts->plat_data;
-	static bool enabled;
 	int ret = 0;
 
-	if (enabled == on)
-		return ret;
-
 	if (on) {
+		if (ts->power_status == SEC_TS_STATE_POWER_ON)
+			return ret;
+
 		ret = regulator_enable(pdata->regulator_dvdd);
 		if (ret) {
 			dev_err(&ts->client->dev, "%s: Failed to enable avdd: %d\n", __func__, ret);
@@ -1552,12 +1551,15 @@ static int sec_ts_power(void *data, bool on)
 			dev_err(&ts->client->dev, "%s: Failed to enable vdd: %d\n", __func__, ret);
 			goto out;
 		}
+		ts->power_status = SEC_TS_STATE_POWER_ON;
 	} else {
+		if (ts->power_status == SEC_TS_STATE_POWER_OFF)
+			return ret;
+
 		regulator_disable(pdata->regulator_dvdd);
 		regulator_disable(pdata->regulator_avdd);
+		ts->power_status = SEC_TS_STATE_POWER_OFF;
 	}
-
-	enabled = on;
 
 out:
 	dev_err(&ts->client->dev, "%s: %s: avdd:%s, dvdd:%s\n", __func__, on ? "on" : "off",
@@ -2053,7 +2055,6 @@ static int sec_ts_probe(struct i2c_client *client, const struct i2c_device_id *i
 	sec_ts_power(ts, true);
 	if (!pdata->regulator_boot_on)
 		sec_ts_delay(70);
-	ts->power_status = SEC_TS_STATE_POWER_ON;
 	ts->external_factory = false;
 
 	sec_ts_wait_for_ready(ts, SEC_TS_ACK_BOOT_COMPLETE);

@@ -68,7 +68,4 @@ static inline void gpu_afm_release_maxlock(void) { }
 
 int exynos_interface_init(struct devfreq *df);
 int exynos_interface_deinit(struct devfreq *df);
-
-void gpu_umd_min_clock_set(unsigned int value, unsigned int delay);
-
 #endif

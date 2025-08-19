@@ -1804,7 +1804,7 @@ bool queue_rcu_work(struct workqueue_struct *wq, struct rcu_work *rwork)
 
 	if (!test_and_set_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work))) {
 		rwork->wq = wq;
-		call_rcu(&rwork->rcu, rcu_work_rcufn);
+		call_rcu_hurry(&rwork->rcu, rcu_work_rcufn);
 		return true;
 	}
 
@@ -4801,9 +4801,11 @@ static void show_pwq(struct pool_workqueue *pwq)
 			comma = true;
 
 			p = worker->task;
+#ifdef CONFIG_SCHEDSTATS			
 			pr_info("%s [%u, %llu, %llu, %llu, %llu, %llu, %llu, %llu, %llu]\n", __func__, cpu_rq(task_cpu(p))->nr_running, task_sched_runtime(p),
 					p->stats.wait_start, p->stats.wait_sum, p->stats.iowait_sum, p->stats.sleep_start,
 					p->stats.sum_sleep_runtime, p->stats.block_start, p->stats.sum_block_runtime);
+#endif			
 			sched_show_task(p);
 		}
 		pr_cont("\n");
@@ -5436,9 +5438,13 @@ static int workqueue_apply_unbound_cpumask(const cpumask_var_t unbound_cpumask)
 	list_for_each_entry(wq, &workqueues, list) {
 		if (!(wq->flags & WQ_UNBOUND))
 			continue;
+
 		/* creating multiple pwqs breaks ordering guarantee */
-		if (wq->flags & __WQ_ORDERED)
-			continue;
+		if (!list_empty(&wq->pwqs)) {
+			if (wq->flags & __WQ_ORDERED_EXPLICIT)
+				continue;
+			wq->flags &= ~__WQ_ORDERED;
+		}
 
 		ctx = apply_wqattrs_prepare(wq, wq->unbound_attrs, unbound_cpumask);
 		if (!ctx) {

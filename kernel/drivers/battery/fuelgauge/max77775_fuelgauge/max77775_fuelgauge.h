@@ -194,6 +194,16 @@ typedef struct max77775_fuelgauge_platform_data {
 } max77775_fuelgauge_platform_data_t;
 
 #define FG_RESET_DATA_COUNT		5
+#define WRL_MODE4_DATA_COUNT	4
+
+#if defined(CONFIG_WRL_MODE4_FG_SETTING)
+struct wrl_mode4_wa {
+	u32 tempnom;
+	u32 misccfg;
+	u32 tempnom_wa;
+	u32 misccfg_wa;
+};
+#endif
 
 struct verify_reg {
 	u16 addr;
@@ -291,6 +301,10 @@ struct max77775_fuelgauge_data {
 	struct fg_reset_wa *fg_reset_data;
 	struct verify_reg *verify_selected_reg;
 	unsigned int verify_selected_reg_length;
+#if defined(CONFIG_WRL_MODE4_FG_SETTING)
+	struct wrl_mode4_wa *wrl_mode4_data;
+#endif
+
 	u32 data_ver;
 	bool skip_fg_verify;
 	u32 err_cnt;

@@ -265,7 +265,14 @@ exynos_atomic_check_windows(struct drm_device *dev, struct drm_atomic_state *sta
 			struct exynos_drm_private *priv = dev->dev_private;
 			mutex_lock(&priv->lock);
 			if (crtc->index == 2) {
-				win_mask = find_set_bits_mask_reverse_order(priv->available_win_mask,
+				/* HACK : Add filtering when allocating windows for Decon2
+				available_win_mask is used as a bitmask for plane.
+				With the addition of RCD layer, new plane was also added and available_win_mask was expanded.
+				However, Decon2, which is used for DisplayPort, does not have RCD layer, so it must be filtered out.
+				Filtering-mask(0xffff) in the code below is to filter out RCD layer.
+				This value is calculated using formula "(BIT(MAX_WIN_PER_DECON) - 1)".
+				*/
+				win_mask = find_set_bits_mask_reverse_order(priv->available_win_mask & 0xffff,
 						new_win_cnt - old_win_cnt);
 			} else {
 				win_mask = find_set_bits_mask(priv->available_win_mask,
@@ -604,6 +611,9 @@ static int exynos_drm_atomic_helper_wait_for_fences(struct drm_device *dev,
 	s64 fence_wait_ms, debug_timeout_ms;
 	int i, ret = 0, fps;
 	bool timeout;
+#if IS_ENABLED(CONFIG_EXYNOS_DRM_BUFFER_SANITY_CHECK)
+	struct exynos_drm_plane_state *new_exynos_plane_state;
+#endif
 
 	DPU_ATRACE_BEGIN(__func__);
 	for_each_new_plane_in_state(state, plane, new_plane_state, i) {
@@ -656,7 +666,10 @@ static int exynos_drm_atomic_helper_wait_for_fences(struct drm_device *dev,
 		}
 		if (ret)
 			goto out;
-
+#if IS_ENABLED(CONFIG_EXYNOS_DRM_BUFFER_SANITY_CHECK)
+		new_exynos_plane_state = to_exynos_plane_state(new_plane_state);
+		snprintf(new_exynos_plane_state->fence_info, 256, FENCE_FMT, FENCE_ARG(fence));
+#endif
 		dma_fence_put(new_plane_state->fence);
 		new_plane_state->fence = NULL;
 	}
@@ -686,6 +699,8 @@ static void commit_tail(struct drm_atomic_state *old_state)
 	int i;
 
 	funcs = dev->mode_config.helper_private;
+
+	exynos_atomic_commit_check_buf_sanity(old_state);
 
 	exynos_drm_atomic_helper_wait_for_fences(dev, old_state, false);
 
@@ -765,6 +780,9 @@ static int exynos_atomic_commit(struct drm_device *dev,
 	int ret;
 
 	DPU_ATRACE_BEGIN(__func__);
+#if IS_ENABLED(CONFIG_EXYNOS_DRM_BUFFER_SANITY_CHECK)
+	nonblock = false;
+#endif
 	ret = drm_atomic_helper_setup_commit(state, nonblock);
 	if (ret)
 		goto err;
@@ -1197,9 +1215,11 @@ static void exynos_atomic_wait_for_vblanks(struct drm_device *dev,
 				//send event to HWC, request for reset.
 				exynos_crtc = to_exynos_crtc(crtc);
 				if (exynos_crtc) {
-					exynos_crtc->ops->recovery(to_exynos_crtc(crtc), "uevent_r");
-					drm_atomic_helper_commit_hw_done(old_state);
-					drm_atomic_helper_cleanup_planes(dev, old_state);
+					ret = exynos_crtc->ops->recovery(to_exynos_crtc(crtc), "uevent_r");
+					if (!ret) {
+						drm_atomic_helper_commit_hw_done(old_state);
+						drm_atomic_helper_cleanup_planes(dev, old_state);
+					}
 				}
 			}
 #endif
@@ -1638,6 +1658,27 @@ static void exynos_atomic_set_freq_hop(struct drm_atomic_state *old_state, bool 
 	}
 }
 
+static void exynos_atomic_mark_initial_commit(struct drm_atomic_state *state)
+{
+	struct drm_crtc *crtc;
+	struct drm_crtc_state *new_crtc_state;
+	int i;
+
+	for_each_new_crtc_in_state(state, crtc, new_crtc_state, i) {
+		struct exynos_drm_crtc_state *new_exynos_crtc_state =
+			to_exynos_crtc_state(new_crtc_state);
+
+		if (!new_crtc_state->active)
+			continue;
+
+		if (new_exynos_crtc_state->initial_commit_completed)
+			continue;
+
+		new_exynos_crtc_state->initial_commit_completed = true;
+	}
+}
+
+
 static void exynos_atomic_update_brightness(struct drm_atomic_state *old_state)
 {
 	struct drm_crtc *crtc;
@@ -1716,7 +1757,7 @@ static void exynos_atomic_commit_tail(struct drm_atomic_state *old_state)
 
 	drm_atomic_helper_cleanup_planes(dev, old_state);
 
-	exynos_atomic_commit_check_buf_sanity(old_state);
+	exynos_atomic_mark_initial_commit(old_state);
 
 	DPU_ATRACE_END(__func__);
 }
@@ -1784,6 +1825,7 @@ static void exynos_drm_postclose(struct drm_device *dev, struct drm_file *file)
 static void exynos_drm_lastclose(struct drm_device *dev)
 {
 	exynos_drm_fbdev_restore_mode(dev);
+	exynos_drm_encoder_lastclose(dev);
 }
 
 static const struct file_operations exynos_drm_driver_fops = {

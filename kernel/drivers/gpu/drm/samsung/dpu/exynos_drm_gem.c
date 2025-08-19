@@ -21,6 +21,9 @@
 #include <exynos_drm_gem.h>
 #include <exynos_drm_drv.h>
 #include <dpu_trace.h>
+#if IS_ENABLED(CONFIG_EXYNOS_DRM_BUFFER_SANITY_CHECK)
+#include <linux/iosys-map.h>
+#endif
 
 MODULE_IMPORT_NS(DMA_BUF);
 
@@ -64,6 +67,10 @@ exynos_drm_gem_prime_import_sg_table(struct drm_device *dev,
 	const unsigned long size = attach->dmabuf->size;
 	struct exynos_drm_gem *exynos_gem_obj =
 		exynos_drm_gem_alloc(dev, size, 0);
+#if IS_ENABLED(CONFIG_EXYNOS_DRM_BUFFER_SANITY_CHECK)
+	struct iosys_map map = IOSYS_MAP_INIT_VADDR(NULL);
+	int ret;
+#endif
 
 	if (IS_ERR(exynos_gem_obj))
 		return ERR_CAST(exynos_gem_obj);
@@ -77,8 +84,12 @@ exynos_drm_gem_prime_import_sg_table(struct drm_device *dev,
 	}
 
 #if IS_ENABLED(CONFIG_EXYNOS_DRM_BUFFER_SANITY_CHECK)
-	exynos_gem_obj->vaddr = dma_buf_vmap(attach->dmabuf);
-	exynos_gem_obj->acq_fence = dma_buf_fd(attach->dmabuf, 0);
+	ret = dma_buf_vmap(attach->dmabuf, &map);
+	if (ret) {
+		pr_err("Failed to vmap for sanity: %d\n", ret);
+		return ERR_PTR(-EINVAL);
+	}
+	exynos_gem_obj->vaddr = map.vaddr;
 #endif
 
 	pr_debug("mapped dma_addr: %#llx\n", exynos_gem_obj->dma_addr);
@@ -94,8 +105,12 @@ static void exynos_drm_gem_unmap(struct exynos_drm_gem *exynos_gem_obj)
 		return;
 
 #if IS_ENABLED(CONFIG_EXYNOS_DRM_BUFFER_SANITY_CHECK)
-	if (exynos_gem_obj->vaddr)
-		dma_buf_vunmap(attach->dmabuf, exynos_gem_obj->vaddr);
+	if (exynos_gem_obj->vaddr) {
+		struct iosys_map map =
+			IOSYS_MAP_INIT_VADDR(exynos_gem_obj->vaddr);
+
+		dma_buf_vunmap(attach->dmabuf, &map);
+	}
 #endif
 
 	/* nothing to do for color map buffers */

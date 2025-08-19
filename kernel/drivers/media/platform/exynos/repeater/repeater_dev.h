@@ -49,7 +49,7 @@ struct repeater_context_status {
 struct repeater_device {
 	struct miscdevice misc_dev;
 	struct device *dev;
-	int ctx_num;
+	atomic_t ctx_num;
 	struct repeater_context *ctx[REPEATER_MAX_CONTEXTS_NUM];
 };
 
@@ -86,6 +86,9 @@ struct repeater_context {
 	wait_queue_head_t wait_queue_error;
 	int error;
 	int nobuf_err_count;
+
+	/* To tsmux otf unit test */
+	int start_mode;
 
 	/* To dump data */
 	wait_queue_head_t wait_queue_dump;

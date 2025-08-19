@@ -181,6 +181,7 @@ int amdgpu_driver_load_kms(struct amdgpu_device *adev, unsigned long flags)
 		dev_err(&adev->pldev->dev, "Fatal error during GPU init\n");
 		goto out;
 	}
+	sgpu_pm_monitor_init(adev);
 
 	/* Call ACPI methods: require modeset init
 	 * but failure is not fatal

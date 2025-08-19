@@ -68,7 +68,8 @@ static inline int __mfc_core_is_err_condition(unsigned int err)
 static inline void mfc_handle_force_change_status(struct mfc_core_ctx *core_ctx)
 {
 	if (core_ctx->state != MFCINST_ABORT && core_ctx->state != MFCINST_HEAD_PARSED &&
-			core_ctx->state != MFCINST_RES_CHANGE_FLUSH)
+			core_ctx->state != MFCINST_RES_CHANGE_FLUSH &&
+			core_ctx->state != MFCINST_RES_CHANGE_FLUSH_FINISHED)
 		mfc_change_state(core_ctx, MFCINST_RUNNING);
 }
 

@@ -78,6 +78,10 @@
 		circ_buf_total_size(rcv_buf_size) +				\
 		circ_buf_total_size(snd_buf_size))
 
+#ifndef fallthrough
+#define fallthrough	do {} while (0)
+#endif
+
 enum operation {
 	CONNECT_FROM_NWD,
 	NEW_NWD_LISTEN,

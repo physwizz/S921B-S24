@@ -47,7 +47,7 @@
 		};
 	};
 };
-/* /home/dpi/qb5_8814/workspace/P4_1716/android/kernel/kmodule/sensorhub/lsi/s5e9945/dts/sensorhub_s5e9945.e1s_eur.11.dtsi */
+/* /home/dpi/qb5_8814/workspace/P4_1716/android/kernel/kmodule/sensorhub/lsi/s5e9945/dts/sensorhub_s5e9945.e1s_kor.13.dtsi */
 / {
 	fragment@model {
 		target-path = "/";

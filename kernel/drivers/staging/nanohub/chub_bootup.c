@@ -501,6 +501,7 @@ int contexthub_reset(struct contexthub_ipc_info *chub, bool force_load,
 					"sysevent_get doesn't called. skip this.\n");
 		} else {
 			sysevent_put((void *)chub->ext.sysevent_dev);
+			chub->ext.sysevent_status = NULL;
 		}
 	}
 #endif

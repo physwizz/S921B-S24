@@ -34,6 +34,8 @@ struct panel_irc_info;
 #define PANEL_BL_PROPERTY_ACL_OPR ("acl_opr")
 #define PANEL_BL_PROPERTY_ACL_PWRSAVE ("acl_pwrsave")
 #define PANEL_BL_PROPERTY_NIGHT_DIM ("night_dim")
+#define PANEL_BL_PROPERTY_LOCAL_HBM ("local_hbm")
+#define PANEL_BL_PROPERTY_LOCAL_HBM_CIRLCE ("local_hbm_circle")
 
 #define MAX_PANEL_BL_NAME_SIZE (32)
 
@@ -178,12 +180,17 @@ struct panel_bl_properties {
 	int aor_ratio;
 	int smooth_transition;
 	int night_dim;
+	int local_hbm;
+	int local_hbm_circle;
+	int local_hbm_sysfs;
 #ifdef CONFIG_USDM_PANEL_MASK_LAYER
 	int mask_layer_br_target;
 	int mask_layer_br_actual;
 	int mask_layer_br_hook;
+	int fp_green_circle;
 #endif
 	atomic_t brightness_set_count;
+	atomic_t brightness_non_zero_set_count;
 	bool saved;
 };
 
@@ -278,5 +285,5 @@ int search_tbl(int *tbl, int sz, enum SEARCH_TYPE type, int value);
 int panel_bl_get_brightness_set_count(struct panel_bl_device *panel_bl);
 void panel_bl_update_acl_state(struct panel_bl_device *panel_bl);
 int panel_update_subdev_brightness(struct panel_device *panel, u32 subdev_id, u32 brightness);
-
+void panel_bl_clear_brightness_non_zero_set_count(struct panel_bl_device *panel_bl);
 #endif /* __PANEL_BL_H__ */

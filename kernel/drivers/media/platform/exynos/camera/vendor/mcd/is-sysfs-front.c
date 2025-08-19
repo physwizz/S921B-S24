@@ -629,7 +629,7 @@ int is_create_front_sysfs(struct class *camera_class)
 		return ret;
 	}
 
-	ret = devm_device_add_group(camera_front_dev, &is_sysfs_attr_group_front);
+	ret = sysfs_create_group(&camera_front_dev->kobj, &is_sysfs_attr_group_front);
 	if (ret < 0) {
 		pr_err("failed to add device group %s\n", is_sysfs_attr_group_front.name);
 		return ret;
@@ -658,7 +658,7 @@ int is_create_front_sysfs(struct class *camera_class)
 	}
 
 	if (sysfs_config->front2) {
-		ret = devm_device_add_group(camera_front_dev, &is_sysfs_attr_group_front2);
+		ret = sysfs_create_group(&camera_front_dev->kobj, &is_sysfs_attr_group_front2);
 		if (ret < 0) {
 			pr_err("failed to add device group %s\n", is_sysfs_attr_group_front2.name);
 			return ret;
@@ -684,7 +684,7 @@ int is_create_front_sysfs(struct class *camera_class)
 	}
 
 	if (sysfs_config->front_tof) {
-		ret = devm_device_add_group(camera_front_dev, &is_sysfs_attr_group_front_tof);
+		ret = sysfs_create_group(&camera_front_dev->kobj, &is_sysfs_attr_group_front_tof);
 		if (ret < 0) {
 			pr_err("failed to add device group %s\n", is_sysfs_attr_group_front_tof.name);
 			return ret;
@@ -746,11 +746,11 @@ void is_destroy_front_sysfs(struct class *camera_class)
 {
 	struct is_sysfs_config *sysfs_config = is_vendor_get_sysfs_config();
 
-	devm_device_remove_group(camera_front_dev, &is_sysfs_attr_group_front);
+	sysfs_remove_group(&camera_front_dev->kobj, &is_sysfs_attr_group_front);
 	if (sysfs_config->front2)
-		devm_device_remove_group(camera_front_dev, &is_sysfs_attr_group_front2);
+		sysfs_remove_group(&camera_front_dev->kobj, &is_sysfs_attr_group_front2);
 	if (sysfs_config->front_tof)
-		devm_device_remove_group(camera_front_dev, &is_sysfs_attr_group_front_tof);
+		sysfs_remove_group(&camera_front_dev->kobj, &is_sysfs_attr_group_front_tof);
 
 	if (camera_class && camera_front_dev)
 		device_destroy(camera_class, camera_front_dev->devt);

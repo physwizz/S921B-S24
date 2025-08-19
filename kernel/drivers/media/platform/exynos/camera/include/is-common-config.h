@@ -261,8 +261,7 @@ char *pablo_lib_get_stream_prefix(int instance);
 #if IS_ENABLED(CONFIG_PABLO_KUNIT_TEST)
 #define sfrinfo(fmt, args...)
 #else
-#define sfrinfo(fmt, args...) \
-	info_common("[SFR]", fmt, ##args)
+#define sfrinfo(fmt, args...) info_wo_memlog("[SFR]", fmt, ##args)
 #endif
 
 #define minfo(fmt, obj, args...) \
@@ -573,6 +572,8 @@ int is_get_debug_sensor(void);
 		is_info("[@]" prefix fmt, ##args);		\
 		is_memlog_info(prefix fmt, ##args);		\
 	} while (0)
+
+#define info_wo_memlog(prefix, fmt, args...) is_info("[@]" prefix fmt, ##args)
 
 #define dbg_common(level, prefix, fmt, args...)			\
 	do {							\

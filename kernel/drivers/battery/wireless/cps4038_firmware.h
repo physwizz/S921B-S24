@@ -19,7 +19,7 @@
 #ifndef __CPS4038_FIRMWARE_H
 #define __CPS4038_FIRMWARE_H __FILE__
 
-#define MFC_FW_BIN_VERSION		0x4010
+#define MFC_FW_BIN_VERSION		0x4012
 #define MFC_FW_VER_BIN_CPS		0x00C4
 
 #define MFC_FLASH_FW_HEX_PATH		"mfc/mfc_fw_flash.bin"

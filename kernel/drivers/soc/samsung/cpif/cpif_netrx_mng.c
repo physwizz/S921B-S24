@@ -11,7 +11,6 @@
 
 #include "cpif_netrx_mng.h"
 
-#define NETRX_POOL_PAGE_SIZE	32768
 struct cpif_netrx_mng *cpif_create_netrx_mng(struct cpif_addr_pair *desc_addr_pair,
 						u64 desc_size, u64 databuf_cp_pbase,
 						u64 frag_size, u64 num_packet)
@@ -66,8 +65,6 @@ struct cpif_netrx_mng *cpif_create_netrx_mng(struct cpif_addr_pair *desc_addr_pa
 	if (unlikely(!cm->data_pool))
 		goto fail;
 
-	spin_lock_init(&cm->lock);
-
 	mif_info("netrx mng: num_packet: %llu frag_size: %llu total_buf_size: %llu\n",
 		 cm->num_packet, cm->frag_size, cm->total_buf_size);
 	mif_info("desc vmap: va_start: 0x%llX va_end: 0x%llX va_size: %llu\n",
@@ -107,10 +104,6 @@ EXPORT_SYMBOL(cpif_exit_netrx_mng);
 
 void cpif_init_netrx_mng(struct cpif_netrx_mng *cm)
 {
-	unsigned long flags;
-
-	spin_lock_irqsave(&cm->lock, flags);
-
 	if (cm->data_map && cm->data_pool) {
 		int i = cm->unmap_idx;
 
@@ -127,8 +120,6 @@ void cpif_init_netrx_mng(struct cpif_netrx_mng *cm)
 		cm->map_idx = 0;
 		cm->unmap_idx = 0;
 	}
-
-	spin_unlock_irqrestore(&cm->lock, flags);
 }
 EXPORT_SYMBOL(cpif_init_netrx_mng);
 
@@ -137,11 +128,8 @@ struct cpif_addr_pair *cpif_map_rx_buf(struct cpif_netrx_mng *cm, u32 idx)
 	struct page *page;
 	void *data;
 	u64 page_size, cp_addr;
-	unsigned long flags;
 	struct cpif_addr_pair *ret = NULL;
 	bool used_tmp_alloc = false;
-
-	spin_lock_irqsave(&cm->lock, flags);
 
 	if (unlikely(!cm->data_map)) {
 		mif_err_limited("data map is not created yet\n");
@@ -170,24 +158,19 @@ struct cpif_addr_pair *cpif_map_rx_buf(struct cpif_netrx_mng *cm, u32 idx)
 	ret->cp_addr = cp_addr;
 	ret->ap_addr = data;
 	ret->page = page;
-	ret->page_order = get_order(page_size);
+	ret->page_order = (u64) get_order(page_size);
 	cm->map_idx = idx;
 
 done:
-	spin_unlock_irqrestore(&cm->lock, flags);
-
 	return ret;
 }
 EXPORT_SYMBOL(cpif_map_rx_buf);
 
 void *cpif_unmap_rx_buf(struct cpif_netrx_mng *cm, u32 idx)
 {
-	unsigned long flags;
 	u64 ap_paddr = 0;
 	void *ap_addr = NULL;
 	struct cpif_addr_pair *apair = &cm->apair_arr[idx];
-
-	spin_lock_irqsave(&cm->lock, flags);
 
 	if (unlikely(!cm->data_map)) {
 		mif_err_limited("data map does not exist\n");
@@ -210,8 +193,6 @@ void *cpif_unmap_rx_buf(struct cpif_netrx_mng *cm, u32 idx)
 	cm->unmap_idx = idx;
 
 done:
-	spin_unlock_irqrestore(&cm->lock, flags);
-
 	return ap_addr; /* returns NULL or unmapped AP virtual address */
 }
 EXPORT_SYMBOL(cpif_unmap_rx_buf);

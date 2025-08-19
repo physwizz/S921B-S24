@@ -58,31 +58,73 @@ struct s2mpu16_info {
 #endif
 };
 
-static unsigned int s2mpu16_of_map_mode(unsigned int val) {
-	switch (val) {
-	case SEC_OPMODE_SUSPEND:	/* ON in Standby Mode */
-		return 0x1;
-	case SEC_OPMODE_MIF:		/* ON in PWREN_MIF mode */
-		return 0x2;
-	case SEC_OPMODE_ON:		/* ON in Normal Mode */
-		return 0x3;
-	default:
-		return REGULATOR_MODE_INVALID;
+static unsigned int s2mpu16_of_map_mode(unsigned int mode) {
+	switch (mode) {
+		case PMIC_OPMODE_VGPIO ... PMIC_OPMODE_ON:
+		case PMIC_OPMODE_AUTO:
+		case PMIC_OPMODE_FCCM:
+			return mode;
+		default:
+			return REGULATOR_MODE_INVALID;
 	}
 }
 
-/* Some LDOs supports [LPM/Normal]ON mode during suspend state */
-static int s2m_set_mode(struct regulator_dev *rdev,
-			unsigned int mode)
+/* Regulators support mode for Enable_ctrl/Auto/FCCM */
+static int s2mpu16_set_mode(struct regulator_dev *rdev,
+		unsigned int mode)
 {
 	struct s2mpu16_info *s2mpu16 = rdev_get_drvdata(rdev);
 	unsigned int val;
 	int id = rdev_get_id(rdev);
+	struct device *dev = s2mpu16->iodev->dev;
 
-	val = mode << S2MPU16_ENABLE_SHIFT;
-	s2mpu16->opmode[id] = val;
+	switch (mode) {
+		case PMIC_OPMODE_VGPIO ... PMIC_OPMODE_ON:
+			val = mode << S2MPU16_ENABLE_SHIFT;
+			s2mpu16->opmode[id] = val;
+			return 0;
+		case PMIC_OPMODE_AUTO:
+			mode = S2MPU16_BUCK_AUTO_MODE;
+			break;
+		case PMIC_OPMODE_FCCM:
+			mode = S2MPU16_BUCK_FCCM_MODE;
+			break;
+		default:
+			dev_err(dev, "%s: invalid mode %d specified\n", __func__, mode);
+			return -EINVAL;
+	}
+
+	if (S2MPU16_BUCK2 <= id && id <= S2MPU16_BUCK_SR1)
+		return s2mpu16_update_reg(s2mpu16->i2c, rdev->desc->enable_reg,
+				mode, S2MPU16_BUCK_MODE_MASK);
+
+	dev_info(dev, "%s: %s don't use Auto and FCCM mode\n", __func__, rdev->desc->name);
 
 	return 0;
+}
+
+/* BUCKs & BUCK_SRs & BB support [Auto/FCCM] mode */
+static unsigned int s2mpu16_get_mode(struct regulator_dev *rdev)
+{
+	struct s2mpu16_info *s2mpu16 = rdev_get_drvdata(rdev);
+	uint8_t val;
+	int ret = 0;
+
+	ret = s2mpu16_read_reg(s2mpu16->i2c, rdev->desc->enable_reg, &val);
+	if (ret)
+		return REGULATOR_MODE_INVALID;
+
+	dev_info(s2mpu16->iodev->dev, "%s: [%s] enable_reg: 0x%02hhx, val: 0x%02hhx\n",
+			__func__, rdev->desc->name, rdev->desc->enable_reg, val);
+
+	val &= S2MPU16_BUCK_MODE_MASK;
+
+	if (val == S2MPU16_BUCK_AUTO_MODE)
+		ret = PMIC_OPMODE_AUTO;
+	else if (val == S2MPU16_BUCK_FCCM_MODE)
+		ret = PMIC_OPMODE_FCCM;
+
+	return ret;
 }
 
 static int s2m_enable(struct regulator_dev *rdev)
@@ -294,7 +336,7 @@ static struct regulator_ops s2mpu16_ldo_ops = {
 	.get_voltage_sel	= s2m_get_voltage_sel_regmap,
 	.set_voltage_sel	= s2m_set_voltage_sel_regmap,
 	.set_voltage_time_sel	= s2m_set_voltage_time_sel,
-	.set_mode		= s2m_set_mode,
+	.set_mode		= s2mpu16_set_mode,
 };
 
 static struct regulator_ops s2mpu16_buck_ops = {
@@ -306,7 +348,8 @@ static struct regulator_ops s2mpu16_buck_ops = {
 	.get_voltage_sel	= s2m_get_voltage_sel_regmap,
 	.set_voltage_sel	= s2m_set_voltage_sel_regmap_buck,
 	.set_voltage_time_sel	= s2m_set_voltage_time_sel,
-	.set_mode		= s2m_set_mode,
+	.set_mode		= s2mpu16_set_mode,
+	.get_mode		= s2mpu16_get_mode,
 	.set_ramp_delay		= s2m_set_ramp_delay,
 };
 

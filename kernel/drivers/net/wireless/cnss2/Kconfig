@@ -184,3 +184,7 @@ config CNSS2_ENUM_WITH_LOW_SPEED
 config SEC_SS_CNSS_FEATURE_SYSFS
     bool "SS Feature sysfs support"
     depends on CNSS2
+
+config SEC_FORCE_CHANGE_BT_EN
+    bool "SS Feature hang report support in BT_EN control case"
+    depends on CNSS2

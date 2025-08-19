@@ -792,7 +792,7 @@ static int __init cnss_utils_init(void)
 	struct cnss_utils_priv *priv = NULL;
 
 	if (!cnss_utils_is_valid_dt_node_found())
-		return -ENODEV;
+		return 0;
 
 	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
 	if (!priv)

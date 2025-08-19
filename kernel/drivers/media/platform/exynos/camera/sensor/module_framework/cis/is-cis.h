@@ -79,6 +79,7 @@ struct sensor_cis_info {
 	u16 min_digital_gain;
 	u16 fine_integration_time;
 	u16 cit_compensation_threshold;
+	u16 readout_factor;
 	u16 seamless_wait_cnt;
 	bool use_group_param_hold;
 	bool use_debug_seamless_control;

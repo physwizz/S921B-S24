@@ -401,6 +401,21 @@ static void pablo_hw_dvfs_get_real_scenario_kunit_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, ret, IS_DVFS_SN_SENSOR_ONLY_REAR_SINGLE);
 }
 
+static void pablo_hw_dvfs_get_fast_launch_kunit_test(struct kunit *test)
+{
+	struct is_dvfs_ctrl *dvfs_ctrl = &test_ctx.ids1->resourcemgr->dvfs_ctrl;
+	bool fast_launch;
+
+	dvfs_ctrl->dvfs_scenario = 0;
+	fast_launch = is_hw_dvfs_get_fast_launch(dvfs_ctrl);
+	KUNIT_EXPECT_TRUE(test, fast_launch);
+
+	dvfs_ctrl->dvfs_scenario = IS_DVFS_SCENARIO_VENDOR_SENSING_CAMERA
+				   << IS_DVFS_SCENARIO_VENDOR_SHIFT;
+	fast_launch = is_hw_dvfs_get_fast_launch(dvfs_ctrl);
+	KUNIT_EXPECT_FALSE(test, fast_launch);
+}
+
 static int pablo_hw_dvfs_kunit_test_init(struct kunit *test)
 {
 	test_ctx.idi = is_get_ischain_device(KUNIT_TEST_INSTANCE);
@@ -442,6 +457,7 @@ static struct kunit_case pablo_hw_dvfs_kunit_test_cases[] = {
 	KUNIT_CASE(pablo_hw_dvfs_restore_static_kunit_test),
 	KUNIT_CASE(pablo_hw_dvfs_get_qos_throughput_kunit_test),
 	KUNIT_CASE(pablo_hw_dvfs_get_real_scenario_kunit_test),
+	KUNIT_CASE(pablo_hw_dvfs_get_fast_launch_kunit_test),
 	{},
 };
 

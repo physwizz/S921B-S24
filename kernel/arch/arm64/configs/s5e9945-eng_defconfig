@@ -33,6 +33,9 @@ CONFIG_DEBUG_OBJECTS_PERCPU_COUNTER=y
 # Watchdog Device Drivers
 CONFIG_S3C2410_BUILTIN_WATCHDOG=y
 
+# Camera
+CONFIG_PABLO_UNIT_TEST=m
+
 #
 # please don't remove new line on this file
 #

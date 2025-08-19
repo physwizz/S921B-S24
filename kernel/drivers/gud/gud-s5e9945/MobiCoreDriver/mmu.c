@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2013-2022 TRUSTONIC LIMITED
+ * Copyright (c) 2013-2023 TRUSTONIC LIMITED
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -70,7 +70,9 @@ MODULE_IMPORT_NS(DMA_BUF);
 #include "mmu_internal.h"
 #include "fastcall.h"
 
-#define PHYS_48BIT_MASK (BIT(48) - 1)
+#define RATIO_PAGE_SIZE		(PAGE_SIZE / KINIBI_PAGE_SIZE)
+
+#define PHYS_48BIT_MASK		(BIT(48) - 1)
 
 /* Common */
 #define MMU_BUFFERABLE		BIT(2)		/* AttrIndx[0] */
@@ -90,6 +92,14 @@ MODULE_IMPORT_NS(DMA_BUF);
 /* Trustonic Specific flag to detect ION mem */
 #define MMU_ION_BUF		BIT(24)
 
+#ifdef MC_SHADOW_BUFFER
+static struct mutex		mmu_lock;
+
+static void mmu_workqueue_handle(struct work_struct *work);
+
+/*Creating work queue*/
+DECLARE_WORK(mmu_workqueue, mmu_workqueue_handle);
+#endif /*MC_SHADOW_BUFFER*/
 /*
  * Specific case for kernel 4.4.168 that does not have the same
  * get_user_pages() implementation
@@ -180,7 +190,7 @@ static inline long gup_local(struct mm_struct *mm, uintptr_t start,
 
 	return get_user_pages(start, nr_pages, gup_flags, pages, NULL);
 }
-#else
+#elif KERNEL_VERSION(6, 5, 0) > LINUX_VERSION_CODE
 static inline long gup_local(struct mm_struct *mm, uintptr_t start,
 			     unsigned long nr_pages, int write,
 			     struct page **pages)
@@ -193,7 +203,65 @@ static inline long gup_local(struct mm_struct *mm, uintptr_t start,
 
 	return pin_user_pages(start, nr_pages, gup_flags, pages, NULL);
 }
+#else
+static inline long gup_local(struct mm_struct *mm, uintptr_t start,
+			     unsigned long nr_pages, int write,
+			     struct page **pages)
+{
+	unsigned int gup_flags = 0;
+
+	gup_flags |= FOLL_LONGTERM;
+	if (write)
+		gup_flags |= FOLL_WRITE;
+
+	return pin_user_pages(start, nr_pages, gup_flags, pages);
+}
 #endif
+
+#ifdef MC_SHADOW_BUFFER
+struct tee_mmu_zombie {
+	/* mmu descriptor */
+	struct tee_mmu *mmu;
+	/* The list entry to zombie mmu */
+	struct list_head	list;
+};
+
+static struct list_head mmu_zombies = LIST_HEAD_INIT(mmu_zombies);
+
+static void *mmu_allocate_shadow_buffer(size_t order)
+{
+	void *shadow_buffer = NULL;
+	struct page *pages;
+
+	pages = alloc_pages(GFP_KERNEL, order);
+	if (!pages) {
+		mc_dev_devel("allocate pages failed with order %d",
+			     (int)order);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	shadow_buffer = page_address(pages);
+	memset(shadow_buffer, 0, PAGE_SIZE * BIT(order));
+
+	return shadow_buffer;
+}
+
+void tee_mmu_free_shadow(struct tee_mmu *mmu)
+{
+	size_t order = mmu->shadow.order;
+	void *shadow_buffer = mmu->shadow.buffer;
+
+	free_pages((unsigned long)shadow_buffer - mmu->offset, order);
+	mmu->shadow.buffer = NULL;
+}
+#endif /* MC_SHADOW_BUFFER */
+
+/* base must be a power of 2 or else f_modulo will WARN_ON */
+static inline u32 f_modulo(u32 val, u32 base)
+{
+	WARN_ON(base & (base - 1));
+	return val & (base - 1);
+}
 
 static inline long gup_local_repeat(struct mm_struct *mm, uintptr_t start,
 				    unsigned long nr_pages, int write,
@@ -217,11 +285,10 @@ static inline long gup_local_repeat(struct mm_struct *mm, uintptr_t start,
 	return ret;
 }
 
-static void tee_mmu_delete(struct tee_mmu *mmu)
+static int tee_mmu_free(struct tee_mmu *mmu)
 {
 	unsigned long i, nr_pages_left = mmu->nr_pages;
-
-	fc_reclaim_buffer(mmu);
+	u64 *pte64_bak = 0;
 
 #ifdef CONFIG_DMA_SHARED_BUFFER
 	if (mmu->dma_buf) {
@@ -272,7 +339,30 @@ static void tee_mmu_delete(struct tee_mmu *mmu)
 				}
 #else
 				{
-					pte.pte = *pte64++;
+					unsigned long v_pte64 = 0;
+
+					v_pte64 = *pte64;
+					/*
+					 * Check if the current page is shared.
+					 * Otherwise, take the backup (*pte64
+					 * == 0 means not shared)
+					 */
+					if (v_pte64 == 0 && pte64_bak != 0)
+						v_pte64 = *pte64_bak;
+
+					/* Real 16Kb to unpin */
+					pte.pte =
+						ALIGN_DOWN(v_pte64, PAGE_SIZE);
+					/* Note: RATIO_PAGE_SIZE can be greater
+					 * than 1. In this case, one kernel
+					 * page contains multiple kinibi pages.
+					 * Jump to avoid unpin the same page
+					 * multiple times.
+					 */
+					pte64 = pte64 + RATIO_PAGE_SIZE;
+					pte64_bak =
+						pte64 - mmu->first_page_pos;
+
 					/* Unused entries are 0 */
 					if (!pte.pte)
 						break;
@@ -306,16 +396,54 @@ static void tee_mmu_delete(struct tee_mmu *mmu)
 			   "leak detected: still in use %d, still locked %d",
 			   mmu->pages_created, mmu->pages_locked);
 		/* Do not free the mmu, so the error can be spotted */
-		return;
+		return -EUCLEAN;
 	}
 
 	if (mmu->deleter)
 		mmu->deleter->delete(mmu->deleter->object);
 
+#ifdef MC_SHADOW_BUFFER
+	if (mmu->shadow.buffer)
+		tee_mmu_free_shadow(mmu);
+#endif /* MC_SHADOW_BUFFER */
+
 	kfree(mmu);
 
 	/* Decrement debug counter */
 	atomic_dec(&g_ctx.c_mmus);
+
+	return 0;
+}
+
+static int tee_mmu_delete(struct tee_mmu *mmu)
+{
+#ifdef MC_SHADOW_BUFFER
+	int ret = 0;
+	struct tee_mmu_zombie *mmu_zombie = NULL;
+
+	ret = fc_reclaim_buffer(mmu);
+	if (ret != 0) {
+		mmu_zombie = kzalloc(sizeof(*mmu_zombie), GFP_KERNEL);
+		if (!mmu_zombie)
+			return -ENOMEM;
+
+		INIT_LIST_HEAD(&mmu_zombie->list);
+		mmu_zombie->mmu = mmu;
+
+		mutex_lock(&mmu_lock);
+		list_add_tail(&mmu_zombie->list, &mmu_zombies);
+		mutex_unlock(&mmu_lock);
+
+		mc_dev_devel("Add %p in zombie", mmu);
+
+		return -EACCES;
+	}
+#else
+	fc_reclaim_buffer(mmu);
+#endif /* MC_SHADOW_BUFFER */
+	tee_mmu_free(mmu);
+
+	return 0;
 }
 
 static struct tee_mmu *tee_mmu_create_common(const struct mcp_buffer_map *b_map)
@@ -325,7 +453,7 @@ static struct tee_mmu *tee_mmu_create_common(const struct mcp_buffer_map *b_map)
 	unsigned long nr_pages =
 		PAGE_ALIGN(b_map->offset + b_map->length) / PAGE_SIZE;
 
-	/* Allow Registered Shared mem with valid pointer and zero size.  */
+	/* Allow Registered Shared mem with valid pointer and zero size. */
 	if (!nr_pages)
 		nr_pages = 1;
 
@@ -367,7 +495,7 @@ static struct tee_mmu *tee_mmu_create_common(const struct mcp_buffer_map *b_map)
 	return mmu;
 
 end:
-	tee_mmu_delete(mmu);
+	tee_mmu_free(mmu);
 	return ERR_PTR(ret);
 }
 
@@ -404,8 +532,8 @@ err_attach:
  * Allocate MMU table and map buffer into it.
  * That is, create respective table entries.
  */
-struct tee_mmu *tee_mmu_create(struct mm_struct *mm,
-			       const struct mc_ioctl_buffer *buf)
+static struct tee_mmu *mmu_create_instance(struct mm_struct *mm,
+					   const struct mc_ioctl_buffer *buf)
 {
 	struct tee_mmu	*mmu;
 	const void	*data = (const void *)(uintptr_t)buf->va;
@@ -484,9 +612,6 @@ struct tee_mmu *tee_mmu_create(struct mm_struct *mm,
 		if (mmu->use_pages_and_vas)
 			mmu->pmd_table.vas[chunk] =
 				mmu->pte_tables[chunk].page;
-		else
-			mmu->pmd_table.entries[chunk] =
-			       virt_to_phys(mmu->pte_tables[chunk].addr);
 
 		/* Get pages */
 		if (mmu->dma_buf) {
@@ -593,36 +718,201 @@ struct tee_mmu *tee_mmu_create(struct mm_struct *mm,
 		if (mmu->use_pages_and_vas) {
 			memcpy(mmu->pte_tables[chunk].pages, pages,
 			       nr_pages * sizeof(*pages));
-		} else {
-			for (i = 0; i < nr_pages; i++) {
-				mmu->pte_tables[chunk].entries[i] =
-						page_to_phys(pages[i]);
-			}
 		}
 		pages += nr_pages;
+	}
+	/*
+	 * Create mmu pte table for Kinibi. A readme is given in
+	 * mmu_readme.txt
+	 */
+	if (!mmu->use_pages_and_vas) {
+		u32 ofs_kinibi, first_page_pos, length;
+		u32 total_pages_kinibi, total_pages_linux;
+		u64 phys_addr;
+		void *adr;
+		int c_pages, pg_linux, pg_kinibi, idx_mod, idx;
+		int j, k, modulo, sum;
+
+		ofs_kinibi = (u32)(buf->va & ~KINIBI_PAGE_MASK);
+		first_page_pos  = mmu->offset / KINIBI_PAGE_SIZE;
+		total_pages_linux = mmu->nr_pages;
+		length = mmu->length;
+
+		chunk = 0;
+		k = 0;
+		pg_linux = 0;
+		pg_kinibi = 0;
+		total_pages_kinibi = KINIBI_PAGE_ALIGN(ofs_kinibi + length);
+		total_pages_kinibi = total_pages_kinibi  / KINIBI_PAGE_SIZE;
+		/* Ensure 1 minimum page */
+		if (total_pages_kinibi == 0)
+			total_pages_kinibi = 1;
+
+		sum = RATIO_PAGE_SIZE + first_page_pos;
+		while (pg_kinibi < total_pages_kinibi) {
+			c_pages = pg_linux;
+			phys_addr = page_to_phys(all_pages[c_pages]);
+			for (j = first_page_pos; j < sum; j++) {
+				/*
+				 * If first_page_pos is greater than 0,
+				 * borrow first_page_pos pages from the
+				 * next kernel page, i.e. first_page_pos = 2,
+				 * borrow 2 pages
+				 */
+				if (j == RATIO_PAGE_SIZE) {
+					c_pages++;
+					phys_addr =
+					page_to_phys(all_pages[c_pages]);
+				}
+				chunk = pg_kinibi / PTE_ENTRIES_MAX;
+				idx_mod = f_modulo(pg_kinibi, PTE_ENTRIES_MAX);
+				modulo = f_modulo(chunk, RATIO_PAGE_SIZE);
+				idx = idx_mod + modulo * PTE_ENTRIES_MAX;
+
+				/* Each pte_tables[i] contains RATIO_PAGE_SIZE
+				 * chunks. For instance, RATIO_PAGE_SIZE = 4
+				 * the size of pte table is extended to
+				 * (4 * PTE_ENTRIES_MAX)
+				 */
+				k = chunk / RATIO_PAGE_SIZE;
+				modulo = f_modulo(j, RATIO_PAGE_SIZE);
+				mmu->pte_tables[k].entries[idx] =
+					phys_addr + modulo * KINIBI_PAGE_SIZE;
+
+				if (idx_mod == 0) {
+					adr = &mmu->pte_tables[k].entries[idx];
+					mmu->pmd_table.entries[chunk] =
+							virt_to_phys(adr);
+				}
+				pg_kinibi++;
+				if (pg_kinibi == total_pages_kinibi)
+					break;
+			}
+			pg_linux++;
+		}
+
+		c_pages++;
+		if (c_pages != total_pages_linux ||
+		    pg_kinibi != total_pages_kinibi) {
+			ret = -EINVAL;
+			mc_dev_err(ret, "page number mismatch");
+		}
+		#ifndef MC_FFA_FASTCALL
+		/*
+		 * Update page offset value with kinibi-based one in
+		 * case of legacy mode
+		 */
+		mmu->offset = ofs_kinibi;
+		#endif
+		mmu->first_page_pos = first_page_pos;
 	}
 
 end:
 	if (ret) {
 		kfree(all_pages);
-		tee_mmu_delete(mmu);
+		tee_mmu_free(mmu);
 		return ERR_PTR(ret);
 	}
 
+	mmu->all_pages = all_pages;
+
+	mc_dev_devel(
+		"created mmu %p: %s va %llx len %u off %u flg %x pmd %lx",
+		mmu, mmu->user ? "user" : "kernel", buf->va, mmu->length,
+		mmu->offset, mmu->flags, mmu->pmd_table.page);
+	return mmu;
+}
+
+static inline int tee_mmu_register_buffer(struct tee_mmu	*mmu,
+					  const struct mc_ioctl_buffer *buf)
+{
+	int ret = -ENOMEM;
+	struct page	**all_pages = NULL;
+
+	all_pages = mmu->all_pages;
 	if (all_pages) {
 		ret = fc_register_buffer(all_pages, mmu, buf->tag);
 		kfree(all_pages);
+		mmu->all_pages = NULL;
 		if (ret) {
-			tee_mmu_delete(mmu);
-			mc_dev_err(ret, "sharing buffer");
-			return ERR_PTR(ret);
+			tee_mmu_free(mmu);
+			mc_dev_err(ret, "sharing buffer failed, free mmu %p",
+				   mmu);
 		}
 	}
+	return ret;
+}
 
-	mc_dev_devel(
-		"created mmu %p: %s va %llx len %u off %u flg %x pmd table %lx",
-		mmu, mmu->user ? "user" : "kernel", buf->va, mmu->length,
-		mmu->offset, mmu->flags, mmu->pmd_table.page);
+struct tee_mmu *tee_mmu_create(struct mm_struct *mm,
+			       const struct mc_ioctl_buffer *buf)
+{
+	struct tee_mmu *mmu;
+	struct mm_struct *temp_mm;
+	int i;
+	int ret = 0;
+	struct mc_ioctl_buffer buf_in;
+	void *shadow_buffer = NULL;
+	u32 offset, length;
+	size_t size, order;
+
+	temp_mm = mm;
+	memcpy(&buf_in, buf, sizeof(struct mc_ioctl_buffer));
+
+	offset = offset_in_page(buf->va);
+	length = buf->len;
+
+	size = PAGE_ALIGN(offset + length);
+	order = size ? get_order(size) : 0;
+
+	i = 0;
+	do {
+		if (shadow_buffer)
+			temp_mm = NULL;/*handle shadow buffer*/
+
+		mmu = mmu_create_instance(temp_mm, &buf_in);
+
+		/* if failed, no mmu nor all_pages */
+		if (IS_ERR(mmu))
+			return mmu;
+
+		ret = tee_mmu_register_buffer(mmu, &buf_in);
+		/*registered with success, break the loop*/
+		if (!ret)
+			break;
+#ifdef MC_SHADOW_BUFFER
+		/*memory register failed*/
+		if (shadow_buffer) {
+			free_pages((unsigned long)shadow_buffer, order);
+			return ERR_PTR(ret);
+		}
+
+		/*(re)allocate a shadow buffer in kernel space*/
+		shadow_buffer = mmu_allocate_shadow_buffer(order);
+		if (IS_ERR(shadow_buffer))
+			return ERR_PTR(-ENOMEM);
+
+		buf_in.va = (__u64)shadow_buffer + offset;
+		mc_dev_devel("shadow buffer %llx with order %lx",
+			     (u64)shadow_buffer, order);
+#else
+		return ERR_PTR(ret);
+#endif /* MC_SHADOW_BUFFER */
+		i++;
+	} while (i < 2);
+
+	mmu->shadow.order = order;
+	mmu->shadow.cva = (void *)buf->va;
+
+#ifdef MC_SHADOW_BUFFER
+	if (shadow_buffer) {/*set shadow buffer*/
+		mmu->shadow.buffer = shadow_buffer + offset;
+		tee_mmu_copy_to_shadow(mmu);
+	}
+#endif /* MC_SHADOW_BUFFER */
+
+	mc_dev_devel("mmu %p shadow buffer %p client va %llx, order %d",
+		     mmu, mmu->shadow.buffer, (u64)mmu->shadow.cva,
+		     (int)mmu->shadow.order);
 	return mmu;
 }
 
@@ -686,7 +976,7 @@ struct tee_mmu *tee_mmu_wrap(struct tee_deleter *deleter, struct page **pages,
 	return mmu;
 
 err:
-	tee_mmu_delete(mmu);
+	tee_mmu_free(mmu);
 #endif
 	return ERR_PTR(ret);
 }
@@ -786,10 +1076,121 @@ struct tee_mmu *tee_mmu_create_and_init(void)
 	mmu = kzalloc(sizeof(*mmu), GFP_KERNEL);
 	if (!mmu)
 		return ERR_PTR(-ENOMEM);
-
 	/* Increment debug counter */
 	atomic_inc(&g_ctx.c_mmus);
 	kref_init(&mmu->kref);
 
 	return mmu;
 }
+
+#ifdef MC_SHADOW_BUFFER
+int tee_mmu_copy_to_shadow(struct tee_mmu *mmu)
+{
+	void *shadow_buffer, *client_va;
+	size_t size;
+	int ret = 0;
+
+	/*need to check null pointer*/
+	if (!mmu)
+		return -EINVAL;
+
+	/*if no shadow buffer, consider as succes*/
+	if (!mmu->shadow.buffer)
+		return ret;
+
+	shadow_buffer = mmu->shadow.buffer;
+	client_va = mmu->shadow.cva;
+	size = (size_t)mmu->length;
+
+	mc_dev_devel("mmu %p copy to shadow %llx from client %llx size %d",
+		     mmu, (u64)shadow_buffer, (u64)client_va, (int)size);
+
+	/*if client is from kernel*/
+	if (is_vmalloc_addr(client_va))
+		memcpy(shadow_buffer, client_va, size);
+	else
+		ret = (int)copy_from_user(shadow_buffer, client_va, size);
+
+	if (ret != 0) {
+		mc_dev_devel("%d bytes copy from user failed", ret);
+		ret = -EFAULT;
+	}
+
+	mc_dev_devel("1st 2 bytes in shadow buffer %02x %02x",
+		     *(u8 *)shadow_buffer,
+		     *((u8 *)shadow_buffer + 1));
+
+	return ret;
+}
+
+int tee_mmu_copy_from_shadow(struct tee_mmu *mmu)
+{
+	void *shadow_buffer, *client_va;
+	size_t size;
+	int ret = 0;
+
+	/*need to check null pointer*/
+	if (!mmu)
+		return -EINVAL;
+
+	/*if no shadow buffer, consider as succes*/
+	if (!mmu->shadow.buffer)
+		return ret;
+
+	shadow_buffer = mmu->shadow.buffer;
+	client_va = mmu->shadow.cva;
+	size = (size_t)mmu->length;
+
+	mc_dev_devel("mmu %p copy from shadow %llx to client %llx size %d",
+		     mmu, (u64)shadow_buffer, (u64)client_va, (int)size);
+
+	mc_dev_devel("1st 2 bytes in shadow buffer %02x %02x",
+		     *(u8 *)shadow_buffer,
+		     *((u8 *)shadow_buffer + 1));
+
+	/*if client is from kernel*/
+	if (is_vmalloc_addr(client_va))
+		memcpy(client_va, shadow_buffer, size);
+	else
+		ret = (int)copy_to_user(client_va, shadow_buffer, size);
+
+	if (ret != 0) {
+		mc_dev_devel("%d bytes copy from shadow failed", ret);
+		ret = -EFAULT;
+	}
+
+	return ret;
+}
+
+static void mmu_workqueue_handle(struct work_struct *work)
+{
+	struct tee_mmu_zombie *mmu_zombie = NULL;
+	struct tee_mmu_zombie *nop = NULL;
+	struct tee_mmu *mmu = NULL;
+	int ret = 0;
+
+	mutex_lock(&mmu_lock);
+	list_for_each_entry_safe(mmu_zombie, nop, &mmu_zombies, list) {
+		mmu = mmu_zombie->mmu;
+		ret = fc_reclaim_buffer(mmu);
+		if (ret == 0) {
+			tee_mmu_free(mmu);
+			list_del(&mmu_zombie->list);
+			kfree(mmu_zombie);
+		}
+		mc_dev_devel("zombie delete mmu %p, handle %llx in %p return %d",
+			     mmu, mmu->handle, mmu_zombie, ret);
+	}
+	mutex_unlock(&mmu_lock);
+}
+
+void tee_mmu_delete_zombies(void)
+{
+	schedule_work(&mmu_workqueue);
+}
+
+void mmu_init(void)
+{
+	mutex_init(&mmu_lock);
+}
+#endif /* MC_SHADOW_BUFFER  */

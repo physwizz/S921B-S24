@@ -189,8 +189,8 @@ int mfc_core_pm_clock_on(struct mfc_core *core, bool qos_update)
 	if (!core->dev->multi_core_inst_bits && !core->dev->debugfs.hwacg_disable)
 		mfc_core_mfc_on(core);
 
-	mfc_core_debug(2, "+ %d\n", state);
-	MFC_TRACE_LOG_CORE("c+%d", state);
+	mfc_core_debug(2, "clk_ref = %d\n", state);
+	MFC_TRACE_LOG_CORE("clk_ref = %d", state);
 
 	if (qos_update && state == 1)
 		mfc_qos_update(core, 1);
@@ -217,13 +217,16 @@ void mfc_core_pm_clock_off(struct mfc_core *core, bool qos_update)
 		}
 	}
 
-	if (!core->dev->multi_core_inst_bits && !core->dev->debugfs.hwacg_disable)
+	state = atomic_read(&core->clk_ref);
+
+	if (!core->dev->multi_core_inst_bits && !core->dev->debugfs.hwacg_disable
+			&& !state)
 		mfc_core_mfc_off(core);
 
 	core->pm.clock_off_steps |= 0x1 << 5;
-	state = atomic_read(&core->clk_ref);
-	mfc_core_debug(2, "- %d\n", state);
-	MFC_TRACE_LOG_CORE("c-%d", state);
+
+	mfc_core_debug(2, "clk_ref = %d\n", state);
+	MFC_TRACE_LOG_CORE("clk_ref = %d", state);
 
 	if (qos_update && state == 0)
 		mfc_qos_update(core, 0);

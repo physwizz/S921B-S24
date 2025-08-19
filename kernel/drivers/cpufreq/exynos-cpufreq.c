@@ -45,11 +45,6 @@ struct exynos_cpufreq_file_operations {
 	unsigned int			default_value;
 };
 
-enum {
-	NON_BLOCKING = 0,
-	BLOCKING,
-};
-
 struct exynos_cpufreq_domain {
 	bool				enabled;
 
@@ -69,7 +64,6 @@ struct exynos_cpufreq_domain {
 	unsigned int			old;
 	unsigned int			last;
 
-	bool				fast_switch_possible;
 	bool				fast_switch;
 	raw_spinlock_t			fast_switch_lock;
 
@@ -91,11 +85,6 @@ struct exynos_cpufreq_domain {
 	struct list_head		dm_list;
 
 	struct mutex			lock;
-
-	bool				dvfs_mode;
-
-	/* fake boot freq flag */
-	bool				valid_freq_flag;
 };
 
 unsigned int dm_dsu_type;
@@ -299,57 +288,6 @@ static int init_fops(struct exynos_cpufreq_domain *domain, struct cpufreq_policy
 /******************************************************************************
  *                            FREQUENCY SCALING                               *
  ******************************************************************************/
-#if IS_ENABLED(CONFIG_SEC_BOOTSTAT)
-static unsigned int get_freq(struct exynos_cpufreq_domain *domain)
-{
-	unsigned int freq;
-
-	/* valid_freq_flag indicates whether boot freq is in the freq table or not.
-	 * so, to prevent cpufreq mulfuntion, return old freq instead of cal freq
-	 * until the frequency changes even once.
-	 */
-	if (unlikely(!domain->valid_freq_flag && domain->old))
-		return domain->old;
-
-	freq = (unsigned int)cal_dfs_get_rate(domain->cal_id);
-	if (!freq) {
-		/* On changing state, CAL returns 0 */
-		freq = domain->old;
-	}
-
-	return freq;
-}
-
-/*
-static int set_freq(struct exynos_cpufreq_domain *domain,
-					unsigned int target_freq)
-{
-	int err;
-
-	dbg_snapshot_printk("ID %d: %d -> %d (%d)\n",
-		domain->id, domain->old, target_freq, DSS_FLAG_IN);
-
-	if (domain->fast_switch_possible && domain->dvfs_mode == NON_BLOCKING) {
-		err = cal_dfs_set_rate_fast(domain->cal_id, target_freq);
-	}
-	else
-		err = cal_dfs_set_rate(domain->cal_id, target_freq);
-
-	if (err < 0)
-		pr_err("failed to scale frequency of domain%d (%d -> %d)\n",
-			domain->id, domain->old, target_freq);
-
-	if (!domain->fast_switch_possible || domain->dvfs_mode == BLOCKING)
-		trace_acme_scale_freq(domain->id, domain->old, target_freq, "end", 0);
-
-	dbg_snapshot_printk("ID %d: %d -> %d (%d)\n",
-		domain->id, domain->old, target_freq, DSS_FLAG_OUT);
-
-	return err;
-}
-*/
-#endif
-
 static void debug_pre_scale(struct exynos_cpufreq_domain *domain, unsigned int target_freq)
 {
 	dbg_snapshot_freq(domain->dss_type, domain->old, target_freq, DSS_FLAG_IN);
@@ -1057,32 +995,6 @@ init_fail:
 	return 0;
 }
 
-#if IS_ENABLED(CONFIG_SEC_BOOTSTAT)
-void sec_bootstat_get_cpuinfo(int *freq, int *online)
-{
-	int cpu;
-	int cluster;
-	struct exynos_cpufreq_domain *domain;
-
-	get_online_cpus();
-	*online = cpumask_bits(cpu_online_mask)[0];
-	for_each_online_cpu(cpu) {
-		domain = find_domain(cpu);
-		if (!domain)
-			continue;
-		pr_err("%s, dm type = %d\n", __func__, domain->dm_type);
-		cluster = 0;
-		if (domain->dm_type == DM_CPU_CL0 || domain->dm_type == DM_CPU_CL1L ||
-			domain->dm_type == DM_CPU_CL1H || domain->dm_type == DM_CPU_CL2)
-			cluster = domain->dm_type - 2;	// cluster dm_type : 2 ~ 5
-
-		freq[cluster] = get_freq(domain);
-	}
-	put_online_cpus();
-}
-EXPORT_SYMBOL(sec_bootstat_get_cpuinfo);
-#endif
-
 /******************************************************************************
  *                             CPU HOTPLUG CALLBACK                           *
  ******************************************************************************/
@@ -1487,7 +1399,8 @@ static int init_freq_qos(struct exynos_cpufreq_domain *domain,
 			domain->id, boot_qos, boost_duration);
 
 	INIT_DELAYED_WORK(&domain->work, freq_qos_release);
-	schedule_delayed_work(&domain->work, msecs_to_jiffies(boost_duration));
+	if (!__is_defined(CONFIG_SEC_FACTORY_INTERPOSER))
+                schedule_delayed_work(&domain->work, msecs_to_jiffies(boost_duration));
 
 	return 0;
 }

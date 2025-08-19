@@ -305,7 +305,7 @@
 
 			eint-wakeup-masks {
 				eint-wakeup-mask {
-					mask-reg-offset = <0x60c>;
+					mask-reg-offset = <0x3e40>;
 				};
 			};
 		};

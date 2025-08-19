@@ -274,6 +274,8 @@
   sched_clock
   sched_show_task
   scnprintf
+  scsi_device_quiesce
+  scsi_device_resume
   seq_hex_dump
   seq_lseek
   seq_printf
@@ -286,6 +288,7 @@
   skb_copy_ubufs
   smpboot_register_percpu_thread
   smpboot_unregister_percpu_thread
+  snd_ctl_remove_id
   snd_soc_add_card_controls
   snd_soc_find_dai
   snd_soc_info_volsw_sx
@@ -433,3 +436,5 @@
   watchdog_init_timeout
   watchdog_register_device
   watchdog_unregister_device
+  scsi_device_quiesce
+  scsi_device_resume

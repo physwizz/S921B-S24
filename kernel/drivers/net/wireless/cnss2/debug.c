@@ -178,6 +178,9 @@ static int cnss_stats_show_state(struct seq_file *s,
 		case CNSS_DRIVER_REGISTERED:
 			seq_puts(s, "DRIVER REGISTERED");
 			continue;
+		case CNSS_PROBE_FAILED:
+			seq_puts(s, "CNSS_PROBE_FAILED");
+			continue;
 		}
 
 		seq_printf(s, "UNKNOWN-%d", i);

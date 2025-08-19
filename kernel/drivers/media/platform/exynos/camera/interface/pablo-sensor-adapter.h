@@ -38,7 +38,8 @@ struct pablo_sensor_adt_ops {
 	int (*start)(struct pablo_sensor_adt *sensor_adt);
 	int (*stop)(struct pablo_sensor_adt *sensor_adt);
 	int (*update_actuator_info)(struct pablo_sensor_adt *adt, bool block);
-	int (*get_sensor_info)(struct pablo_sensor_adt *adt, struct pablo_crta_sensor_info *prsi);
+	int (*get_sensor_info)(
+		struct pablo_sensor_adt *adt, struct pablo_crta_sensor_info *prsi, u32 fcount);
 	int (*control_sensor)(struct pablo_sensor_adt *adt, struct pablo_sensor_control_info *psci,
 		dma_addr_t dva, u32 idx);
 	int (*register_control_sensor_callback)(struct pablo_sensor_adt *adt, void *caller,

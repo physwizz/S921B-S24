@@ -937,3 +937,78 @@ int is_vendor_device_info_set_mipi_phy(void __user *user_data)
 	return ret;
 }
 
+int is_vendor_device_info_get_lens_distance_data(void __user *user_data)
+{
+	int ret = 0;
+	struct is_vendor_rom *rom_info;
+	int position;
+	int rom_id;
+	char *cal_buf;
+	int rom_cal_index = 0;
+	int i;
+	uint32_t tempbuf[AF_CAL_DISTANCE_MAX + 1];
+	int32_t rom_af_distance_use_addr, rom_af_position_use_addr, rom_af_cal_use_addr_len;
+	struct device_info_data_ctrl lens_data_addr_ctrl;
+
+	if (copy_from_user((void *)&lens_data_addr_ctrl, user_data, sizeof(struct device_info_data_ctrl))) {
+		err("%s : failed to copy data from user", __func__);
+		ret = -EINVAL;
+	}
+
+	position = lens_data_addr_ctrl.param1;
+	is_vendor_get_rom_info_from_position(position, &rom_id, &rom_cal_index);
+
+	if (rom_id == ROM_ID_NOTHING) {
+		err("%s : invalid camera position (%d)", __func__, position);
+		return -EINVAL;
+	}
+
+	is_sec_get_rom_info(&rom_info, rom_id);
+	cal_buf = rom_info->buf;
+
+	if (cal_buf == NULL) {
+		err("%s: cal_buf is NULL", __func__);
+		return -EINVAL;
+	}
+
+	rom_af_cal_use_addr_len = 0;
+
+	if (rom_cal_index == 1 && rom_info->rom_sensor2_af_distance_cal_addr_len)
+		rom_af_cal_use_addr_len = rom_info->rom_sensor2_af_distance_cal_addr_len;
+	else if (rom_cal_index == 0 && rom_info->rom_af_distance_cal_addr_len)
+		rom_af_cal_use_addr_len = rom_info->rom_af_distance_cal_addr_len;
+
+	lens_data_addr_ctrl.ptr_size = rom_af_cal_use_addr_len;
+	memset(tempbuf, 0, sizeof(tempbuf));
+
+	if(rom_info->skip_cal_loading || rom_info->crc_error || !rom_af_cal_use_addr_len) {
+		lens_data_addr_ctrl.ptr_size = 0;
+		goto exit;
+	}
+
+	for (i = 0; i < rom_af_cal_use_addr_len; i += 2) {
+		if (rom_cal_index == 1) {
+			rom_af_distance_use_addr = rom_info->rom_sensor2_af_distance_cal_addr[i];
+			rom_af_position_use_addr = rom_info->rom_sensor2_af_distance_cal_addr[i+1];
+		} else {
+			rom_af_distance_use_addr = rom_info->rom_af_distance_cal_addr[i];
+			rom_af_position_use_addr = rom_info->rom_af_distance_cal_addr[i+1];
+		}
+
+		memcpy(&tempbuf[i], (uint16_t *)&cal_buf[rom_af_distance_use_addr], sizeof(uint16_t));
+		memcpy(&tempbuf[i + 1], &cal_buf[rom_af_position_use_addr], sizeof(uint32_t));
+	}
+
+exit:
+	if (copy_to_user(user_data, &lens_data_addr_ctrl, sizeof(struct  device_info_data_ctrl))) {
+		err("%s : failed to copy data to user", __func__);
+		return -EINVAL;
+	}
+
+	if (copy_to_user(lens_data_addr_ctrl.uint32_ptr, &tempbuf, sizeof(uint32_t) * AF_CAL_DISTANCE_MAX)) {
+		err("%s : failed to copy data to user", __func__);
+		ret = -EINVAL;
+	}
+
+	return ret;
+}

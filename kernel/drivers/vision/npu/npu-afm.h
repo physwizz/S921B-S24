@@ -46,6 +46,22 @@
 #define S2MPS_AFM_WARN_DEFAULT_LVL	(0x00)
 #define S2MPS_AFM_WARN_LVL_MASK		(0xFF)
 
+#if IS_ENABLED(CONFIG_SOC_S5E9945)
+static const u32 NPU_AFM_FREQ_LEVEL[] = {
+	1300000,
+	1200000,
+	1066000,
+	935000,
+	800000,
+};
+#else // IS_ENABLED(CONFIG_SOC_S5E8845)
+static const u32 NPU_AFM_FREQ_LEVEL[] = {
+	1066000,
+	800000,
+	666000,
+};
+#endif
+
 enum {
 	NPU_AFM_MODE_NORMAL = 0,
 	NPU_AFM_MODE_TDC,
@@ -66,6 +82,12 @@ struct npu_afm_tdc {
        u32 gnpu1_cnt;
 };
 
+void __npu_afm_work(const char *ip, int freq);
+void npu_afm_control_global(struct npu_system *system, int location, int enable);
+void npu_afm_clear_dnc_interrupt(void);
+void npu_afm_onoff_dnc_interrupt(int enable);
+void npu_afm_clear_gnpu1_interrupt(void);
+void npu_afm_onoff_gnpu1_interrupt(int enable);
 void npu_afm_open(struct npu_system *system, int hid);
 void npu_afm_close(struct npu_system *system, int hid);
 int npu_afm_probe(struct npu_device *device);

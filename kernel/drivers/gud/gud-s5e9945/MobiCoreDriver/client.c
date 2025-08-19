@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2013-2022 TRUSTONIC LIMITED
+ * Copyright (c) 2013-2023 TRUSTONIC LIMITED
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -160,7 +160,8 @@ static struct cwsm *cwsm_create(struct tee_client *client,
 	mutex_lock(&client->quick_lock);
 	list_add_tail(&cwsm->list, &client->cwsms);
 	mutex_unlock(&client->quick_lock);
-	mc_dev_devel("created cwsm %p: client %p sva %x", cwsm, client, sva);
+	mc_dev_devel("created cwsm %p: client %p sva %x mmu %p buffer %llx",
+		     cwsm, client, sva, cwsm->mmu, memref->buffer);
 	/* Increment debug counter */
 	atomic_inc(&g_ctx.c_cwsms);
 	return cwsm;
@@ -252,6 +253,22 @@ static inline struct cwsm *cwsm_find_by_sva(struct tee_client *client, u32 sva)
 	return cwsm;
 }
 
+static inline struct cwsm *cwsm_find_by_mmu(struct tee_client *client,
+					    struct tee_mmu *mmu)
+{
+	struct cwsm *cwsm = NULL, *candidate;
+
+	mutex_lock(&client->quick_lock);
+	list_for_each_entry(candidate, &client->cwsms, list)
+		if (candidate->mmu == mmu) {
+			cwsm = candidate;
+			cwsm_get(cwsm);
+			break;
+		}
+	mutex_unlock(&client->quick_lock);
+	return cwsm;
+}
+
 /*
  * Returns the secure virtual address from a registered mem
  */
@@ -265,6 +282,21 @@ u32 client_get_cwsm_sva(struct tee_client *client,
 
 	mc_dev_devel("found sva %x", cwsm->sva);
 	return cwsm->sva;
+}
+
+/*
+ * Returns the mmu object from a registered memref
+ */
+struct tee_mmu *client_get_cwsm_mmu(struct tee_client *client,
+				    const struct gp_shared_memory *memref)
+{
+	struct cwsm *cwsm = cwsm_find(client, memref);
+
+	if (!cwsm)
+		return 0;
+
+	mc_dev_devel("found mmu %p", cwsm->mmu);
+	return cwsm->mmu;
 }
 
 void client_get(struct tee_client *client)
@@ -282,6 +314,22 @@ void client_put_cwsm_sva(struct tee_client *client, u32 sva)
 		goto end;
 
 	/* Release reference taken by cwsm_find_by_sva */
+	cwsm_put(cwsm);
+	cwsm_put(cwsm);
+end:
+	mutex_unlock(&client->cwsm_release_lock);
+}
+
+void client_put_cwsm_mmu(struct tee_client *client, struct tee_mmu *mmu)
+{
+	struct cwsm *cwsm;
+
+	mutex_lock(&client->cwsm_release_lock);
+	cwsm = cwsm_find_by_mmu(client, mmu);
+	if (!cwsm)
+		goto end;
+
+	/* Release reference taken by cwsm_find_by_mmu */
 	cwsm_put(cwsm);
 	cwsm_put(cwsm);
 end:
@@ -680,6 +728,80 @@ int client_waitnotif_session(struct tee_client *client, u32 session_id,
 	session_put(session);
 	mc_dev_devel("session %x, exit with %d", session_id, ret);
 	return ret;
+}
+
+int client_get_session_state(struct tee_client *client, u32 session_id)
+{
+	struct tee_session *session;
+	int ret;
+
+	/* Find/get session */
+	session = client_get_session(client, session_id);
+	if (!session)
+		return -ENXIO;
+
+	ret = session_get_state(session);
+
+	/* Put session */
+	session_put(session);
+	mc_dev_devel("session %x, exit with %d", session_id, ret);
+	return ret;
+}
+
+int client_is_wait_cancelled(struct tee_client *client, u32 session_id,
+			     int *cancelled_status)
+{
+	struct tee_session *session;
+
+	/* Find/get session */
+	session = client_get_session(client, session_id);
+	if (!session)
+		return -ENXIO;
+
+	*cancelled_status = session->is_cancelled;
+	/* Put session */
+	session_put(session);
+	mc_dev_devel("Cancel state %d for session %x",
+		     *cancelled_status, session_id);
+	return 0;
+}
+
+int client_set_wait_cancelled(struct tee_client *client, u32 session_id)
+{
+	struct tee_session *session;
+
+	mc_dev_devel("Cancel wait in session %x", session_id);
+
+	/* Find/get session */
+	session = client_get_session(client, session_id);
+	if (!session)
+		return -ENXIO;
+
+	if (session->is_cancelled) {
+		mc_dev_err(-EINVAL, "unexpected cancel on already cancelled session %x",
+			   session_id);
+	}
+	session->is_cancelled = true;
+	/* Put session */
+	session_put(session);
+	return 0;
+}
+
+int client_unset_wait_cancelled(struct tee_client *client, u32 session_id)
+{
+	struct tee_session *session;
+
+	mc_dev_devel("Cancel disable for session %x", session_id);
+
+	/* Find/get session */
+	session = client_get_session(client, session_id);
+	if (!session)
+		return -ENXIO;
+
+	session->is_cancelled = false;
+	/* Put session */
+	session_put(session);
+	return 0;
 }
 
 /*

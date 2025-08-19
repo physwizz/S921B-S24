@@ -1934,6 +1934,15 @@ int cstat_hw_s_ds_cfg(void __iomem *base, enum cstat_dma_id dma_id,
 			else
 				dma_out->dma_crop_offset_y = 0;
 
+			if (dma_out->dma_crop_offset_x >= in_w ||
+				dma_out->dma_crop_offset_y >= in_h) {
+				err_hw("[CSTAT][%s] Invalid RMS incrop %dx%d -> %d,%d %dx%d",
+					cstat_dmas[dma_id].name, in_w, in_h,
+					dma_out->dma_crop_offset_x, dma_out->dma_crop_offset_y,
+					dma_out->dma_crop_width, dma_out->dma_crop_height);
+				return -EINVAL;
+			}
+
 			/* Update total size & check incrop boundary again */
 			total_w = dma_out->dma_crop_offset_x +
 				  dma_out->dma_crop_width;

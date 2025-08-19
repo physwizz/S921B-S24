@@ -100,6 +100,18 @@ config CAMERA_ESX_V03
         default n
         help
           This camera is esx_v03.
+config CAMERA_RSX_V12
+        bool "This camera is rsx_v12"
+        depends on CAMERA_VENDOR_MCD
+        default n
+        help
+          This camera is rsx_v12.
+config CAMERA_BRY_V7
+        bool "This camera is bry_v7"
+        depends on CAMERA_VENDOR_MCD
+        default n
+        help
+          This camera is bry_v7.
 config USE_OIS_TAMODE_CONTROL
 	bool "Use ois TAMODE control"
         depends on CAMERA_VENDOR_MCD

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2013-2021 TRUSTONIC LIMITED
+ * Copyright (c) 2013-2023 TRUSTONIC LIMITED
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -372,9 +372,22 @@ int fc_trace_set_level(u32 level)
 	return smc(&fc);
 }
 
-int fc_trace_deinit(void)
+int fc_vm_create(void)
 {
-	return fc_trace_init(0, 0);
+	union fc_sched_init fc;
+
+	memset(&fc, 0, sizeof(fc));
+	fc.in.cmd = MC_FC_VM_CREATE;
+	return smc(&fc);
+}
+
+int fc_vm_destroy(void)
+{
+	union fc_sched_init fc;
+
+	memset(&fc, 0, sizeof(fc));
+	fc.in.cmd = MC_FC_VM_DESTROY;
+	return smc(&fc);
 }
 
 /* sid, payload only used for debug purpose */
@@ -505,7 +518,7 @@ int fc_register_buffer(struct page **pages, struct tee_mmu *mmu, u64 tag)
 	return ret;
 }
 
-void fc_reclaim_buffer(struct tee_mmu *mmu)
+int fc_reclaim_buffer(struct tee_mmu *mmu)
 {
 	int ret = 0;
 
@@ -522,6 +535,8 @@ void fc_reclaim_buffer(struct tee_mmu *mmu)
 	if (ret)
 		mc_dev_err(ret, "reclaiming buffer, handle %llx",
 			   mmu->handle);
+
+	return ret;
 }
 
 #ifdef MC_TEE_HOTPLUG

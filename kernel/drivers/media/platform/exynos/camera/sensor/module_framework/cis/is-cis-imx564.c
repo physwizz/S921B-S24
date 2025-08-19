@@ -664,6 +664,7 @@ int sensor_imx564_cis_stream_on(struct v4l2_subdev *subdev)
 	struct is_device_sensor *device;
 	struct is_cis *cis = sensor_cis_get_cis(subdev);
 	ktime_t st = ktime_get();
+	struct sensor_imx564_private_runtime *priv_runtime = (struct sensor_imx564_private_runtime *)cis->priv_runtime;
 
 	device = (struct is_device_sensor *)v4l2_get_subdev_hostdata(subdev);
 	WARN_ON(!device);
@@ -690,6 +691,8 @@ int sensor_imx564_cis_stream_on(struct v4l2_subdev *subdev)
 
 	cis->cis_data->stream_on = true;
 
+	priv_runtime->lte_on_delay = 0;
+
 	if (IS_ENABLED(DEBUG_SENSOR_TIME))
 		dbg_sensor(1, "[%s] time %lldus", __func__, PABLO_KTIME_US_DELTA_NOW(st));
 
@@ -700,6 +703,7 @@ int sensor_imx564_cis_stream_off(struct v4l2_subdev *subdev)
 {
 	int ret = 0;
 	u8 cur_frame_count = 0;
+	u8 frm_reflect_timing = 0;
 	struct is_cis *cis = sensor_cis_get_cis(subdev);
 	ktime_t st = ktime_get();
 
@@ -718,6 +722,13 @@ int sensor_imx564_cis_stream_off(struct v4l2_subdev *subdev)
 
 	cis->ixc_ops->read8(cis->client, 0x0005, &cur_frame_count);
 	info("%s: frame_count(0x%x) vsync_count(%d)\n", __func__, cur_frame_count, cis->cis_data->sen_vsync_count);
+
+	/* set FRM_REFLECT_TIMING to default(0x01)  */
+	cis->ixc_ops->read8(cis->client, 0x3014, &frm_reflect_timing);
+	if (frm_reflect_timing == 0) {
+		cis->ixc_ops->write8(cis->client, 0x3014, 0x01);
+		dbg_sensor(1, "[%s]set FRM_LENGTH_REFLECT_TIMING to 1h\n", __func__);
+	}
 
 	cis->ixc_ops->write8(cis->client, 0x0100, 0x00);
 	IXC_MUTEX_UNLOCK(cis->ixc_lock);
@@ -866,6 +877,54 @@ int sensor_imx564_cis_check_cit_contraint(struct v4l2_subdev *subdev, u16 *cit)
 	return 0;
 }
 
+int sensor_imx564_cis_set_frame_duration(struct v4l2_subdev *subdev, u32 frame_duration)
+{
+	int ret = 0;
+	struct is_cis *cis;
+	cis_shared_data *cis_data;
+	struct sensor_imx564_private_runtime *priv_runtime;
+	u8 fll_shifter = 0;
+
+	WARN_ON(!subdev);
+
+	cis = (struct is_cis *)v4l2_get_subdevdata(subdev);
+	cis_data = cis->cis_data;
+
+	WARN_ON(!cis);
+	WARN_ON(!cis->cis_data);
+
+	priv_runtime = (struct sensor_imx564_private_runtime *)cis->priv_runtime;
+
+	fll_shifter = sensor_cis_get_duration_shifter(cis, frame_duration);
+
+	IXC_MUTEX_LOCK(cis->ixc_lock);
+
+	if (fll_shifter > 0) {
+		if (priv_runtime->lte_on_delay < 2) {
+			ret |= cis->ixc_ops->write8(cis->client, 0x3014, 0x00);
+			dbg_sensor(1, "[%s][%u] set FRM_LENGTH_REFLECT_TIMING to 0h\n",
+				__func__, cis_data->sen_vsync_count);
+			priv_runtime->lte_on_delay = 2;
+		}
+	} else if (priv_runtime->lte_on_delay > 0) {
+		priv_runtime->lte_on_delay--;
+		if (priv_runtime->lte_on_delay == 0) {
+			ret |= cis->ixc_ops->write8(cis->client, 0x3014, 0x01);
+			dbg_sensor(1, "[%s][%u] set FRM_LENGTH_REFLECT_TIMING to 1h\n",
+				__func__, cis_data->sen_vsync_count);
+		}
+	}
+
+	IXC_MUTEX_UNLOCK(cis->ixc_lock);
+
+	if (ret < 0)
+		pr_err("ERR[%s]: setting FRM_LENGTH_REFLECT_TIMING for LTE failed.\n", __func__);
+
+	sensor_cis_set_frame_duration(subdev, frame_duration);
+
+	return ret;
+}
+
 static struct is_cis_ops cis_ops_imx564 = {
 	.cis_init = sensor_imx564_cis_init,
 	.cis_deinit = sensor_imx564_cis_deinit,
@@ -882,7 +941,7 @@ static struct is_cis_ops cis_ops_imx564 = {
 	.cis_get_min_exposure_time = sensor_cis_get_min_exposure_time,
 	.cis_get_max_exposure_time = sensor_cis_get_max_exposure_time,
 	.cis_adjust_frame_duration = sensor_cis_adjust_frame_duration,
-	.cis_set_frame_duration = sensor_cis_set_frame_duration,
+	.cis_set_frame_duration = sensor_imx564_cis_set_frame_duration,
 	.cis_set_frame_rate = sensor_cis_set_frame_rate,
 	.cis_adjust_analog_gain = sensor_cis_adjust_analog_gain,
 	.cis_set_analog_gain = sensor_cis_set_analog_gain,
@@ -923,6 +982,7 @@ static int cis_imx564_probe_i2c(struct i2c_client *client,
 	struct is_device_sensor_peri *sensor_peri;
 	char const *setfile;
 	struct device_node *dnode = client->dev.of_node;
+	struct sensor_imx564_private_runtime *priv_runtime;
 
 	ret = sensor_cis_probe(client, &(client->dev), &sensor_peri, I2C_TYPE);
 	if (ret) {
@@ -936,12 +996,22 @@ static int cis_imx564_probe_i2c(struct i2c_client *client,
 	/* belows are depend on sensor cis. MUST check sensor spec */
 	cis->bayer_order = OTF_INPUT_ORDER_BAYER_RG_GB;
 	cis->reg_addr = &sensor_imx564_reg_addr;
+	cis->priv_runtime = kzalloc(sizeof(struct sensor_imx564_private_runtime), GFP_KERNEL);
+	if (!cis->priv_runtime) {
+		kfree(cis->cis_data);
+		kfree(cis->subdev);
+		probe_err("cis->priv_runtime is NULL");
+		return -ENOMEM;
+	}
 
 	ret = of_property_read_string(dnode, "setfile", &setfile);
 	if (ret) {
 		err("setfile index read fail(%d), take default setfile!!", ret);
 		setfile = "default";
 	}
+
+	priv_runtime = (struct sensor_imx564_private_runtime *)cis->priv_runtime;
+	priv_runtime->lte_on_delay = 0;
 
 	mclk_freq_khz = sensor_peri->module->pdata->mclk_freq_khz;
 

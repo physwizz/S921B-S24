@@ -26,6 +26,8 @@
 #define IS_LATEST_ROM_VERSION_M	'M'
 #define IS_READ_MAX_EEP_CAL_SIZE (0x8000) /* 32KB */
 
+char dualized_sensor_name[20];
+
 int is_sec_get_rom_info(struct is_vendor_rom **rom_info, int rom_id)
 {
 	struct is_core *core = is_get_is_core();
@@ -530,6 +532,7 @@ void is_sec_check_module_state(struct is_vendor_rom *rom_info)
 	}
 
 	if (rom_info->header_ver[3] == 'L' || rom_info->header_ver[3] == 'X'
+		|| (rom_info->allow_q_module && rom_info->header_ver[3] == 'Q')
 #ifdef CAMERA_STANDARD_CAL_ISP_VERSION
 		|| rom_info->header_ver[3] == CAMERA_STANDARD_CAL_ISP_VERSION
 #endif
@@ -858,24 +861,6 @@ int is_sec_read_header_verion(struct is_vendor_rom *rom_info, char *header_ver, 
 	return ret;
 }
 
-void is_sec_update_dualized_rom_info(int rom_id)
-{
-	int i;
-	struct is_vendor_rom *rom_info;
-
-	is_sec_get_rom_info(&rom_info, rom_id);
-
-	rom_info->crc_check_list_len = rom_info->dualized_crc_check_list_len;
-	for (i = 0 ; i < IS_ROM_CRC_MAX_LIST; i++)
-		rom_info->crc_check_list[i] = rom_info->dualized_crc_check_list[i];
-
-	rom_info->rom_af_cal_addr_len = rom_info->rom_dualized_af_cal_addr_len;
-	for (i = 0 ; i < AF_CAL_MAX; i++)
-		rom_info->rom_af_cal_addr[i] = rom_info->rom_dualized_af_cal_addr[i];
-
-	/* TODO : add sensor cal, awb, sec cal ... */
-}
-
 int is_sec_read_eeprom(struct is_vendor_rom *rom_info, char *buf, int rom_id)
 {
 	struct i2c_client *client;
@@ -1072,19 +1057,16 @@ exit:
 	return ret;
 }
 
-/* TODO : move to dt */
-struct dualize_match_entry dualize_table[] = {
-	{ "M50EL", SENSOR_NAME_S5KGN5, "S5KGN5" },
-};
-
 void is_sec_select_dualized_sensor(int rom_id)
 {
 	struct is_core *core = is_get_is_core();
 	struct is_vendor_private *vendor_priv = core->vendor.private_data;
 	struct is_vendor_rom *rom_info = NULL;
 	struct is_module_enum *module;
-	int pos, i, ret;
-	int table_size, module_header_len;
+	char **sensorInfo;
+	int num_val, dualized_sensorId;
+	int pos, ret;
+	int module_header_len;
 	char header_ver[IS_HEADER_VER_SIZE];
 
 	is_sec_get_rom_info(&rom_info, rom_id);
@@ -1097,33 +1079,44 @@ void is_sec_select_dualized_sensor(int rom_id)
 		return;
 	}
 
-	rom_info->use_dualized_values = false;
-
 	for (pos = SENSOR_POSITION_REAR; pos < SENSOR_POSITION_MAX; pos++) {
 		ret = is_vendor_get_module_from_position(pos, &module);
 		if (ret || !module || module->pdata->rom_id != rom_id)
 			continue;
 
-		table_size = ARRAY_SIZE(dualize_table);
-		for (i = 0; i < table_size; i++) {
-			module_header_len = strlen(dualize_table[i].module_header);
-			if (strncmp(header_ver, dualize_table[i].module_header, module_header_len) == 0) {
-				info("%s: found! %s => %d\n",
-					__func__, dualize_table[i].module_header, dualize_table[i].sensor_id);
-				vendor_priv->sensor_id[pos] = dualize_table[i].sensor_id;
-				vendor_priv->sensor_name[pos] = dualize_table[i].sensor_name;
-				rom_info->use_dualized_values = true;
-				break;
-			}
+		sensorInfo = argv_split(GFP_KERNEL, rom_info->dualized_sensorInfo, &num_val);
+		if (!sensorInfo) {
+			err("No argument!");
+			return;
 		}
 
+		if (num_val != 3) {
+			err("invalid number of arguments. Using default sensor");
+			goto skip_dualize_check;
+		}
+
+		if (kstrtoint(sensorInfo[1], 0, &dualized_sensorId)) {
+			err("convert fail : sensor id(%s) so using main sensor as dualized", sensorInfo[1]);
+			goto skip_dualize_check;
+		}
+
+		module_header_len = strlen(sensorInfo[0]);
+		if (strncmp(header_ver, sensorInfo[0], module_header_len) == 0) {
+			info("%s: found! %s => %d\n",
+				__func__, sensorInfo[0], dualized_sensorId);
+			vendor_priv->sensor_id[pos] = dualized_sensorId;
+			strcpy(dualized_sensor_name, sensorInfo[2]);
+			vendor_priv->sensor_name[pos] = dualized_sensor_name;
+		}
+
+skip_dualize_check:
+		argv_free(sensorInfo);
+
 		core->sensor[module->device].sensor_name = (char *)vendor_priv->sensor_name[pos];
-		info("%s: select sensor id: %d, name(%s)\n",
+		info("%s: selected sensor id: %d, name(%s)\n",
 			__func__, vendor_priv->sensor_id[pos], vendor_priv->sensor_name[pos]);
 	}
 
-	if (rom_info->use_dualized_values)
-		is_sec_update_dualized_rom_info(rom_id);
 }
 
 int is_sec_run_fw_sel(int rom_id)

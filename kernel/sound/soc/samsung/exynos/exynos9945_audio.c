@@ -34,6 +34,16 @@
 #include "../../codecs/bigdata_cs35l43_sysfs_cb.h"
 #endif
 
+#if IS_ENABLED(CONFIG_SND_SOC_TFA9878)
+#include "../../codecs/tfa9878/bigdata_tfa_sysfs_cb.h"
+#endif
+
+#if IS_ENABLED(CONFIG_SND_SOC_TAS25XX)
+#include "../../codecs/tas25xx/bigdata_tas_sysfs_cb.h"
+#include "../../codecs/tas25xx/algo/platform/exynos/skinprot-sysfs-cb.h"
+#include "../../codecs/tas25xx/inc/tas25xx-regmap.h"
+#endif
+
 #define ABOX_SOC_VERSION(m, n, r) (((m) << 16) | ((n) << 8) | (r))
 
 #define ABOX_UAIF_DAI_ID(c, i)		(0xaf00 | (c) << 4 | (i))
@@ -94,7 +104,6 @@ void cirrus_amp_fail_event(const char *suffix)
 #endif
 #endif
 }
-#endif
 
 static int parse_component_dapm_routing(struct snd_soc_card *card,
 			struct snd_soc_component *component, const char *propname)
@@ -144,12 +153,39 @@ static int parse_component_dapm_routing(struct snd_soc_card *card,
 
 	return 0;
 }
+#endif
 
 static const struct snd_soc_ops rdma_ops = {
 };
 
 static const struct snd_soc_ops wdma_ops = {
 };
+
+#if IS_ENABLED(CONFIG_SND_SOC_TAS25XX)
+const int tas_addr[2] = {0x49, 0x48};
+const int tas_addr_len = 2;
+void tas_i2c_fail_log(uint32_t address)
+{
+	int i, amp_id = -1;
+
+	for (i = 0; i < tas_addr_len; i++)
+		if (tas_addr[i] == address) {
+			amp_id = i;
+			break;
+		}
+	pr_info("%s addr: %d, amp_id: %d\n", __func__, address, amp_id);
+#if IS_ENABLED(CONFIG_SND_SOC_SAMSUNG_AUDIO)
+	send_amp_i2c_fail_ev(amp_id);
+#endif
+#if IS_ENABLED(CONFIG_SEC_ABC)
+#if IS_ENABLED(CONFIG_SEC_FACTORY)
+	sec_abc_send_event("MODULE=audio@INFO=spk_amp");
+#else
+	sec_abc_send_event("MODULE=audio@WARN=spk_amp");
+#endif
+#endif
+}
+#endif
 
 static int uaif3_init(struct snd_soc_pcm_runtime *rtd)
 {
@@ -193,6 +229,19 @@ static int uaif3_init(struct snd_soc_pcm_runtime *rtd)
 	}
 #endif
 
+#if IS_ENABLED(CONFIG_SND_SOC_TFA9878)
+	if ((component) && strstr(component->name, "tfa98xx"))
+		register_tfa98xx_bigdata_cb(component);
+#endif
+
+#if IS_ENABLED(CONFIG_SND_SOC_TAS25XX)
+	if (strstr(component->name, "tas25xx")) {
+		register_tas25xx_bigdata_cb(component);
+		register_tas25xx_cb_component(component);
+		tas25xx_register_i2c_error_callback(tas_i2c_fail_log);
+	}
+#endif
+
 	return 0;
 }
 
@@ -205,7 +254,7 @@ static int uaif_ops_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_dai_link *dai_link = rtd->dai_link;
 	unsigned int width, bclk, channels, rate;
 	int ret;
-#if IS_ENABLED(CONFIG_SND_SOC_CS35L43)
+#if IS_ENABLED(CONFIG_SND_SOC_CS35L43) || IS_ENABLED(CONFIG_SND_SOC_CS40L26)
 	struct snd_soc_dai *codec_dai;
 	int i;
 #endif

@@ -15,7 +15,7 @@
 #include <linux/types.h>
 #include "scsc_mx_impl.h"
 #include "mxconf.h"
-#include "scsc_logring_common.h"
+#include "logs/scsc_logring_common.h"
 
 struct cpacketbuffer;
 

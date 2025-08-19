@@ -31,6 +31,10 @@
 #include "../../../mcps/mcps.h"
 #endif
 
+#if IS_ENABLED(CONFIG_CLO)
+#include "../../../clo/clo.h"
+#endif
+
 #if IS_ENABLED(CONFIG_LINK_DEVICE_WITH_SBD_ARCH)
 static ssize_t waketime_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -435,15 +439,23 @@ static int rx_multi_pdp(struct sk_buff *skb)
 		return len;
 #endif
 
+#if IS_ENABLED(CONFIG_CLO)
+	clo_hook_skb(skb);
+#endif
+
 	napi = skbpriv(skb)->napi;
 	if (!napi || !check_gro_support(skb)) {
 		ret = netif_receive_skb(skb);
 		if (ret != NET_RX_SUCCESS)
 			mif_err_limited("%s: %s<-%s: ERR! netif_receive_skb\n",
 					ld->name, iod->name, iod->mc->name);
-	} else
+	} else {
 		napi_gro_receive(napi, skb);
-
+#if IS_ENABLED(CONFIG_CLO)
+		if (clo_is_activated())
+			ld->gro_flush(ld, napi);
+#endif
+	}
 	return len;
 }
 
@@ -526,9 +538,8 @@ static int io_dev_recv_net_skb_from_link_dev(struct io_device *iod,
 	if (unlikely(atomic_read(&iod->opened) <= 0)) {
 		struct modem_ctl *mc = iod->mc;
 
-		mif_err_limited("%s: %s<-%s: ERR! %s is not opened\n",
+		mif_err_limited("%s: %s<-%s: %s is not opened\n",
 				ld->name, iod->name, mc->name, iod->name);
-		return -ENODEV;
 	}
 
 	cpif_wake_lock_timeout(iod->ws, iod->waketime ?: msecs_to_jiffies(200));

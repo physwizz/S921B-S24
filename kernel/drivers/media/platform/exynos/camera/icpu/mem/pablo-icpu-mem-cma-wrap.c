@@ -86,7 +86,7 @@ int __iommu_map_cma(struct device *dev, struct icpu_cma_buf *fw_buf)
 	return 0;
 }
 
-static int __cma_alloc(struct device *dev, struct icpu_buf *special_buf)
+static int _icpu_mem_cma_alloc(struct device *dev, struct icpu_buf *special_buf)
 {
 	struct page *fw_pages;
 	unsigned long nr_pages;
@@ -175,7 +175,7 @@ err_buf_alloc:
 	return -ENOMEM;
 }
 
-static void __cma_free(struct icpu_buf *buf)
+static void _icpu_mem_cma_free(struct icpu_buf *buf)
 {
 	struct icpu_cma_buf *rbuf;
 
@@ -194,7 +194,7 @@ static void __cma_free(struct icpu_buf *buf)
 	kfree(rbuf);
 }
 
-static void __cma_sync_for_device(struct icpu_buf *buf)
+static void _icpu_mem_cma_sync_for_device(struct icpu_buf *buf)
 {
 	if (!buf || !buf->data)
 		return;
@@ -204,9 +204,9 @@ static void __cma_sync_for_device(struct icpu_buf *buf)
 }
 
 struct icpu_buf_ops icpu_buf_ops_cma = {
-	.alloc = __cma_alloc,
-	.free = __cma_free,
-	.sync_for_device = __cma_sync_for_device,
+	.alloc = _icpu_mem_cma_alloc,
+	.free = _icpu_mem_cma_free,
+	.sync_for_device = _icpu_mem_cma_sync_for_device,
 };
 
 int pablo_icpu_cma_init(void *pdev)
@@ -228,7 +228,7 @@ void *pablo_kunit_alloc_dummy_cma_buf(void)
 	buf = kzalloc(sizeof(struct icpu_buf), GFP_KERNEL);
 	buf->type = 1;
 
-	__cma_alloc(&sync_dev, buf);
+	_icpu_mem_cma_alloc(&sync_dev, buf);
 	__iommu_map_cma(&sync_dev, buf->data);
 
 	return buf;

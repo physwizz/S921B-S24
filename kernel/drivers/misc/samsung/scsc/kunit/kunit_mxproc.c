@@ -1,5 +1,5 @@
-#define simple_read_from_buffer(param...)	(0)
-#define copy_from_user(param...)			(0)
+#define simple_read_from_buffer(args...)	(0)
+#define copy_from_user(args...)			(0)
 static ssize_t mx_procfs_mx_fail_read(struct file *file, char __user *user_buf, size_t count, loff_t *ppos);
 ssize_t (*fp_mx_procfs_mx_fail_read)(struct file *file, char __user *user_buf, size_t count, loff_t *ppos) = &mx_procfs_mx_fail_read;
 

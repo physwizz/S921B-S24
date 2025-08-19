@@ -72,6 +72,7 @@ struct boot_mode {
 #define IOCTL_COMPLETE_NORMAL_BOOTUP	_IO(IOCTL_MAGIC, 0x23)
 #define IOCTL_GET_CP_STATUS		_IO(IOCTL_MAGIC, 0x27)
 #define IOCTL_GET_TIME_AFTER_RESET	_IOR(IOCTL_MAGIC, 0x28, long long)
+#define IOCTL_SET_MINIDUMP_MODE		_IOW(IOCTL_MAGIC, 0x29, bool)
 #define IOCTL_START_CP_DUMP		_IO(IOCTL_MAGIC, 0x32)
 #define IOCTL_TRIGGER_CP_CRASH		_IO(IOCTL_MAGIC, 0x34)
 #define IOCTL_TRIGGER_KERNEL_PANIC	_IO(IOCTL_MAGIC, 0x35)
@@ -352,6 +353,8 @@ struct io_device {
 
 	struct exynos_seq_num seq_num;
 	u8 packet_index;
+
+	ktime_t opened_time;
 };
 #define to_io_device(_cdev) container_of(_cdev, struct io_device, cdev)
 
@@ -378,12 +381,11 @@ struct link_device {
 
 	/* */
 	u32 protocol;
-	u8 chid_fmt_0;
-	u8 chid_rfs_0;
 	u32 magic_boot;
 	u32 magic_crash;
 	u32 magic_dump;
 	u32 magic_ipc;
+	u32 magic_minidump;
 	bool (*is_start_valid)(u8 *frm);
 	bool (*is_padding_exist)(u8 *frm);
 	bool (*is_multi_frame)(u8 *frm);
@@ -426,6 +428,8 @@ struct link_device {
 	/* Save reason of forced crash */
 	struct crash_reason crash_reason;
 
+	bool minidump_mode;
+
 	int (*init_comm)(struct link_device *ld, struct io_device *iod);
 	void (*terminate_comm)(struct link_device *ld, struct io_device *iod);
 
@@ -464,6 +468,10 @@ struct link_device {
 
 	void (*start_timers)(struct mem_link_device *mld);
 	void (*stop_timers)(struct mem_link_device *mld);
+#if IS_ENABLED(CONFIG_CLO)
+	void (*gro_flush)(struct link_device *ld, struct napi_struct *napi);
+	struct timespec64 (*update_flush_time)(struct timespec64 org_flush_time);
+#endif
 
 #if IS_ENABLED(CONFIG_SBD_BOOTLOG)
 	/* print cp boot/main logs */

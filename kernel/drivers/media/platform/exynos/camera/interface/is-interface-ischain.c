@@ -319,19 +319,21 @@ static void wq_func_group_xxx(struct is_group *group,
 	CALL_VOPS(vctx, done, frame->index, done_state);
 }
 
-static void wq_func_group(struct is_device_ischain *device,
-	struct is_group *group,
-	struct is_framemgr *framemgr,
-	struct is_frame *frame,
-	struct is_video_ctx *vctx,
-	u32 status, u32 fcount)
+static int wq_func_group(struct is_device_ischain *device, struct is_group *group,
+	struct is_framemgr *framemgr, struct is_frame *frame, struct is_video_ctx *vctx, u32 status,
+	u32 fcount)
 {
-	FIMC_BUG_VOID(!group);
-	FIMC_BUG_VOID(!framemgr);
-	FIMC_BUG_VOID(!frame);
-	FIMC_BUG_VOID(!vctx);
+	FIMC_BUG(!group);
+	FIMC_BUG(!framemgr);
+	FIMC_BUG(!vctx);
 
 	TIME_SHOT(TMS_SDONE);
+
+	if (!frame) {
+		err("frame is NULL");
+		return -EINVAL;
+	}
+
 	/*
 	 * complete count should be lower than 3 when
 	 * buffer is queued or overflow can be occurred
@@ -354,7 +356,7 @@ static void wq_func_group(struct is_device_ischain *device,
 					frame = peek_frame(framemgr, FS_PROCESS);
 				} else {
 					warn("%d shot done is ignored", fcount);
-					break;
+					return -EPERM;
 				}
 			}
 		} else {
@@ -364,6 +366,7 @@ static void wq_func_group(struct is_device_ischain *device,
 	} else {
 		wq_func_group_xxx(group, framemgr, frame, vctx, status);
 	}
+	return 0;
 }
 
 static void wq_func_shot(struct work_struct *data)
@@ -431,18 +434,15 @@ static void wq_func_shot(struct work_struct *data)
 		if (!frame)
 			frame = peek_frame(framemgr, FS_PROCESS);
 
-		if (frame) {
-			/* clear bit for child group */
-			if (group != head)
-				clear_bit(group->leader.id, &frame->out_flag);
+		if (!wq_func_group(device, head, framemgr, frame, vctx, status, fcount)) {
 #ifdef MEASURE_TIME
 #ifdef EXTERNAL_TIME
 			ktime_get_ts64(&frame->tzone[TM_SHOT_D]);
 #endif
 #endif
-
-			wq_func_group(device, head, framemgr, frame,
-				vctx, status, fcount);
+			/* clear bit for child group */
+			if (group != head)
+				clear_bit(group->leader.id, &frame->out_flag);
 		} else {
 			mgerr("invalid shot done(%d)", device, head, fcount);
 			frame_manager_print_queues(framemgr);
@@ -604,9 +604,8 @@ IS_TIMER_FUNC(interface_timer)
 		fcount = is_sensor_g_fcount(sensor);
 		if (fcount == atomic_read(&itf->sensor_check[i])) {
 			atomic_inc(&itf->sensor_timeout[i]);
-			pr_err ("sensor timer[%d] is increased to %d(fcount : %d)\n", i,
+			minfo("sensor timer[%d] is increased to %d(fcount : %d)\n", sensor, i,
 				atomic_read(&itf->sensor_timeout[i]), fcount);
-			is_sensor_dump(sensor);
 		} else {
 			atomic_set(&itf->sensor_timeout[i], 0);
 			atomic_set(&itf->sensor_check[i], fcount);
@@ -616,6 +615,7 @@ IS_TIMER_FUNC(interface_timer)
 			merr("sensor is timeout(%d, %d)", sensor,
 				atomic_read(&itf->sensor_timeout[i]),
 				atomic_read(&itf->sensor_check[i]));
+			is_sensor_dump(sensor);
 
 			/* framemgr spinlock check */
 			print_framemgr_spinlock_usage(core);

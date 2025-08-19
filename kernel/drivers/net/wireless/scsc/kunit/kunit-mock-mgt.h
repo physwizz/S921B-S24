@@ -3,6 +3,7 @@
 #ifndef __KUNIT_MOCK_MGT_H__
 #define __KUNIT_MOCK_MGT_H__
 
+#include "../mib.h"
 #include "../mgt.h"
 #include "../cfg80211_ops.h"
 
@@ -604,7 +605,6 @@ static int kunit_mock_slsi_add_probe_ies_request(struct slsi_dev *sdev, struct n
 	return 0;
 }
 
-#define SLSI_PSID_UNIFI_DTIM_MULTIPLIER 3002 /* unifiDTIMMultiplier */
 static int kunit_mock_slsi_set_uint_mib(struct slsi_dev *sdev, struct net_device *dev, u16 psid, int value)
 {
 	if (psid == SLSI_PSID_UNIFI_DTIM_MULTIPLIER) {

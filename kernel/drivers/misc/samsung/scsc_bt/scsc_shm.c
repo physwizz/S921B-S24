@@ -116,15 +116,16 @@ static size_t fw_log_circ_buf_remove(size_t len)
 	size_t head_len = 0;
 	size_t consumed = 0;
 
-	cnt = CIRC_CNT(bt_svc->fw_log.circ_buf.head, bt_svc->fw_log.circ_buf.tail,
-		       bt_svc->fw_log.circ_buf_size);
-	len = min(cnt, len);
-
 	spin_lock(&bt_svc->fw_log.read_lock);
 	/* Check the state is in release */
 	if (bt_svc->fw_log.circ_buf.buf == NULL || bt_svc->fw_log.fw_acl_read == NULL) {
+		SCSC_TAG_DEBUG(BT_H4, "fw_log is released due to BT service stop\n");
 		cnt = 0;
 	} else {
+		cnt = CIRC_CNT(bt_svc->fw_log.circ_buf.head, bt_svc->fw_log.circ_buf.tail,
+			       bt_svc->fw_log.circ_buf_size);
+		len = min(cnt, len);
+
 		/* Remove binary FW log until remained space of circ_buf is larger than len */
 		while (consumed < len) {
 			head_len = bt_svc->fw_log.circ_buf.buf[bt_svc->fw_log.circ_buf.tail];
@@ -149,8 +150,18 @@ size_t scsc_bt_fw_log_circ_buf_write(uint8_t level, uint8_t *data, size_t len)
 	if (bt_svc == NULL)
 		return 0;
 
-	cnt = CIRC_SPACE(bt_svc->fw_log.circ_buf.head, bt_svc->fw_log.circ_buf.tail,
-			 bt_svc->fw_log.circ_buf_size);
+	spin_lock(&bt_svc->fw_log.write_lock);
+	/* Check the state is in release */
+	if (bt_svc->fw_log.circ_buf.buf == NULL || bt_svc->fw_log.fw_acl_read == NULL) {
+		SCSC_TAG_DEBUG(BT_H4, "fw_log is released due to BT service stop\n");
+		spin_unlock(&bt_svc->fw_log.write_lock);
+		return 0;
+	} else {
+		cnt = CIRC_SPACE(bt_svc->fw_log.circ_buf.head, bt_svc->fw_log.circ_buf.tail,
+				 bt_svc->fw_log.circ_buf_size);
+	}
+	spin_unlock(&bt_svc->fw_log.write_lock);
+
 	if (cnt <= len) {
 		removed = fw_log_circ_buf_remove(len * FW_LOG_REMOVE_MULTIPLIER);
 		if (removed <= len) {
@@ -162,6 +173,7 @@ size_t scsc_bt_fw_log_circ_buf_write(uint8_t level, uint8_t *data, size_t len)
 	spin_lock(&bt_svc->fw_log.write_lock);
 	/* Check the state is in release */
 	if (bt_svc->fw_log.circ_buf.buf == NULL || bt_svc->fw_log.fw_acl_read == NULL) {
+		SCSC_TAG_DEBUG(BT_H4, "fw_log is released due to BT service stop\n");
 		cnt = 0;
 	} else {
 		/* Write binary FW log to circ_buf */
@@ -177,22 +189,23 @@ size_t scsc_bt_fw_log_circ_buf_write(uint8_t level, uint8_t *data, size_t len)
 	return cnt;
 }
 
-size_t scsc_bt_fw_log_circ_buf_read(uint8_t *data, size_t len)
+static size_t scsc_bt_fw_log_circ_buf_read(uint8_t *data, size_t len)
 {
 	size_t cnt = 0;
 	size_t i = 0;
 	size_t head_len = 0;
 	size_t consumed = 0;
 
-	cnt = CIRC_CNT(bt_svc->fw_log.circ_buf.head, bt_svc->fw_log.circ_buf.tail,
-		       bt_svc->fw_log.circ_buf_size);
-	len = min(cnt, len);
-
 	spin_lock(&bt_svc->fw_log.read_lock);
 	/* Check the state is in release */
 	if (bt_svc->fw_log.circ_buf.buf == NULL || bt_svc->fw_log.fw_acl_read == NULL) {
+		SCSC_TAG_DEBUG(BT_H4, "fw_log is released due to BT service stop\n");
 		cnt = 0;
 	} else {
+		cnt = CIRC_CNT(bt_svc->fw_log.circ_buf.head, bt_svc->fw_log.circ_buf.tail,
+			       bt_svc->fw_log.circ_buf_size);
+		len = min(cnt, len);
+
 		/* Read binary FW log from circ_buf */
 		head_len = bt_svc->fw_log.circ_buf.buf[bt_svc->fw_log.circ_buf.tail];
 		do {
@@ -209,7 +222,7 @@ size_t scsc_bt_fw_log_circ_buf_read(uint8_t *data, size_t len)
 	return cnt;
 }
 
-void scsc_bt_fw_log_update_filter(u8 trigger, u32 bt1_high, u32 bt1_low, u32 bt0_high, u32 bt0_low)
+static void scsc_bt_fw_log_update_filter(u8 trigger, u32 bt1_high, u32 bt1_low, u32 bt0_high, u32 bt0_low)
 {
 	if (bt_svc == NULL)
 		return;
@@ -229,7 +242,7 @@ void scsc_bt_fw_log_update_filter(u8 trigger, u32 bt1_high, u32 bt1_low, u32 bt0
 	/* Trigger OFF */
 	} else if (trigger == 0) {
 		if (bt_svc->fw_log.observers_registered) {
-			mxlogger_unregister_global_observer("FW_LOG");
+			mxlogger_unregister_global_observer_class("FW_LOG", RELAXED_OBSERVERS);
 			bt_svc->fw_log.observers_registered = false;
 			if (bt_svc->fw_log.fw_acl_read_state & FW_READ_ENABLE)
 				bt_svc->fw_log.fw_acl_read_state &= ~FW_READ_ENABLE;
@@ -238,19 +251,21 @@ void scsc_bt_fw_log_update_filter(u8 trigger, u32 bt1_high, u32 bt1_low, u32 bt0
 	}
 #endif
 
-	mutex_lock(&fw_log_filter);
-	if (bt_svc->service) {
-		bt_svc->bsmhcp_protocol->header.btlog_enables0_low = bt0_low;
-		bt_svc->bsmhcp_protocol->header.btlog_enables0_high = bt0_high;
-		bt_svc->bsmhcp_protocol->header.btlog_enables1_low = bt1_low;
-		bt_svc->bsmhcp_protocol->header.btlog_enables1_high = bt1_high;
+	if (bt_svc->bsmhcp_protocol->header.btlog_enables0_low == 0) {
+		mutex_lock(&fw_log_filter);
+		if (bt_svc->service) {
+			bt_svc->bsmhcp_protocol->header.btlog_enables0_low = bt0_low;
+			bt_svc->bsmhcp_protocol->header.btlog_enables0_high = bt0_high;
+			bt_svc->bsmhcp_protocol->header.btlog_enables1_low = bt1_low;
+			bt_svc->bsmhcp_protocol->header.btlog_enables1_high = bt1_high;
 
-		/* Trigger the interrupt in the mailbox */
-		scsc_service_mifintrbit_bit_set(bt_svc->service,
-				bt_svc->bsmhcp_protocol->header.ap_to_bg_int_src,
-				SCSC_MIFINTR_TARGET_WPAN);
+			/* Trigger the interrupt in the mailbox */
+			scsc_service_mifintrbit_bit_set(bt_svc->service,
+					bt_svc->bsmhcp_protocol->header.ap_to_bg_int_src,
+					SCSC_MIFINTR_TARGET_WPAN);
+		}
+		mutex_unlock(&fw_log_filter);
 	}
-	mutex_unlock(&fw_log_filter);
 }
 
 static bool scsc_read_data_available(void)
@@ -2901,8 +2916,16 @@ void scsc_bt_shm_exit(void)
 			scsc_service_mifintrbit_free_fromhost(
 			    bt_svc->service, bt_svc->bsmhcp_protocol->header.ap_to_fg_int_src, SCSC_MIFINTR_TARGET_WPAN);
 	}
+	SCSC_TAG_DEBUG(BT_COMMON, "exit\n");
+}
 
-	/* Clear all control structures */
+/* Clear all control structures of shared memory interface.
+ *
+ * Note: scsc_bt_shm_exit() should be called before this to unregister IRQs
+ */
+void scsc_bt_shm_cleanup(void)
+{
+	SCSC_TAG_DEBUG(BT_COMMON, "enter\n");
 	bt_svc->last_alloc = 0;
 	bt_svc->iso_last_alloc = 0;
 	bt_svc->hci_event_paused = false;
@@ -2922,14 +2945,14 @@ void scsc_bt_fw_log_init(size_t len, size_t threshold)
 	if (bt_svc == NULL)
 		return;
 
-	/* Init spin lock for circ_buf */
-	spin_lock_init(&bt_svc->fw_log.write_lock);
-	spin_lock_init(&bt_svc->fw_log.read_lock);
-
 	/* Init scsc_bt_fw_log */
 	memset(&bt_svc->fw_log, 0, sizeof(struct scsc_bt_fw_log));
 	bt_svc->fw_log.circ_buf_size = len;
 	bt_svc->fw_log.circ_buf_threshold = threshold;
+
+	/* Init spin lock for circ_buf */
+	spin_lock_init(&bt_svc->fw_log.write_lock);
+	spin_lock_init(&bt_svc->fw_log.read_lock);
 
 	/* Allocate the memeory for circ_buf */
 	bt_svc->fw_log.circ_buf.buf = kmalloc(len, GFP_KERNEL);
@@ -2957,7 +2980,7 @@ void scsc_bt_fw_log_release(void)
 #if IS_ENABLED(CONFIG_SCSC_MXLOGGER)
 	/* Unregister FW_LOG observer to stop gathering FW LOG from cpacket_buffer */
 	if (bt_svc->fw_log.observers_registered == true) {
-		mxlogger_unregister_global_observer("FW_LOG");
+		mxlogger_unregister_global_observer_class("FW_LOG", RELAXED_OBSERVERS);
 		bt_svc->fw_log.observers_registered = false;
 		SCSC_TAG_INFO(BT_COMMON, "fwsnoop disabled\n");
 	}

@@ -70,11 +70,12 @@ struct slsi_bt_qos {
 
 static int get_scsc_qos_level(int tput)
 {
-	if (tput >= scsc_bt_qos_high_level)
+	if (tput >= scsc_bt_qos_high_level && scsc_bt_qos_high_level > 0)
 		return SCSC_QOS_MAX;
-	else if (tput >= scsc_bt_qos_medium_level)
+	else if (tput >= scsc_bt_qos_medium_level &&
+		scsc_bt_qos_medium_level > 0)
 		return SCSC_QOS_MED;
-	else if (tput >= scsc_bt_qos_low_level)
+	else if (tput >= scsc_bt_qos_low_level && scsc_bt_qos_low_level > 0)
 		return SCSC_QOS_MIN;
 	return SCSC_QOS_DISABLED;
 }
@@ -109,7 +110,7 @@ static void tput_algorithm_byte_per_ms(struct slsi_bt_qos *qos, int count)
 
 	qos->last_msecs = now;
 	Bps = qos->rbytes * 1000 / t_ms;
-	qos->tput = Bps / 10000;
+	qos->tput = (Bps+9999) / 10000;
 
 	//TR_DBG("tput - real: %u bytes/ %u ms\n", qos->rbytes, t_ms);
 	TR_DBG("tput level:%u Bps:%d, bps:%d\n", qos->tput, Bps, Bps*8);
@@ -193,7 +194,9 @@ struct slsi_bt_qos *slsi_bt_qos_start(struct scsc_service *service)
 	init_waitqueue_head(&qos->update_req);
 	qos->enabled = true;
 
-	BT_INFO("success\n");
+	BT_INFO("success. qos levels: [%d, %d, %d], timeout: %d ms\n",
+		scsc_bt_qos_low_level, scsc_bt_qos_medium_level,
+		scsc_bt_qos_high_level, scsc_bt_qos_timeout);
 	return qos;
 
 error:

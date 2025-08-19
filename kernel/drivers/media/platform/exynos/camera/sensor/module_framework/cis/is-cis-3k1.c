@@ -221,7 +221,8 @@ int sensor_3k1_cis_update_crop_region(struct v4l2_subdev *subdev)
 	dev = &core->pdev->dev;
 
 	if (device->cfg->mode == SENSOR_3K1_1824x1368_120FPS
-		|| device->cfg->mode == SENSOR_3K1_1824x1368_30FPS) {
+		|| device->cfg->mode == SENSOR_3K1_1824x1368_30FPS
+		|| device->cfg->mode == SENSOR_3K1_1920x1080_240FPS) {
 		info("[%s] skip crop shift in binning & fast ae sensor mode\n", __func__);
 		return 0;
 	}
@@ -500,6 +501,7 @@ bool sensor_3k1_cis_check_aeb(struct v4l2_subdev *subdev)
 	if (cis->cis_data->cur_hdr_mode == SENSOR_HDR_MODE_2AEB_2VC) {
 		info("[%s] enable 2AEB 2VC\n", __func__);
 		cis->ixc_ops->write16(cis->client, 0x0E00, 0x0203);
+		cis->cis_data->fll_margin_ratio_aeb = 2000; /* x2*/
 	} else {
 		info("[%s] disable AEB\n", __func__);
 		cis->ixc_ops->write16(cis->client, 0x0E00, 0x0003);

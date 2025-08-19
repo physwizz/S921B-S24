@@ -539,6 +539,11 @@ int is_vendor_dt(struct device_node *np, struct is_vendor_private *vendor_priv)
 	if (ret)
 		probe_err("supported_cameraId read is fail(%d)", ret);
 
+	ret = of_property_read_string(np, "supported_cameraIds_ext",
+		&vendor_priv->supported_camera_ids_ext);
+	if (ret)
+		probe_err("supported_cameraIds_ext read is fail(%d)", ret);
+
 	if (of_property_read_u32(np, "is_vendor_sensor_count", &vendor_priv->is_vendor_sensor_count)) {
 		probe_info("no is_vendor_sensor_count\n");
 		vendor_priv->is_vendor_sensor_count = IS_SENSOR_COUNT;
@@ -666,6 +671,8 @@ int is_vendor_rom_parse_dt(struct device_node *dnode, int rom_id)
 	const u32 *header_crc_check_list_spec;
 	const u32 *rom_af_cal_addr_spec;
 	const u32 *rom_sensor2_af_cal_addr_spec;
+	const u32 *rom_af_distance_cal_addr_spec;
+	const u32 *rom_sensor2_af_distance_cal_addr_spec;
 	const u32 *crc_check_list_spec;
 	const u32 *dual_crc_check_list_spec;
 	const u32 *rom_dualcal_slave0_tilt_list_spec;
@@ -714,10 +721,16 @@ int is_vendor_rom_parse_dt(struct device_node *dnode, int rom_id)
 
 	rom_info->need_i2c_config = of_property_read_bool(dnode, "need_i2c_config");
 	rom_info->check_dualize = of_property_read_bool(dnode, "check_dualize");
+	if (rom_info->check_dualize) {
+		ret = of_property_read_string(dnode, "dualized_sensorInfo", &rom_info->dualized_sensorInfo);
+		if (ret)
+			err("Not exist dualized_sensorInfo in DT(%d)", ret);
+	}
 	rom_info->skip_cal_loading = of_property_read_bool(dnode, "skip_cal_loading");
 	rom_info->skip_crc_check = of_property_read_bool(dnode, "skip_crc_check");
 	rom_info->skip_header_loading = of_property_read_bool(dnode, "skip_header_loading");
 	rom_info->ignore_cal_crc_error = of_property_read_bool(dnode, "ignore_cal_crc_error");
+	rom_info->allow_q_module = of_property_read_bool(dnode, "allow_q_module");
 
 	info("[rom%d] power_position:%d, rom_size:0x%X, skip_cal_loading:%d, calmap_es:%d, module_es:%c\n",
 		rom_id, rom_info->rom_power_position, rom_info->rom_size, rom_info->skip_cal_loading,
@@ -836,6 +849,38 @@ int is_vendor_rom_parse_dt(struct device_node *dnode, int rom_id)
 			rom_info->rom_sensor2_af_cal_addr, rom_info->rom_sensor2_af_cal_addr_len);
 		if (ret)
 			info("Not exist rom_sensor2_af_cal_addr in DT(%d)", ret);
+	}
+
+	rom_af_distance_cal_addr_spec = of_get_property(dnode, "rom_af_distance_cal_addr",
+					&rom_info->rom_af_distance_cal_addr_len);
+	if (rom_af_distance_cal_addr_spec) {
+		rom_info->rom_af_distance_cal_addr_len /= (unsigned int)sizeof(*rom_af_distance_cal_addr_spec);
+
+		if (rom_info->rom_af_distance_cal_addr_len > AF_CAL_DISTANCE_MAX) {
+			err("rom_info->rom_af_distance_cal_addr_len > AF_CAL_DISTANCE_MAX");
+			rom_info->rom_af_distance_cal_addr_len = 0;
+		} else {
+			ret = of_property_read_u32_array(dnode, "rom_af_distance_cal_addr",
+				rom_info->rom_af_distance_cal_addr, rom_info->rom_af_distance_cal_addr_len);
+			if (ret)
+				info("Not exist rom_af_distance_cal_addr in DT(%d)", ret);
+		}
+	}
+
+	rom_sensor2_af_distance_cal_addr_spec = of_get_property(dnode, "rom_sensor2_af_distance_cal_addr",
+						&rom_info->rom_sensor2_af_distance_cal_addr_len);
+	if (rom_sensor2_af_distance_cal_addr_spec) {
+		rom_info->rom_sensor2_af_distance_cal_addr_len /= (unsigned int)sizeof(*rom_sensor2_af_distance_cal_addr_spec);
+		
+		if (rom_info->rom_sensor2_af_distance_cal_addr_len > AF_CAL_DISTANCE_MAX) {
+			err("rom_info->rom_sensor2_af_distance_cal_addr_len > AF_CAL_DISTANCE_MAX");
+			rom_info->rom_sensor2_af_distance_cal_addr_len = 0;
+		} else {
+			ret = of_property_read_u32_array(dnode, "rom_sensor2_af_distance_cal_addr",
+				rom_info->rom_sensor2_af_distance_cal_addr, rom_info->rom_sensor2_af_distance_cal_addr_len);
+			if (ret)
+				info("Not exist rom_sensor2_af_distance_cal_addr in DT(%d)", ret);
+		}
 	}
 
 	rom_dualcal_slave0_tilt_list_spec
@@ -2154,6 +2199,9 @@ int is_vendor_vidioc_g_ext_ctrl(struct is_video_ctx *vctx,
 			ret = is_vendor_device_info_get_crop_shift_data(ext_ctrl->ptr);
 #endif
 			break;
+		case V4L2_CID_DEV_INFO_GET_LENS_DISTANCE_DATA:
+			ret = is_vendor_device_info_get_lens_distance_data(ext_ctrl->ptr);
+			break;
 		default:
 			ret = -ENOIOCTLCMD;
 			break;
@@ -2879,15 +2927,17 @@ void is_vendor_s_ext_ctrl_capture_intent_info(struct is_group *head, struct capt
 		sizeof(info.CaptureMultiExposureList));
 
 	switch (info.captureIntent) {
-	case AA_CAPTURE_INTENT_STILL_CAPTURE_OIS_MULTI:
-	case AA_CAPTURE_INTENT_STILL_CAPTURE_GALAXY_RAW_DYNAMIC_SHOT:
-	case AA_CAPTURE_INTENT_STILL_CAPTURE_EXECUTOR_NIGHT_SHOT:
-	case AA_CAPTURE_INTENT_STILL_CAPTURE_REPEATED_MULTI_FRAME_LIST:
-		head->remainCaptureIntentCount = 3 + CAPTURE_INTENT_RETRY_CNT;
-		break;
-	default:
-		head->remainCaptureIntentCount = 1 + CAPTURE_INTENT_RETRY_CNT;
-		break;
+		case AA_CAPTURE_INTENT_STILL_CAPTURE_OIS_MULTI:
+		case AA_CAPTURE_INTENT_STILL_CAPTURE_GALAXY_RAW_DYNAMIC_SHOT:
+		case AA_CAPTURE_INTENT_STILL_CAPTURE_EXECUTOR_NIGHT_SHOT:
+			head->remainCaptureIntentCount = 3 + CAPTURE_INTENT_RETRY_CNT;
+			break;
+		case AA_CAPTURE_INTENT_STILL_CAPTURE_REPEATED_MULTI_FRAME_LIST:
+			head->remainCaptureIntentCount = 2 + CAPTURE_INTENT_RETRY_CNT;
+			break;
+		default:
+			head->remainCaptureIntentCount = 1 + CAPTURE_INTENT_RETRY_CNT;
+			break;
 	}
 	spin_unlock_irqrestore(&head->slock_s_ctrl, flags);
 }

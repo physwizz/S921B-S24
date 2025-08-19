@@ -36,7 +36,7 @@
 #include "npu-afm.h"
 
 /* FIXME: global variables */
-static u32 g_hwdev_num;
+u32 g_hwdev_num;
 static struct npu_hw_device *g_hwdev_list[NPU_HWDEVICE_MAX_DEVICES] = {NULL,};
 
 struct npu_hw_device *npu_get_hdev(char *name)

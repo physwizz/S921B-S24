@@ -42,6 +42,9 @@
 #endif
 #include "dit.h"
 #include "direct_dm.h"
+#if IS_ENABLED(CONFIG_CLO)
+#include "../../../clo/clo.h"
+#endif
 
 #define MIF_TX_QUOTA 64
 
@@ -359,38 +362,53 @@ set_type:
 				ld->crash_reason.string, CALLER);
 }
 
-static bool rild_ready(struct link_device *ld)
+static bool rild_ready(struct link_device *ld, u64 *delta_time)
 {
-	struct io_device *fmt_iod;
-	struct io_device *rfs_iod;
-	int fmt_opened;
-	int rfs_opened;
+	int opened_cnt = 0;
+	int ds_det = 0;
+	struct io_device *iod_fmt0 = link_get_iod_with_channel(ld, SIPC5_CH_ID_FMT_0);
+	struct io_device *iod_fmt1 = link_get_iod_with_channel(ld, SIPC5_CH_ID_FMT_1);
+	struct io_device *iod_rfs0 = link_get_iod_with_channel(ld, SIPC5_CH_ID_RFS_0);
 
 	switch (ld->protocol) {
 	case PROTOCOL_SIT:
 		return true;
-	default:
-		fmt_iod = link_get_iod_with_channel(ld, ld->chid_fmt_0);
-		if (!fmt_iod) {
-			mif_err("%s: No FMT io_device\n", ld->name);
+	case PROTOCOL_SIPC:
+		if (iod_rfs0 && !atomic_read(&iod_rfs0->opened)) {
+			mif_err_limited("%s: %s is not opened\n", ld->name, iod_rfs0->name);
 			return false;
 		}
 
-		rfs_iod = link_get_iod_with_channel(ld, ld->chid_rfs_0);
-		if (!rfs_iod) {
-			mif_err("%s: No RFS io_device\n", ld->name);
-			return false;
+		if (iod_fmt0 && atomic_read(&iod_fmt0->opened))
+			opened_cnt++;
+		if (iod_fmt1 && atomic_read(&iod_fmt1->opened))
+			opened_cnt++;
+
+		if (opened_cnt == 2) {
+			if (ktime_after(iod_fmt0->opened_time, iod_fmt1->opened_time))
+				*delta_time = ktime_ms_delta(iod_fmt0->opened_time, iod_fmt1->opened_time);
+			else
+				*delta_time = ktime_ms_delta(iod_fmt1->opened_time, iod_fmt0->opened_time);
 		}
 
-		fmt_opened = atomic_read(&fmt_iod->opened);
-		rfs_opened = atomic_read(&rfs_iod->opened);
-		mif_err_limited("%s: %s.opened=%d, %s.opened=%d\n", ld->name,
-			fmt_iod->name, fmt_opened, rfs_iod->name, rfs_opened);
-		if (fmt_opened > 0 && rfs_opened > 0)
+		ds_det = get_ds_detect();
+
+		if (iod_fmt0 && (ds_det + 1) == 2 && opened_cnt == 1)
+			mif_err_limited("%s: only umts_ipc%d is opened\n",
+					ld->name, atomic_read(&iod_fmt0->opened) ? 0 : 1);
+
+		mif_info_limited("%s: opened_cnt: %d, sim count: %d\n", ld->name, opened_cnt, (ds_det + 1));
+
+		if (opened_cnt == (ds_det + 1))
 			return true;
 
 		return false;
+	default:
+		mif_err("%s: undefined protocol: %d\n", ld->name, ld->protocol);
+		return false;
 	}
+
+	return false;
 }
 
 static void write_clk_table_to_shmem(struct mem_link_device *mld)
@@ -615,6 +633,7 @@ static void cmd_phone_start_handler(struct mem_link_device *mld)
 	struct link_device *ld = &mld->link_dev;
 	struct modem_ctl *mc = ld->mc;
 	unsigned long flags;
+	u64 delta_time = 0;
 	int err;
 
 	mif_info_limited("%s: PHONE_START <- %s (%s.state:%s init_end_cnt:%d)\n",
@@ -654,8 +673,8 @@ static void cmd_phone_start_handler(struct mem_link_device *mld)
 		 * command to AP periodically until it receives INIT_END from AP
 		 * even though it has already been in ONLINE state.
 		 */
-		if (rild_ready(ld)) {
-			mif_info("%s: INIT_END -> %s\n", ld->name, mc->name);
+		if (rild_ready(ld, &delta_time)) {
+			mif_info("%s: INIT_END -> %s, %llums delayed\n", ld->name, mc->name, delta_time);
 			atomic_inc(&mld->init_end_cnt);
 			send_ipc_irq_debug(mld, cmd2int(CMD_INIT_END));
 		}
@@ -700,8 +719,8 @@ static void cmd_phone_start_handler(struct mem_link_device *mld)
 	ld->dup_count_suspend = 0;
 	ld->dup_count_resume = 0;
 
-	if (rild_ready(ld)) {
-		mif_info("%s: INIT_END -> %s\n", ld->name, mc->name);
+	if (rild_ready(ld, &delta_time)) {
+		mif_info("%s: INIT_END -> %s, %llums delayed\n", ld->name, mc->name, delta_time);
 		atomic_inc(&mld->init_end_cnt);
 		send_ipc_irq_debug(mld, cmd2int(CMD_INIT_END));
 	}
@@ -1266,12 +1285,18 @@ static enum hrtimer_restart pktproc_tx_timer_func(struct hrtimer *timer)
 	struct mem_link_device *mld = container_of(timer, struct mem_link_device, pktproc_tx_timer);
 	struct pktproc_adaptor_ul *ppa_ul = &mld->pktproc_ul;
 	struct modem_ctl *mc = mld->link_dev.mc;
+	struct link_device *ld = &mld->link_dev;
 	bool need_schedule = false;
 	bool need_irq = false;
 	bool need_dit = false;
 	unsigned long flags;
 	unsigned int count;
 	int ret, i;
+
+	if (ld->tx_flowctrl_mask) {
+		mif_err_limited("flowctrl=0x%04lx\n", ld->tx_flowctrl_mask);
+		cpif_wake_lock_timeout(mc->iod->ws, msecs_to_jiffies(5));
+	}
 
 	for (i = 0; i < ppa_ul->num_queue; i++) {
 		struct pktproc_queue_ul *q = ppa_ul->q[i];
@@ -1941,11 +1966,7 @@ static int shmem_init_comm(struct link_device *ld, struct io_device *iod)
 {
 	struct mem_link_device *mld = to_mem_link_device(ld);
 	struct modem_ctl *mc = ld->mc;
-	struct io_device *check_iod = NULL;
-	bool allow_no_check_iod = false;
-	int ch = iod->ch;
-	int fmt2rfs = (ld->chid_rfs_0 - ld->chid_fmt_0);
-	int rfs2fmt = (ld->chid_fmt_0 - ld->chid_rfs_0);
+	u64 delta_time = 0;
 
 	if (atomic_read(&mld->init_end_cnt))
 		return 0;
@@ -1953,25 +1974,18 @@ static int shmem_init_comm(struct link_device *ld, struct io_device *iod)
 	if (ld->protocol == PROTOCOL_SIT)
 		return 0;
 
-	/* FMT will check RFS and vice versa */
-	if (is_fmt_iod(iod)) {
-		check_iod = link_get_iod_with_channel(ld, (ch + fmt2rfs));
-		allow_no_check_iod = true;
-	} else if (is_rfs_iod(iod)) {
-		check_iod = link_get_iod_with_channel(ld, (ch + rfs2fmt));
-	}
+	if (!is_fmt_iod(iod) && !is_rfs_iod(iod))
+		return 0;
 
-	if (check_iod ? atomic_read(&check_iod->opened) : allow_no_check_iod) {
+	if (rild_ready(ld, &delta_time)) {
 		if (ld->link_type == LINKDEV_SHMEM)
 			write_clk_table_to_shmem(mld);
-
 		if (cp_online(mc) && !atomic_read(&mld->init_end_cnt)) {
-			mif_err("%s: %s -> INIT_END -> %s\n", ld->name, iod->name, mc->name);
+			mif_err("%s: %s -> INIT_END -> %s, %llums delayed\n",
+					ld->name, iod->name, mc->name, delta_time);
 			atomic_inc(&mld->init_end_cnt);
 			send_ipc_irq(mld, cmd2int(CMD_INIT_END));
 		}
-	} else if (check_iod) {
-		mif_err("%s is not opened yet\n", check_iod->name);
 	}
 
 	return 0;
@@ -1993,6 +2007,8 @@ static void link_prepare_normal_boot(struct link_device *ld, struct io_device *i
 	atomic_set(&mld->init_end_cnt, 0);
 	atomic_set(&mld->init_end_busy, 0);
 	mld->last_init_end_cnt = 0;
+
+	iod->opened_time = ktime_set(0, 0);
 
 	spin_lock_irqsave(&mld->state_lock, flags);
 	mld->state = LINK_STATE_OFFLINE;
@@ -2122,6 +2138,13 @@ static int link_load_gnss_image(struct link_device *ld,
 	if (ret) {
 		mif_err("copy_from_user() fail:%d\n", ret);
 		return ret;
+	}
+
+	if (img.firmware_size > cp_shmem_get_size(SHMEM_GNSS_FW) ||
+		(img.offset > cp_shmem_get_size(SHMEM_GNSS_FW) - img.firmware_size)) {
+		mif_err("offset:%d size:%d error\n",
+			img.offset, img.firmware_size);
+		return -EFAULT;
 	}
 
 	dst = (void __iomem *)(mld->gnss_v_base + img.offset);
@@ -2355,6 +2378,48 @@ static int shmem_security_request(struct link_device *ld, struct io_device *iod,
 exit:
 	return err;
 }
+
+#if IS_ENABLED(CONFIG_CLO)
+static void gro_flush_timer(struct link_device *ld, struct napi_struct *napi)
+{
+	struct mem_link_device *mld = to_mem_link_device(ld);
+	struct timespec64 curr, diff;
+
+	if (!clo_gro_flush_time) {
+		napi_gro_flush(napi, false);
+		return;
+	}
+
+	if (unlikely(mld->flush_time.tv_sec == 0)) {
+		ktime_get_real_ts64(&mld->flush_time);
+	} else {
+		ktime_get_real_ts64(&(curr));
+		diff = timespec64_sub(curr, mld->flush_time);
+		if ((diff.tv_sec > 0) || (diff.tv_nsec > clo_gro_flush_time)) {
+			napi_gro_flush(napi, false);
+			ktime_get_real_ts64(&mld->flush_time);
+		}
+	}
+}
+
+static struct timespec64 update_flush_time(struct timespec64 org_flush_time)
+{
+	struct timespec64 curr, diff, ret;
+
+	ktime_get_real_ts64(&curr);
+	if (unlikely(org_flush_time.tv_sec == 0)) {
+		ktime_get_real_ts64(&ret);
+		return ret;
+	}
+	diff = timespec64_sub(curr, org_flush_time);
+	if (diff.tv_nsec > clo_gro_flush_time)
+		ktime_get_real_ts64(&ret);
+	else
+		ret = org_flush_time;
+
+	return ret;
+}
+#endif
 
 #if IS_ENABLED(CONFIG_LINK_DEVICE_WITH_SBD_ARCH)
 static int sbd_link_rx_func_napi(struct sbd_link_device *sl, struct link_device *ld, int budget,
@@ -2597,13 +2662,14 @@ static int link_start_dump_boot(struct link_device *ld, struct io_device *iod)
 		ld->aligned = false;
 
 	if (mld->dpram_magic) {
-		unsigned int magic;
+		unsigned int magic, magic_cmp;
 
-		iowrite32(ld->magic_dump, mld->legacy_link_dev.magic);
-		magic = ioread32(mld->legacy_link_dev.magic);
-		if (magic != ld->magic_dump) {
-			mif_err("%s: ERR! magic 0x%08X != DUMP_MAGIC 0x%08X\n",
-				ld->name, magic, ld->magic_dump);
+		magic = ld->minidump_mode ? ld->magic_minidump : ld->magic_dump;
+		iowrite32(magic, mld->legacy_link_dev.magic);
+		magic_cmp = ioread32(mld->legacy_link_dev.magic);
+		if (magic_cmp != magic) {
+			mif_err("%s: ERR! magic_cmp 0x%08X != magic 0x%08X\n",
+				ld->name, magic_cmp, magic);
 			return -EFAULT;
 		}
 		mif_info("%s: magic == 0x%08X\n", ld->name, magic);
@@ -2927,6 +2993,11 @@ static int shmem_enqueue_snapshot(struct mem_link_device *mld)
 irqreturn_t shmem_irq_handler(int irq, void *data)
 {
 	struct mem_link_device *mld = (struct mem_link_device *)data;
+#if IS_ENABLED(CONFIG_CLO)
+	struct link_device *ld = &mld->link_dev;
+
+	mld->flush_time = ld->update_flush_time(mld->flush_time);
+#endif
 
 	mld->rx_int_count++;
 	napi_schedule(&mld->mld_napi);
@@ -3559,12 +3630,11 @@ static int set_protocol_attr(struct link_device *ld)
 {
 	switch (ld->protocol) {
 	case PROTOCOL_SIPC:
-		ld->chid_fmt_0 = SIPC5_CH_ID_FMT_0;
-		ld->chid_rfs_0 = SIPC5_CH_ID_RFS_0;
 		ld->magic_boot = MEM_BOOT_MAGIC;
 		ld->magic_crash = MEM_CRASH_MAGIC;
 		ld->magic_dump = MEM_DUMP_MAGIC;
 		ld->magic_ipc = MEM_IPC_MAGIC;
+		ld->magic_minidump = MEM_MINIDUMP_MAGIC;
 
 		ld->is_start_valid = sipc5_start_valid;
 		ld->is_padding_exist = sipc5_padding_exist;
@@ -3582,12 +3652,11 @@ static int set_protocol_attr(struct link_device *ld)
 		ld->is_misc_ch = sipc_misc_ch;
 		break;
 	case PROTOCOL_SIT:
-		ld->chid_fmt_0 = EXYNOS_CH_ID_FMT_0;
-		ld->chid_rfs_0 = EXYNOS_CH_ID_RFS_0;
 		ld->magic_boot = SHM_BOOT_MAGIC;
 		ld->magic_crash = SHM_DUMP_MAGIC;
 		ld->magic_dump = SHM_DUMP_MAGIC;
 		ld->magic_ipc = SHM_IPC_MAGIC;
+		ld->magic_minidump = SHM_MINIDUMP_MAGIC;
 
 		ld->is_start_valid = exynos_start_valid;
 		ld->is_padding_exist = exynos_padding_exist;
@@ -3684,6 +3753,11 @@ static int set_ld_attr(struct platform_device *pdev,
 
 	ld->close_tx = shmem_close_tx;
 	ld->get_cp_crash_reason = get_cp_crash_reason;
+
+#if IS_ENABLED(CONFIG_CLO)
+	ld->gro_flush = gro_flush_timer;
+	ld->update_flush_time = update_flush_time;
+#endif
 
 	ld->protocol = modem->protocol;
 	ld->capability_check = modem->capability_check;

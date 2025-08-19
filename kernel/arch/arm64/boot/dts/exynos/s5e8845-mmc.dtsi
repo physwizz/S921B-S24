@@ -33,9 +33,9 @@
 		sdr104-dline = <0x2D>; //2.4ns
 		card-detect-gpio;
 		card-init-hwacg-ctrl;
-		ssc-rate-mfr = <4>;
-		ssc-rate-mrr = <27>;
-		qos-dvfs-level = <400000>;
+		ssc-rate-mfr = <6>;
+		ssc-rate-mrr = <24>;
+		qos-dvfs-level = <267000>;
 		fifo-depth = <0x40>;
 		desc-size = <4>;
 		card-detect-delay = <200>;
@@ -57,7 +57,6 @@
 		/* Swapping clock drive strength */
 		clk-drive-number = <1>;
 		pinctrl-names = "default";
-//		pinctrl-0 = <&sd2_clk &sd2_cmd &sd2_bus1 &sd2_bus4 &dwmmc2_cd_ext_irq>;
 		pinctrl-0 = <&sd2_clk &sd2_cmd &sd2_bus1 &sd2_bus4>;
 
 		card-detect = <&gpc0 0 0xf>;

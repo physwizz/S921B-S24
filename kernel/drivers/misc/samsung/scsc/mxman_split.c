@@ -98,6 +98,8 @@ static struct work_struct wlbtd_work;
 #include "./kunit/kunit_mxman_split.c"
 #endif
 
+#include "wlbt_ramsd.h"
+
 #define STRING_BUFFER_MAX_LENGTH 512
 #define NUMBER_OF_STRING_ARGS 5
 #define MX_DRAM_SIZE (4 * 1024 * 1024)
@@ -220,9 +222,30 @@ static bool disable_error_handling;
 module_param(disable_error_handling, bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(disable_error_handling, "Disable error handling");
 
-static bool single_subsystem_recovery;
-module_param(single_subsystem_recovery, bool, S_IRUGO | S_IWUSR);
-MODULE_PARM_DESC(single_subsystem_recovery, "Enable single subsystem recovery");
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+static bool enable_split_recovery = true;
+module_param(enable_split_recovery, bool, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(enable_split_recovery, "Enable split recovery");
+
+static const char *rcvry_state_str[RCVRY_STATE_MAX] = {"NONE", "COLD_RESET", "WARM_RESET", "REOPEN", "FAILED"};
+
+static enum recovery_state recovery_state = RCVRY_STATE_NONE;
+
+static const char *rcvry_event_str[RCVRY_EVT_MAX] = {	
+														"ERROR WLAN", "ERROR WPAN", "ERROR HOST", "ERROR CHIP", 
+														"FAILURE WORK DONE", "FAILURE WORK ERROR",
+														"REOPEN DONE", "REOPEN ERROR", "REOPEN TIMEOUT"
+													};
+
+struct rcvry_event_record {
+	enum recovery_event event;
+	bool complete;
+} __packed;
+
+void mxman_set_failure_params(struct mxman *mxman);
+void mxman_recovery_thread_deinit(struct mxman* mxman);
+int mxman_recovery_thread_init(struct mxman* mxman);
+#endif
 
 #define DISABLE_RECOVERY_HANDLING_SCANDUMP 3 /* Halt kernel and scandump on FW failure */
 
@@ -267,6 +290,10 @@ static bool kernel_crash_on_service_fail;
 module_param(kernel_crash_on_service_fail, bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(kernel_crash_on_service_fail, "Halt kernel and get ready for scandump on service start fail");
 
+static bool enable_scan2mem_dump = false;
+module_param(enable_scan2mem_dump, bool, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(enable_scan2mem_dump, "Enable scan2mem dump");
+
 /*
  * shared between this module and mgt.c as this is the kobject referring to
  * /sys/wifi directory. Core driver is called 1st we create the directory
@@ -289,6 +316,140 @@ static struct kobj_attribute dcxocal_attr = __ATTR(wlbt_dcxo_caldata, 0660, sysf
 /* Time stamps of last level7 resets in jiffies */
 static unsigned long syserr_level7_history[SYSERR_LEVEL7_HISTORY_SIZE] = { 0 };
 static int syserr_level7_history_index;
+
+#ifdef CONFIG_HDM_WLBT_SUPPORT
+/* For test */
+static u32 hdm_wlan_support;
+module_param(hdm_wlan_support, uint, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(hdm_wlan_support, "hdm_wlan_support");
+
+static u32 hdm_bt_support;
+module_param(hdm_bt_support, uint, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(hdm_bt_support, "hdm_bt_support");
+
+/*
+	extern int hdm_wlan_support;
+	extern int hdm_bt_support;
+*/
+
+static int hdm_wlan_loader = 1;
+static ssize_t sysfs_show_hdm_wlan_loader(struct kobject *kobj, struct kobj_attribute *attr, char *buf);
+static ssize_t sysfs_store_hdm_wlan_loader(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count);
+static struct kobj_attribute hdm_wlan_loader_attr = __ATTR(hdm_wlan_loader, 0660, sysfs_show_hdm_wlan_loader, sysfs_store_hdm_wlan_loader);
+
+static int hdm_bt_loader = 1;
+static ssize_t sysfs_show_hdm_bt_loader(struct kobject *kobj, struct kobj_attribute *attr, char *buf);
+static ssize_t sysfs_store_hdm_bt_loader(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count);
+static struct kobj_attribute hdm_bt_loader_attr = __ATTR(hdm_bt_loader, 0660, sysfs_show_hdm_bt_loader, sysfs_store_hdm_bt_loader);
+
+int mxman_get_hdm_wlan_support(void)
+{
+	return hdm_wlan_support;
+}
+
+/* Retrieve hdm_wlan_loader in sysfs global */
+static ssize_t sysfs_show_hdm_wlan_loader(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", hdm_wlan_loader);
+}
+
+/* Update hdm_wlan_loader in sysfs global */
+static ssize_t sysfs_store_hdm_wlan_loader(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int r;
+
+	r = kstrtoint(buf, 10, &hdm_wlan_loader);
+	if (r < 0)
+		hdm_wlan_loader = 0;
+
+	switch (hdm_wlan_loader) {
+	case 0:
+		break;
+	case 1:
+		/*wlan recovery*/
+		break;
+	}
+
+	SCSC_TAG_INFO(MXMAN, "hdm_wlan_loader: %d\n", hdm_wlan_loader);
+
+	return (r == 0) ? count : 0;
+}
+
+/* Register hdm_wlan_loader override */
+void mxman_create_sysfs_hdm_wlan_loader(void)
+{
+	int r;
+
+	/* Create sysfs file /sys/kernel/hdm_wlan_loader */
+	r = sysfs_create_file(kernel_kobj, &hdm_wlan_loader_attr.attr);
+	if (r) {
+		/* Failed, so clean up dir */
+		SCSC_TAG_ERR(MXMAN, "Can't create /sys/kernel/hdm_wlan_loader\n");
+	}
+	hdm_wlan_loader = 0;
+}
+
+/* Unregister hdm_wlan_loader override */
+void mxman_destroy_sysfs_hdm_wlan_loader(void)
+{
+	/* Destroy /sys/kernel/hdm_wlan_loader file */
+	sysfs_remove_file(kernel_kobj, &hdm_wlan_loader_attr.attr);
+}
+
+int mxman_get_hdm_bt_support(void)
+{
+	return hdm_bt_support;
+}
+
+/* Retrieve hdm_bt_loader in sysfs global */
+static ssize_t sysfs_show_hdm_bt_loader(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", hdm_bt_loader);
+}
+
+/* Update hdm_bt_loader in sysfs global */
+static ssize_t sysfs_store_hdm_bt_loader(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int r;
+
+	r = kstrtoint(buf, 10, &hdm_bt_loader);
+	if (r < 0)
+		hdm_bt_loader = 0;
+
+	switch (hdm_bt_loader) {
+	case 0:
+		break;
+	case 1:
+		/*bt recovery*/
+		break;
+	}
+
+	SCSC_TAG_INFO(MXMAN, "hdm_bt_loader: %d\n", hdm_bt_loader);
+
+	return (r == 0) ? count : 0;
+}
+
+/* Register hdm_bt_loader override */
+void mxman_create_sysfs_hdm_bt_loader(void)
+{
+	int r;
+
+	/* Create sysfs file /sys/kernel/hdm_bt_loader */
+	r = sysfs_create_file(kernel_kobj, &hdm_bt_loader_attr.attr);
+	if (r) {
+		/* Failed, so clean up dir */
+		SCSC_TAG_ERR(MXMAN, "Can't create /sys/kernel/hdm_bt_loader\n");
+	}
+	hdm_bt_loader = 0;
+}
+
+/* Unregister hdm_bt_loader override */
+void mxman_destroy_sysfs_hdm_bt_loader(void)
+{
+	/* Destroy /sys/kernel/hdm_bt_loader file */
+	sysfs_remove_file(kernel_kobj, &hdm_bt_loader_attr.attr);
+}
+#endif
 
 #if IS_ENABLED(CONFIG_SCSC_MXLOGGER)
 static int mxman_logring_register_observer(struct scsc_logring_mx_cb *mx_cb, char *name)
@@ -593,6 +754,52 @@ void mxman_destroy_sysfs_wlbt_dcxo_caldata(void)
 }
 #endif
 
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+static int __mxman_send_rcvry_evt_to_fsm(struct mxman *mxman, int event, bool comp)
+{
+	u32 val;
+	struct rcvry_fsm_thread		*th = &mxman->rcvry_thread;
+	struct rcvry_event_record 	evt;
+
+	unsigned long flags;
+
+	spin_lock_irqsave(&th->kfifo_lock, flags);
+	evt.event = event;
+	evt.complete = comp;
+
+	SCSC_TAG_INFO(MXMAN, "event %s complete %d\n", rcvry_event_str[event], evt.complete);
+
+	val = kfifo_in(&th->evt_queue, &evt, sizeof(evt));
+	wake_up_interruptible(&th->evt_wait_q);
+	spin_unlock_irqrestore(&th->kfifo_lock, flags);
+
+	return 0;
+}
+
+static int mxman_send_rcvry_evt_to_fsm(struct mxman *mxman, enum recovery_event event)
+{
+	return __mxman_send_rcvry_evt_to_fsm(mxman, event, false);
+}
+
+static int mxman_send_rcvry_evt_to_fsm_wait_completion(struct mxman *mxman, enum recovery_event event)
+{
+	return __mxman_send_rcvry_evt_to_fsm(mxman, event, true);
+}
+
+static int mxman_rcvry_fsm_complete(struct mxman *mxman)
+{
+	struct rcvry_fsm_thread		*th = &mxman->rcvry_thread;
+
+	reinit_completion(&th->reopen_completion);
+
+	if(!wait_for_completion_timeout(&th->reopen_completion, 5*HZ)) {
+		SCSC_TAG_ERR(MXMAN, "recovery fsm wait for complete timeout\n");
+		return -EFAULT;
+	}
+	return 0;
+}
+#endif
+
 /* Track when WLBT reset fails to allow debug */
 static u64 reset_failed_time;
 static int firmware_runtime_flags;
@@ -829,7 +1036,7 @@ bool mxman_subsys_in_failed_state(struct mxman *mxman, enum scsc_subsystem sub)
 			return true;
 		break;
 	case MXMAN_STATE_FAILED_WPAN:
-		if (sub == SCSC_SUBSYSTEM_WLAN || sub == SCSC_SUBSYSTEM_WLAN_WPAN)
+		if (sub == SCSC_SUBSYSTEM_WPAN || sub == SCSC_SUBSYSTEM_WLAN_WPAN)
 			return true;
 		break;
 	case MXMAN_STATE_FAILED_PMU:
@@ -1133,7 +1340,9 @@ static void mxman_reset_chip(struct mxman *mxman)
 	(void)snprintf(mxman->fw_build_id, sizeof(mxman->fw_build_id), FW_BUILD_ID_UNKNOWN);
 
 	mxproc_remove_ctrl_proc_dir(&mxman->mxproc);
-
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	mxman_recovery_thread_deinit(mxman);
+#endif
 	/* Shutdown the hardware */
 	ret = mxman_res_reset(mxman, true);
 	if (ret) {
@@ -1172,7 +1381,8 @@ static void mxman_reset_chip(struct mxman *mxman)
 
 #if IS_ENABLED(CONFIG_SOC_S5E8825) || IS_ENABLED(CONFIG_SOC_S5E5515) \
 	|| IS_ENABLED(CONFIG_SOC_S5E8535) || IS_ENABLED(CONFIG_SOC_S5E8835) \
-	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845)
+	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845) \
+	|| IS_ENABLED(CONFIG_SOC_S5E5535)
 static void mxman_pmu_message_handler(void *data, u32 cmd)
 {
 	struct mxman *mxman = (struct mxman *)data;
@@ -1183,6 +1393,9 @@ static void mxman_pmu_message_handler(void *data, u32 cmd)
 		break;
 	case MIFPMU_ERROR_WPAN:
 		mxman_fail(mxman, SCSC_PANIC_CODE_FW << 15, __func__, SCSC_SUBSYSTEM_WPAN);
+		break;
+	case MIFPMU_ERROR_WLAN_WPAN:
+		mxman_fail(mxman, SCSC_PANIC_CODE_FW << 15, __func__, SCSC_SUBSYSTEM_WLAN_WPAN);
 		break;
 	default:
 		SCSC_TAG_INFO(MXMAN, "Incorrect command\n");
@@ -1232,7 +1445,8 @@ static int mxman_start_boot(struct mxman *mxman, enum scsc_subsystem sub)
 	/* PMU init is required before fw_init!.. fw_init will call mifpmuman_load_fw */
 #if IS_ENABLED(CONFIG_SOC_S5E8825) || IS_ENABLED(CONFIG_SOC_S5E5515) \
 	|| IS_ENABLED(CONFIG_SOC_S5E8535) || IS_ENABLED(CONFIG_SOC_S5E8835) \
-	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845)
+	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845) \
+	|| IS_ENABLED(CONFIG_SOC_S5E5535)
 	ret = mxman_res_pmu_init(mxman, &mxman_pmu_message_handler);
 #else
 	ret = mxman_res_pmu_init(mxman);
@@ -1285,7 +1499,9 @@ static int mxman_start_boot(struct mxman *mxman, enum scsc_subsystem sub)
 #endif
 	mxproc_create_ctrl_proc_dir(&mxman->mxproc, mxman);
 	panicmon_init(scsc_mx_get_panicmon(mxman->mx), mxman->mx);
-
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	mxman_recovery_thread_init(mxman);
+#endif
 	/* Change state to STARTING to allow coredump as we come out of reset */
 	mxman->mxman_state = MXMAN_STATE_STARTING;
 	/* Release from reset */
@@ -1294,6 +1510,9 @@ static int mxman_start_boot(struct mxman *mxman, enum scsc_subsystem sub)
 		SCSC_TAG_ERR(MXMAN, "Error mxman_res_reset\n");
 		goto error;
 	}
+#if defined(CONFIG_SCSC_XO_CDAC_CON)
+	mxman->is_dcxo_set = false;
+#endif
 	return 0;
 
 error:
@@ -1326,13 +1545,27 @@ static int mxman_start(struct mxman *mxman, enum scsc_subsystem sub, void *data,
 	 * Specific chip resources and
 	 * boot pre-conditions should be allocated and assigned before booting
 	 * the specific subsystem */
+
+#if defined(CONFIG_SCSC_XO_CDAC_CON)
+	if (!mxman->is_dcxo_set) {
+		ret = mxman_res_dcxo_config_update(mxman);
+		if (ret) {
+			SCSC_TAG_ERR(MXMAN, "Error mxman_res_dcxo_config_update\n");
+			goto error;
+		}
+	}
+#endif
+
 	ret = mxman_res_init_subsystem(mxman, sub, data, data_sz, &mxman_message_handler);
 	if (ret) {
 		SCSC_TAG_ERR(MXMAN, "Error mxman_res_init_subsystem\n");
 		goto error;
 	}
-
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	ret = mxman_res_pmu_boot(mxman, sub, (disable_recovery_handling) ? false : true);
+#else
 	ret = mxman_res_pmu_boot(mxman, sub);
+#endif
 	if (ret) {
 		SCSC_TAG_ERR(MXMAN, "Error mxman_res_pmu_boot\n");
 		goto error;
@@ -1811,6 +2044,62 @@ static void mxman_check_promote_syserr(struct mxman *mxman)
 	}
 }
 
+static void mxman_create_scandump(struct mxman *mxman)
+{
+	int ret;
+	struct scsc_mif_abs *mif = scsc_mx_get_mif_abs(mxman->mx);
+	unsigned long mem_start;
+	u32 s2m_size_octets;
+	if (!enable_scan2mem_dump) {
+		SCSC_TAG_WARNING(MXMAN, "scan2mem disabled\n");
+		return;
+	}
+
+	s2m_size_octets = mif->get_s2m_size_octets(mif);
+	mem_start = mif->get_mem_start(mif);
+	/* Trigger making a scandump data in RAMSD and wait for 2sec */
+	mif->set_scan2mem_mode(mif, true);
+
+	mxman_res_pmu_scan2mem(mxman, true);
+
+	/* Assert SRESET_N while maintaining PMIC to keep a scandump data in RAMSD */
+	ret = mxman_res_reset(mxman, true);
+	if (ret) {
+		SCSC_TAG_ERR(MXMAN, "Error mxman_res_reset\n");
+		return;
+	}
+	ret = mxman_res_fw_init(mxman, &mxman->fw_wlan, &mxman->fw_wpan, mxman->start_dram, mxman->size_dram);
+	if (ret) {
+		SCSC_TAG_ERR(MXMAN, "Error mxman_res_fw_init\n");
+		return;
+	}
+
+	/* Release SRESET_N and keep PMIC power */
+	ret = mxman_res_reset(mxman, false);
+	if (ret) {
+		SCSC_TAG_ERR(MXMAN, "Error mxman_res_reset\n");
+		return;
+	}
+
+	/* Trigger copying a scandump data in RAMSD into DRAM */
+	ret = mxman_res_pmu_scan2mem(mxman, false);
+	if (!ret) {
+		pr_info("s2m_size_octets : 0x%x\n", s2m_size_octets);
+		wlbt_ramsd_set_ramrp_address(mif->get_mem_start(mif), 0);
+		mif->set_s2m_dram_offset(mif, 0);
+		call_wlbtd_ramsd(s2m_size_octets);
+
+		/* TODO: Save scandump from DRAM to filesystem
+			- For now, host driver cannot parse scandump data to transform a dump file for user debug.
+			- In next step of the scan2mem dump feature, 
+			  it will have to discuss about how to generate a dump file that users can debug.
+		*/
+
+	}
+	/* Release scan2mem_mode of mif */
+	mif->set_scan2mem_mode(mif, false);
+}
+
 #define MAX_UHELP_TMO_MS 20000
 /*
  * workqueue thread for single WLAN recovery
@@ -1820,10 +2109,16 @@ static void mxman_failure_work_wlan(struct work_struct *work)
 	struct mxman *mxman = container_of(work, struct mxman, failure_work_wlan);
 	struct scsc_mx *mx = mxman->mx;
 	struct srvman *srvman = scsc_mx_get_srvman(mx);
+#if defined(CONFIG_SCSC_PCIE_CHIP) || defined(CONFIG_WLBT_REFACTORY)
 	struct scsc_mif_abs *mif = scsc_mx_get_mif_abs(mxman->mx);
+#endif
 	struct fwhdr_if *fw_if = mxman->fw_wlan;
+	int used = 0;
+#if IS_ENABLED(CONFIG_SCSC_LOG_COLLECTION)
+	u16 reason;
+#endif
 
-	SCSC_TAG_WARNING(MXMAN, "[SINGLE RECOVERY] in WLAN FAILURE WORK subsystem %d\n", mxman->last_syserr.subsys);
+	SCSC_TAG_WARNING(MXMAN, "[SPLIT RECOVERY] in WLAN FAILURE WORK subsystem %d\n", mxman->last_syserr.subsys);
 #if defined(CONFIG_SCSC_PCIE_CHIP)
 	if(scsc_mx_service_claim(MXMAN_FAILURE_WORK_WLAN))
 		return;
@@ -1833,7 +2128,41 @@ static void mxman_failure_work_wlan(struct work_struct *work)
 #endif
 	/* Take mutex shared with syserr recovery */
 	mutex_lock(&mxman->mxman_recovery_mutex);
-	process_panic_record(mxman, true);
+
+	process_panic_record(mxman, false);
+	mxman_check_promote_syserr(mxman);
+	SCSC_TAG_INFO(MXMAN, "This syserr level %d. Triggering moredump at level %d\n", mxman->last_syserr.level,
+				trigger_moredump_level);
+
+	blocking_notifier_call_chain(&firmware_chain, SCSC_FW_EVENT_FAILURE, NULL);
+
+	SCSC_TAG_INFO(MXMAN, "Complete mm_msg_start_ind_completion\n");
+	complete(&mxman->mm_msg_start_ind_completion);
+	mutex_lock(&mxman->mxman_mutex);
+
+	if (!mxman_in_started_state_subsystem(mxman, SCSC_SUBSYSTEM_WLAN) && !mxman_in_starting_state(mxman)) {
+		SCSC_TAG_WARNING(MXMAN, "Not in started state: mxman->mxman_state=%d\n", mxman->mxman_state);
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+		mxman_send_rcvry_evt_to_fsm(mxman, RCVRY_EVT_FAILURE_WORK_ERR);
+#else
+		mxman->panic_in_progress = false;
+#endif
+#ifdef CONFIG_ANDROID
+		wake_unlock(&mxman->failure_recovery_wake_lock);
+#endif
+		mutex_unlock(&mxman->mxman_mutex);
+		mutex_unlock(&mxman->mxman_recovery_mutex);
+		return;
+	}
+
+	if (mxman_subsys_active(mxman, SCSC_SUBSYSTEM_WLAN)) {
+		SCSC_TAG_INFO(MXMAN, "Setting Errors in WLAN transports\n");
+		mxlog_transport_set_error(scsc_mx_get_mxlog_transport(mx));
+		mxlog_release(scsc_mx_get_mxlog(mx));
+		/* unregister channel handler */
+		mxmgmt_transport_register_channel_handler(scsc_mx_get_mxmgmt_transport(mx), MMTRANS_CHAN_ID_MAXWELL_MANAGEMENT,NULL, NULL);
+		mxmgmt_transport_set_error(scsc_mx_get_mxmgmt_transport(mx));
+	}
 
 	/* Show status of MSI interrupts */
 #if defined(CONFIG_SCSC_PCIE_CHIP)
@@ -1855,36 +2184,151 @@ static void mxman_failure_work_wlan(struct work_struct *work)
 	SCSC_TAG_INFO(MXMAN, "Setting Mxman state transports\n");
 	mxman->mxman_state = mxman->mxman_next_state;
 
-	SCSC_TAG_INFO(MXMAN, "Setting Errors in WLAN transports\n");
-	mxlog_transport_set_error(scsc_mx_get_mxlog_transport(mx));
-	mxlog_release(scsc_mx_get_mxlog(mx));
-	/* unregister channel handler */
-	mxmgmt_transport_register_channel_handler(scsc_mx_get_mxmgmt_transport(mx), MMTRANS_CHAN_ID_MAXWELL_MANAGEMENT,NULL, NULL);
-	mxmgmt_transport_set_error(scsc_mx_get_mxmgmt_transport(mx));
+	/* Mark any single service recovery as no longer in progress */
+	mxman->syserr_recovery_in_progress = false;
+	mxman->last_syserr_recovery_time = 0;
 
-	/* Signal panic to WLAN Subsystem */
-	SCSC_TAG_INFO(MXMAN, "Setting MIFINTRBIT_RESERVED_PANIC_WLAN\n");
-	mif->irq_bit_set(mif, MIFINTRBIT_RESERVED_PANIC_WLAN, SCSC_MIF_ABS_TARGET_WLAN);
-	SCSC_TAG_INFO(MXMAN, "Setting MIFINTRBIT_RESERVED_PANIC_FXM_1\n");
-	mif->irq_bit_set(mif, MIFINTRBIT_RESERVED_PANIC_FXM_1, SCSC_MIF_ABS_TARGET_FXM_1);
-#ifdef CONFIG_SCSC_MX450_GDB_SUPPORT
-	SCSC_TAG_INFO(MXMAN, "Setting MIFINTRBIT_RESERVED_PANIC_FXM_2\n");
-	mif->irq_bit_set(mif, MIFINTRBIT_RESERVED_PANIC_FXM_2, SCSC_MIF_ABS_TARGET_FXM_2);
+	if (!mxman_subsys_in_failed_state(mxman, SCSC_SUBSYSTEM_WLAN) &&
+		mxman->mxman_state != MXMAN_STATE_FROZEN) {
+		WLBT_WARN_ON(1);
+		SCSC_TAG_ERR(MXMAN, "Bad state=%d\n", mxman->mxman_state);
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+		mxman_send_rcvry_evt_to_fsm(mxman, RCVRY_EVT_FAILURE_WORK_ERR);
+#else
+		mxman->panic_in_progress = false;
 #endif
+#ifdef CONFIG_ANDROID
+		wake_unlock(&mxman->failure_recovery_wake_lock);
+#endif
+		mutex_unlock(&mxman->mxman_mutex);
+		mutex_unlock(&mxman->mxman_recovery_mutex);
+		return;
+	}
+
 	/* Force the signalling of the subsys */
 	mxman->last_syserr.subsys = SYSERR_SUBSYS_WLAN;
 	srvman_freeze_sub_system(srvman, &mxman->last_syserr);
-	srvman_clear_error(srvman);
-	/* TODO POSIBLE LOG COLLECTION HERE SINGLE */
-	srvman_unfreeze_sub_system(srvman, &mxman->last_syserr);
-	if (scsc_mx_module_reset(SCSC_MODULE_CLIENT_REASON_RECOVERY_WLAN) < 0)
-		SCSC_TAG_INFO(MXMAN, "failed to call scsc_mx_module_reset\n");
+	if (mxman_subsys_in_failed_state(mxman, SCSC_SUBSYSTEM_WLAN)) {
+		mxman->last_panic_time = local_clock();
+		/* Process and dump panic record, which should be valid now even for host induced panic */
+		process_panic_record(mxman, true);
+		SCSC_TAG_INFO(MXMAN, "Trying to schedule coredump\n");
+		SCSC_TAG_INFO(MXMAN, "scsc_release %d.%d.%d.%d.%d\n", SCSC_RELEASE_PRODUCT, SCSC_RELEASE_ITERATION,
+				SCSC_RELEASE_CANDIDATE, SCSC_RELEASE_POINT, SCSC_RELEASE_CUSTOMER);
+		SCSC_TAG_INFO(MXMAN, "Auto-recovery: %s\n", mxman_recovery_disabled() ? "off" : "on");
+#ifdef CONFIG_SCSC_WLBTD
+		scsc_wlbtd_get_and_print_build_type();
+#endif
+#if IS_ENABLED(CONFIG_DEBUG_SNAPSHOT)
+		/* Scandump if requested on this panic. Must be tried after process_panic_record() */
+		if (disable_recovery_handling == DISABLE_RECOVERY_HANDLING_SCANDUMP &&
+			scandump_trigger_fw_panic == mxman->scsc_panic_code) {
+			SCSC_TAG_WARNING(MXMAN,
+					"WLBT FW failure - halt Exynos kernel for scandump on code 0x%x!\n",
+					scandump_trigger_fw_panic);
+			mxman_scan_dump_mode();
+		}
+#endif
+		if (disable_auto_coredump) {
+				SCSC_TAG_INFO(MXMAN,
+								"Driver automatic coredump disabled, not launching coredump helper\n");
+		} else {
+#ifdef CONFIG_SCSC_WLBTD
+			/* we can safely call call_wlbtd as we are
+			* in workqueue context
+			*/
+#if IS_ENABLED(CONFIG_SCSC_LOG_COLLECTION)
+			/* Use wlan panic code as default if exists */
+			reason = mxman->scsc_panic_code;
+			/* We are triggering a moredump collection, so
+			* enforce both subsystems to go in to monitor
+			* mode */
+			if (reason & (SCSC_PANIC_CODE_HOST << 15))
+				mxman_res_pmu_monitor(mxman, SCSC_SUBSYSTEM_WLAN);
+			scsc_log_collector_schedule_collection(SCSC_LOG_FW_PANIC, reason);
+#else
+			r = call_wlbtd(SCSC_SCRIPT_MOREDUMP);
+#endif
+#endif
+			used = snprintf(panic_record_dump, PANIC_RECORD_DUMP_BUFFER_SZ,
+							"RF HW Ver: 0x%X\n", mxman->rf_hw_ver);
+			used += snprintf(panic_record_dump + used, PANIC_RECORD_DUMP_BUFFER_SZ - used,
+							"SCSC Panic Code:: 0x%X\n", mxman->scsc_panic_code);
+			used += snprintf(panic_record_dump + used, PANIC_RECORD_DUMP_BUFFER_SZ - used,
+							"SCSC Last Panic Time:: %lld\n", mxman->last_panic_time);
+			panic_record_dump_buffer("r4", mxman->last_panic_rec_r,
+									mxman->last_panic_rec_sz, panic_record_dump + used,
+									PANIC_RECORD_DUMP_BUFFER_SZ - used);
+
+			/* Print the host code/reason again so it's near the FW panic
+			* record in the kernel log
+			*/
+			print_panic_code(mxman);
+			SCSC_TAG_INFO(MXMAN, "Reason: '%s'\n",
+						mxman->failure_reason[0] ? mxman->failure_reason : "<null>");
+
+			blocking_notifier_call_chain(&firmware_chain, SCSC_FW_EVENT_MOREDUMP_COMPLETE,
+										&panic_record_dump);
+
+		}
+
+		if (is_bug_on_enabled()) {
+#if IS_ENABLED(CONFIG_DEBUG_SNAPSHOT)
+			/* Scandump if requested on this panic. Must be tried after process_panic_record() */
+			SCSC_TAG_WARNING(MXMAN,
+					"WLBT FW failure - halt Exynos kernel for scandump on code 0x%x!\n",
+					mxman->scsc_panic_code);
+			mxman_scan_dump_mode();
+#endif
+			SCSC_TAG_ERR(MX_FILE, "Deliberately panic the kernel due to WLBT firmware failure!\n");
+			SCSC_TAG_ERR(MX_FILE, "calling BUG_ON(1)\n");
+			BUG_ON(1);
+		}
+	}
+
+	SCSC_TAG_INFO(MXMAN, "Auto-recovery: %s\n", mxman_recovery_disabled() ? "off" : "on");
+
+	if (!mxman_recovery_disabled())
+		/* Allow the services to close and block any spurios start
+		* from services not respecting the .remove .probe callbacks */
+		srvman_set_error(srvman, NOT_ALLOWED_START);
+	mutex_unlock(&mxman->mxman_mutex);
+	if (!mxman_recovery_disabled()) {
+		SCSC_TAG_INFO(MXMAN, "Calling srvman_unfreeze_services\n");
+		srvman_unfreeze_sub_system(srvman, &mxman->last_syserr);
+		if (scsc_mx_module_reset(SCSC_MODULE_CLIENT_REASON_RECOVERY_WLAN) < 0)
+			SCSC_TAG_INFO(MXMAN, "failed to call scsc_mx_module_reset\n");
+		/* At this point services should be probed and mxman status
+		* in stopped state to get new starts */
+		srvman_set_error(srvman, ALLOWED_START_STOP);
+		atomic_inc(&mxman->recovery_count);
+	}
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	mxman_send_rcvry_evt_to_fsm(mxman, RCVRY_EVT_FAILURE_WORK_DONE);
+#else
+	mxman->panic_in_progress = false;
+#endif
+	/**
+	 * If recovery is disabled and an scsc_mx_service_open has been hold up,
+	 * release it, rather than wait for the recovery_completion to timeout.
+	 */
+	if (mxman_recovery_disabled())
+		complete(&mxman->recovery_completion);
+
+	/* Safe to allow syserr recovery thread to run */
+	mutex_unlock(&mxman->mxman_recovery_mutex);
 #if defined(CONFIG_SCSC_PCIE_CHIP)
 	scsc_mx_service_release(MXMAN_FAILURE_WORK_WLAN);
 #endif
-	mutex_unlock(&mxman->mxman_recovery_mutex);
 #ifdef CONFIG_ANDROID
 	wake_unlock(&mxman->failure_recovery_wake_lock);
+#endif
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	if (!mxman_recovery_disabled()) {
+		if (mxman_rcvry_fsm_complete(mxman)) {
+			mxman_send_rcvry_evt_to_fsm(mxman, RCVRY_EVT_REOPEN_TIMEOUT);
+		}
+	}
 #endif
 }
 
@@ -1896,9 +2340,15 @@ static void mxman_failure_work_wpan(struct work_struct *work)
 	struct mxman *mxman = container_of(work, struct mxman, failure_work_wpan);
 	struct scsc_mx *mx = mxman->mx;
 	struct srvman *srvman = scsc_mx_get_srvman(mx);
+#if defined(CONFIG_SCSC_PCIE_CHIP) || defined(CONFIG_WLBT_REFACTORY)
 	struct scsc_mif_abs *mif = scsc_mx_get_mif_abs(mxman->mx);
+#endif
+	int used = 0;
+#if IS_ENABLED(CONFIG_SCSC_LOG_COLLECTION)
+	u16 reason;
+#endif
 
-	SCSC_TAG_WARNING(MXMAN, "[SINGLE RECOVERY] in WPAN FAILURE WORK subsystem %d\n", mxman->last_syserr.subsys);
+	SCSC_TAG_WARNING(MXMAN, "[SPLIT RECOVERY] in WPAN FAILURE WORK subsystem %d\n", mxman->last_syserr.subsys);
 #if defined(CONFIG_SCSC_PCIE_CHIP)
 	if(scsc_mx_service_claim(MXMAN_FAILURE_WORK_WPAN))
 		return;
@@ -1909,7 +2359,41 @@ static void mxman_failure_work_wpan(struct work_struct *work)
 #endif
 	/* Take mutex shared with syserr recovery */
 	mutex_lock(&mxman->mxman_recovery_mutex);
-	process_panic_record(mxman, true);
+
+	process_panic_record(mxman, false);
+	mxman_check_promote_syserr(mxman);
+	SCSC_TAG_INFO(MXMAN, "This syserr level %d. Triggering moredump at level %d\n", mxman->last_syserr.level,
+				trigger_moredump_level);
+
+	blocking_notifier_call_chain(&firmware_chain, SCSC_FW_EVENT_FAILURE, NULL);
+
+	SCSC_TAG_INFO(MXMAN, "Complete mm_msg_start_ind_completion\n");
+	complete(&mxman->mm_msg_start_ind_completion);
+	mutex_lock(&mxman->mxman_mutex);
+
+	if (!mxman_in_started_state_subsystem(mxman, SCSC_SUBSYSTEM_WPAN) && !mxman_in_starting_state(mxman)) {
+		SCSC_TAG_WARNING(MXMAN, "Not in started state: mxman->mxman_state=%d\n", mxman->mxman_state);
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+		mxman_send_rcvry_evt_to_fsm(mxman, RCVRY_EVT_FAILURE_WORK_ERR);
+#else
+		mxman->panic_in_progress = false;
+#endif
+#ifdef CONFIG_ANDROID
+		wake_unlock(&mxman->failure_recovery_wake_lock);
+#endif
+		mutex_unlock(&mxman->mxman_mutex);
+		mutex_unlock(&mxman->mxman_recovery_mutex);
+		return;
+	}
+
+	if (mxman_subsys_active(mxman, SCSC_SUBSYSTEM_WPAN)) {
+		SCSC_TAG_INFO(MXMAN, "Setting Errors in WPAN transports\n");
+		mxlog_transport_set_error(scsc_mx_get_mxlog_transport_wpan(mx));
+		mxlog_release(scsc_mx_get_mxlog_wpan(mx));
+		/* unregister channel handler */
+		mxmgmt_transport_register_channel_handler(scsc_mx_get_mxmgmt_transport_wpan(mx), MMTRANS_CHAN_ID_MAXWELL_MANAGEMENT,NULL, NULL);
+		mxmgmt_transport_set_error(scsc_mx_get_mxmgmt_transport_wpan(mx));
+	}
 
 	/* Show status of MSI interrupts */
 #if defined(CONFIG_SCSC_PCIE_CHIP)
@@ -1928,31 +2412,151 @@ static void mxman_failure_work_wpan(struct work_struct *work)
 	SCSC_TAG_INFO(MXMAN, "Setting Mxman state transports\n");
 	mxman->mxman_state = mxman->mxman_next_state;
 
-	SCSC_TAG_INFO(MXMAN, "Setting Errors in WPAN transports\n");
-	mxlog_transport_set_error(scsc_mx_get_mxlog_transport_wpan(mx));
-	mxlog_release(scsc_mx_get_mxlog_wpan(mx));
-	/* unregister channel handler */
-	mxmgmt_transport_register_channel_handler(scsc_mx_get_mxmgmt_transport_wpan(mx), MMTRANS_CHAN_ID_MAXWELL_MANAGEMENT,NULL, NULL);
-	mxmgmt_transport_set_error(scsc_mx_get_mxmgmt_transport_wpan(mx));
+	/* Mark any single service recovery as no longer in progress */
+	mxman->syserr_recovery_in_progress = false;
+	mxman->last_syserr_recovery_time = 0;
 
-	/* Signal panic to WPAN Subsystem */
-	SCSC_TAG_INFO(MXMAN, "Setting MIFINTRBIT_RESERVED_PANIC_WPAN\n");
-	mif->irq_bit_set(mif, MIFINTRBIT_RESERVED_PANIC_WPAN, SCSC_MIF_ABS_TARGET_WPAN);
+	if (!mxman_subsys_in_failed_state(mxman, SCSC_SUBSYSTEM_WPAN) &&
+		mxman->mxman_state != MXMAN_STATE_FROZEN) {
+		WLBT_WARN_ON(1);
+		SCSC_TAG_ERR(MXMAN, "Bad state=%d\n", mxman->mxman_state);
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+		mxman_send_rcvry_evt_to_fsm(mxman, RCVRY_EVT_FAILURE_WORK_ERR);
+#else
+		mxman->panic_in_progress = false;
+#endif
+#ifdef CONFIG_ANDROID
+		wake_unlock(&mxman->failure_recovery_wake_lock);
+#endif
+		mutex_unlock(&mxman->mxman_mutex);
+		mutex_unlock(&mxman->mxman_recovery_mutex);
+		return;
+	}
 
 	/* Force the signalling of the subsys */
 	mxman->last_syserr.subsys = SYSERR_SUBSYS_BT;
 	srvman_freeze_sub_system(srvman, &mxman->last_syserr);
-	srvman_clear_error(srvman);
-	/* TODO POSIBLE LOG COLLECTION HERE SINGLE */
-	srvman_unfreeze_sub_system(srvman, &mxman->last_syserr);
-	if (scsc_mx_module_reset(SCSC_MODULE_CLIENT_REASON_RECOVERY_WPAN) < 0)
-		SCSC_TAG_INFO(MXMAN, "failed to call scsc_mx_module_reset\n");
+	if (mxman_subsys_in_failed_state(mxman, SCSC_SUBSYSTEM_WPAN)) {
+		mxman->last_panic_time = local_clock();
+		/* Process and dump panic record, which should be valid now even for host induced panic */
+		process_panic_record(mxman, true);
+		SCSC_TAG_INFO(MXMAN, "Trying to schedule coredump\n");
+		SCSC_TAG_INFO(MXMAN, "scsc_release %d.%d.%d.%d.%d\n", SCSC_RELEASE_PRODUCT, SCSC_RELEASE_ITERATION,
+				SCSC_RELEASE_CANDIDATE, SCSC_RELEASE_POINT, SCSC_RELEASE_CUSTOMER);
+		SCSC_TAG_INFO(MXMAN, "Auto-recovery: %s\n", mxman_recovery_disabled() ? "off" : "on");
+#ifdef CONFIG_SCSC_WLBTD
+		scsc_wlbtd_get_and_print_build_type();
+#endif
+#if IS_ENABLED(CONFIG_DEBUG_SNAPSHOT)
+		/* Scandump if requested on this panic. Must be tried after process_panic_record() */
+		if (disable_recovery_handling == DISABLE_RECOVERY_HANDLING_SCANDUMP &&
+			scandump_trigger_fw_panic == mxman->scsc_panic_code_wpan) {
+			SCSC_TAG_WARNING(MXMAN,
+					"WLBT FW failure - halt Exynos kernel for scandump on code 0x%x!\n",
+					scandump_trigger_fw_panic);
+			mxman_scan_dump_mode();
+		}
+#endif
+		if (disable_auto_coredump) {
+				SCSC_TAG_INFO(MXMAN,
+								"Driver automatic coredump disabled, not launching coredump helper\n");
+		} else {
+#ifdef CONFIG_SCSC_WLBTD
+			/* we can safely call call_wlbtd as we are
+			* in workqueue context
+			*/
+#if IS_ENABLED(CONFIG_SCSC_LOG_COLLECTION)
+			/* Use wlan panic code as default if exists */
+			reason = mxman->scsc_panic_code_wpan;
+			/* We are triggering a moredump collection, so
+			* enforce both subsystems to go in to monitor
+			* mode */
+			if (reason & (SCSC_PANIC_CODE_HOST << 15))
+				mxman_res_pmu_monitor(mxman, SCSC_SUBSYSTEM_WPAN);
+			scsc_log_collector_schedule_collection(SCSC_LOG_FW_PANIC, reason);
+#else
+			r = call_wlbtd(SCSC_SCRIPT_MOREDUMP);
+#endif
+#endif
+			used = snprintf(panic_record_dump, PANIC_RECORD_DUMP_BUFFER_SZ,
+							"RF HW Ver: 0x%X\n", mxman->rf_hw_ver);
+			used += snprintf(panic_record_dump + used, PANIC_RECORD_DUMP_BUFFER_SZ - used,
+							"SCSC Panic Code:: 0x%X\n", mxman->scsc_panic_code);
+			used += snprintf(panic_record_dump + used, PANIC_RECORD_DUMP_BUFFER_SZ - used,
+							"SCSC Last Panic Time:: %lld\n", mxman->last_panic_time);
+			panic_record_dump_buffer("r4", mxman->last_panic_rec_r,
+									mxman->last_panic_rec_sz, panic_record_dump + used,
+									PANIC_RECORD_DUMP_BUFFER_SZ - used);
+
+			/* Print the host code/reason again so it's near the FW panic
+			* record in the kernel log
+			*/
+			print_panic_code(mxman);
+			SCSC_TAG_INFO(MXMAN, "Reason: '%s'\n",
+						mxman->failure_reason[0] ? mxman->failure_reason : "<null>");
+
+			blocking_notifier_call_chain(&firmware_chain, SCSC_FW_EVENT_MOREDUMP_COMPLETE,
+										&panic_record_dump);
+
+		}
+
+		if (is_bug_on_enabled()) {
+#if IS_ENABLED(CONFIG_DEBUG_SNAPSHOT)
+			/* Scandump if requested on this panic. Must be tried after process_panic_record() */
+			SCSC_TAG_WARNING(MXMAN,
+					"WLBT FW failure - halt Exynos kernel for scandump on code 0x%x!\n",
+					mxman->scsc_panic_code);
+			mxman_scan_dump_mode();
+#endif
+			SCSC_TAG_ERR(MX_FILE, "Deliberately panic the kernel due to WLBT firmware failure!\n");
+			SCSC_TAG_ERR(MX_FILE, "calling BUG_ON(1)\n");
+			BUG_ON(1);
+		}
+	}
+
+	SCSC_TAG_INFO(MXMAN, "Auto-recovery: %s\n", mxman_recovery_disabled() ? "off" : "on");
+
+	if (!mxman_recovery_disabled())
+		/* Allow the services to close and block any spurios start
+		* from services not respecting the .remove .probe callbacks */
+		srvman_clear_error(srvman);
+	mutex_unlock(&mxman->mxman_mutex);
+	if (!mxman_recovery_disabled()) {
+		SCSC_TAG_INFO(MXMAN, "Calling srvman_unfreeze_services\n");
+		srvman_unfreeze_sub_system(srvman, &mxman->last_syserr);
+		if (scsc_mx_module_reset(SCSC_MODULE_CLIENT_REASON_RECOVERY_WPAN) < 0)
+			SCSC_TAG_INFO(MXMAN, "failed to call scsc_mx_module_reset\n");
+		/* At this point services should be probed and mxman status
+		* in stopped state to get new starts */
+		srvman_set_error(srvman, ALLOWED_START_STOP);
+		atomic_inc(&mxman->recovery_count);
+	}
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	mxman_send_rcvry_evt_to_fsm(mxman, RCVRY_EVT_FAILURE_WORK_DONE);
+#else
+	mxman->panic_in_progress = false;
+#endif
+	/**
+	 * If recovery is disabled and an scsc_mx_service_open has been hold up,
+	 * release it, rather than wait for the recovery_completion to timeout.
+	 */
+	if (mxman_recovery_disabled())
+		complete(&mxman->recovery_completion);
+
+	/* Safe to allow syserr recovery thread to run */
+	mutex_unlock(&mxman->mxman_recovery_mutex);
 #if defined(CONFIG_SCSC_PCIE_CHIP)
 	scsc_mx_service_release(MXMAN_FAILURE_WORK_WPAN);
 #endif
-	mutex_unlock(&mxman->mxman_recovery_mutex);
 #ifdef CONFIG_ANDROID
 	wake_unlock(&mxman->failure_recovery_wake_lock);
+#endif
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	if (!mxman_recovery_disabled()) {
+		if (mxman_rcvry_fsm_complete(mxman)) {
+			mxman_send_rcvry_evt_to_fsm(mxman, RCVRY_EVT_REOPEN_TIMEOUT);
+		}
+	}
 #endif
 }
 
@@ -2011,7 +2615,11 @@ static void mxman_failure_work(struct work_struct *work)
 
 	if (!mxman_in_started_state(mxman) && !mxman_in_starting_state(mxman)) {
 		SCSC_TAG_WARNING(MXMAN, "Not in started state: mxman->mxman_state=%d\n", mxman->mxman_state);
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+		mxman_send_rcvry_evt_to_fsm(mxman, RCVRY_EVT_FAILURE_WORK_ERR);
+#else
 		mxman->panic_in_progress = false;
+#endif
 #if defined(CONFIG_SCSC_PCIE_CHIP)
 		scsc_mx_service_release(MXMAN_FAILURE_WORK);
 #endif
@@ -2057,7 +2665,11 @@ static void mxman_failure_work(struct work_struct *work)
 	    mxman->mxman_state != MXMAN_STATE_FROZEN) {
 		WLBT_WARN_ON(1);
 		SCSC_TAG_ERR(MXMAN, "Bad state=%d\n", mxman->mxman_state);
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+		mxman_send_rcvry_evt_to_fsm(mxman, RCVRY_EVT_FAILURE_WORK_ERR);
+#else
 		mxman->panic_in_progress = false;
+#endif
 #if defined(CONFIG_SCSC_PCIE_CHIP)
 		scsc_mx_service_release(MXMAN_FAILURE_WORK);
 #endif
@@ -2183,7 +2795,8 @@ static void mxman_failure_work(struct work_struct *work)
 				/* We are triggering a moredump collection, so
 				 * enforce both subsystems to go in to monitor
 				 * mode */
-				mxman_res_pmu_monitor(mxman, SCSC_SUBSYSTEM_WLAN_WPAN);
+				if (reason & (SCSC_PANIC_CODE_HOST << 15))
+					mxman_res_pmu_monitor(mxman, SCSC_SUBSYSTEM_WLAN_WPAN);
 				scsc_log_collector_schedule_collection(SCSC_LOG_FW_PANIC, reason);
 #else
 				r = call_wlbtd(SCSC_SCRIPT_MOREDUMP);
@@ -2222,6 +2835,9 @@ static void mxman_failure_work(struct work_struct *work)
 #endif
 			}
 		}
+		if (enable_scan2mem_dump) {
+			mxman_create_scandump(mxman);
+		}
 
 		if (is_bug_on_enabled()) {
 #if IS_ENABLED(CONFIG_DEBUG_SNAPSHOT)
@@ -2257,8 +2873,11 @@ static void mxman_failure_work(struct work_struct *work)
 		srvman_set_error(srvman, ALLOWED_START_STOP);
 		atomic_inc(&mxman->recovery_count);
 	}
-	mxman->panic_in_progress = false;
-
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+		mxman_send_rcvry_evt_to_fsm(mxman, RCVRY_EVT_FAILURE_WORK_DONE);
+#else
+		mxman->panic_in_progress = false;
+#endif
 	/**
 	 * If recovery is disabled and an scsc_mx_service_open has been hold up,
 	 * release it, rather than wait for the recovery_completion to timeout.
@@ -2274,6 +2893,13 @@ static void mxman_failure_work(struct work_struct *work)
 
 #ifdef CONFIG_ANDROID
 	wake_unlock(&mxman->failure_recovery_wake_lock);
+#endif
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	if (!mxman_recovery_disabled()) {
+		if (mxman_rcvry_fsm_complete(mxman)) {
+			mxman_send_rcvry_evt_to_fsm(mxman, RCVRY_EVT_REOPEN_TIMEOUT);
+		}
+	}
 #endif
 }
 
@@ -2301,39 +2927,293 @@ static void failure_wq_deinit(struct mxman *mxman)
 
 static void failure_wq_start(struct mxman *mxman)
 {
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	struct rcvry_fsm_thread	*th = &mxman->rcvry_thread;
+	u16 reason = th->last_panic_code;
+	enum recovery_event evt;
+#endif
 	if (disable_error_handling) {
 		SCSC_TAG_INFO(MXMAN, "error handling disabled\n");
 		return;
 	}
 
-	mxman->panic_in_progress = true;
-
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
 	/* If single subsytem is disabled or autorecovery is disabled
 	 * schedule the normal global error handing  */
-	if (single_subsystem_recovery == false || mxman_recovery_disabled()) {
-		queue_work(mxman->failure_wq, &mxman->failure_work);
-		return;
+	if (enable_split_recovery == false) {
+		evt = RCVRY_EVT_ERR_CHIP;
+	} else if (reason & (SCSC_PANIC_CODE_HOST << 15)) {
+		evt = RCVRY_EVT_ERR_HOST;
+	} else {
+		switch(th->last_panic_sub) {
+		case SCSC_SUBSYSTEM_WLAN:
+			evt = RCVRY_EVT_ERR_WLAN;
+			break;
+		case SCSC_SUBSYSTEM_WPAN:
+			evt = RCVRY_EVT_ERR_WPAN;
+			break;
+		case SCSC_SUBSYSTEM_PMU:
+		case SCSC_SUBSYSTEM_WLAN_WPAN:
+		default:
+			evt = RCVRY_EVT_ERR_CHIP;
+			break;
+		}
+	}
+	mxman_send_rcvry_evt_to_fsm(mxman, evt);
+#else
+	mxman->panic_in_progress = true;
+	queue_work(mxman->failure_wq, &mxman->failure_work);
+#endif
+}
+
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+bool mxman_warm_reset_in_progress(void)
+{
+	return (recovery_state == RCVRY_STATE_WARM_RESET || recovery_state == RCVRY_STATE_REOPEN) ? true : false;
+}
+
+static bool mxman_check_recovery_state_none(void)
+{
+	return (recovery_state == RCVRY_STATE_NONE) ? true : false;
+}
+
+static void mxman_perform_warm_reset(struct mxman *mxman, bool err_cnt)
+{
+	struct rcvry_fsm_thread 	*th = &mxman->rcvry_thread;
+
+	if (err_cnt)
+		th->err_count++;
+
+	mxman_set_failure_params(mxman);
+
+	th->target_sub = mxman->scsc_panic_sub;
+	if (mxman->scsc_panic_sub == SCSC_SUBSYSTEM_WLAN)
+		queue_work(mxman->failure_wq, &mxman->failure_work_wlan);
+	else /* mxman->scsc_panic_sub == SCSC_SUBSYSTEM_WPAN */
+		queue_work(mxman->failure_wq, &mxman->failure_work_wpan);
+}
+
+static void mxman_perform_cold_reset(struct mxman *mxman)
+{
+	mxman_set_failure_params(mxman);
+
+	queue_work(mxman->failure_wq, &mxman->failure_work);
+}
+
+static void mxman_increase_err_count(struct mxman *mxman)
+{
+	struct rcvry_fsm_thread 	*th = &mxman->rcvry_thread;
+	th->err_count++;
+}
+
+static void mxman_decrease_err_count(struct mxman *mxman)
+{
+	struct rcvry_fsm_thread 	*th = &mxman->rcvry_thread;
+	if (th->err_count)
+		th->err_count--;
+}
+
+static void mxman_init_rcvry_fsm_params(struct mxman *mxman)
+{
+	struct rcvry_fsm_thread 	*th = &mxman->rcvry_thread;
+	th->err_count = 0;
+	th->target_sub = SCSC_SUBSYSTEM_INVALID;
+}
+
+static int mxman_handle_rcvry_fsm(void *data)
+{
+	struct mxman				*mxman = data;
+	struct rcvry_event_record 	*evt_data;
+	struct rcvry_fsm_thread 	*th = &mxman->rcvry_thread;
+	enum recovery_state 		old_state;
+	int ret;
+	unsigned long flags;
+
+	evt_data = kmalloc(sizeof(*evt_data), GFP_KERNEL);
+	if (!evt_data) {
+		SCSC_TAG_ERR(MXMAN, "Failed to allocate recovery fsm thread\n");
+		return -ENOMEM;
 	}
 
-	SCSC_TAG_INFO(MXMAN, "Single subsytem recovery enabled. Triggering recovery %d\n", mxman->mxman_next_state);
-	switch(mxman->mxman_next_state) {
-	case MXMAN_STATE_FAILED_WLAN:
-		queue_work(mxman->failure_wq, &mxman->failure_work_wlan);
-		break;
-	case MXMAN_STATE_FAILED_WPAN:
-		queue_work(mxman->failure_wq, &mxman->failure_work_wpan);
-		break;
-	case MXMAN_STATE_FAILED_PMU:
-	case MXMAN_STATE_FAILED_WLAN_WPAN:
-	case MXMAN_STATE_FROZEN:
-		queue_work(mxman->failure_wq, &mxman->failure_work);
-		break;
-	default:
-		SCSC_TAG_ERR(MXMAN, "Incorrect fail state. Ignore request\n");
-		mxman->panic_in_progress = false;
-		break;
+	while (true) {
+		wait_event_interruptible(th->evt_wait_q,
+					 			kthread_should_stop() 
+								|| !kfifo_is_empty(&th->evt_queue) 
+								|| kthread_should_park());
+
+		if (kthread_should_park()) {
+			SCSC_TAG_INFO(MXMAN, "park rcvry_fsm thread\n");
+			kthread_parkme();
+		}
+		if (kthread_should_stop()) {
+			break;
+		}
+
+		spin_lock_irqsave(&th->kfifo_lock, flags);
+		ret =  kfifo_out(&th->evt_queue, evt_data, sizeof(*evt_data));
+		old_state = recovery_state;
+		spin_unlock_irqrestore(&th->kfifo_lock, flags);
+
+		if (!ret) {
+			SCSC_TAG_INFO(MXMAN, "no event to process\n");
+			continue;
+		}
+
+		switch(recovery_state) {
+		case RCVRY_STATE_NONE:
+			if (evt_data->event == RCVRY_EVT_ERR_WLAN || evt_data->event == RCVRY_EVT_ERR_WPAN
+				|| evt_data->event == RCVRY_EVT_ERR_HOST) {
+				if (!mxman_recovery_disabled()) {
+					mxman_perform_warm_reset(mxman, (evt_data->event == RCVRY_EVT_ERR_HOST) ? false : true);
+					recovery_state = RCVRY_STATE_WARM_RESET;
+				} else {
+					mxman_perform_cold_reset(mxman);
+					recovery_state = RCVRY_STATE_COLD_RESET;
+				}
+			} else if (evt_data->event == RCVRY_EVT_ERR_CHIP) {
+				mxman_perform_cold_reset(mxman);
+				recovery_state = RCVRY_STATE_COLD_RESET;
+			}
+			break;
+		case RCVRY_STATE_COLD_RESET:
+			if (evt_data->event == RCVRY_EVT_FAILURE_WORK_DONE || evt_data->event == RCVRY_EVT_FAILURE_WORK_ERR) {
+				mxman_init_rcvry_fsm_params(mxman);
+				recovery_state = RCVRY_STATE_NONE;
+			}
+			break;
+		case RCVRY_STATE_WARM_RESET:
+			if (evt_data->event == RCVRY_EVT_FAILURE_WORK_DONE) {
+				mxman_decrease_err_count(mxman);
+				recovery_state = RCVRY_STATE_REOPEN;
+			} else if (evt_data->event == RCVRY_EVT_ERR_CHIP || evt_data->event == RCVRY_EVT_ERR_HOST) {
+				mxman_init_rcvry_fsm_params(mxman);
+				recovery_state = RCVRY_STATE_FAILED;
+			}
+			else if (evt_data->event == RCVRY_EVT_ERR_WLAN) {
+				if (th->err_count >= 2) {
+					mxman_init_rcvry_fsm_params(mxman);
+					recovery_state = RCVRY_STATE_FAILED;
+				} else if (th->target_sub == SCSC_SUBSYSTEM_WPAN) {
+					mxman_increase_err_count(mxman);
+				} else if (th->target_sub == SCSC_SUBSYSTEM_WLAN) {
+					mxman_init_rcvry_fsm_params(mxman);
+					recovery_state = RCVRY_STATE_FAILED;
+				}
+			} else if (evt_data->event == RCVRY_EVT_ERR_WPAN) {
+				if (th->err_count >= 2) {
+					mxman_init_rcvry_fsm_params(mxman);
+					recovery_state = RCVRY_STATE_FAILED;
+				} else if (th->target_sub == SCSC_SUBSYSTEM_WLAN) {
+					mxman_increase_err_count(mxman);
+				} else if (th->target_sub == SCSC_SUBSYSTEM_WPAN) {
+					mxman_init_rcvry_fsm_params(mxman);
+					recovery_state = RCVRY_STATE_FAILED;
+				}
+			}
+			break;
+		case RCVRY_STATE_REOPEN:
+			if (evt_data->event == RCVRY_EVT_REOPEN_DONE) {
+				if (th->err_count > 0) {
+					mxman_perform_warm_reset(mxman, false);
+					recovery_state = RCVRY_STATE_WARM_RESET;
+				} else {
+					mxman_init_rcvry_fsm_params(mxman);
+					recovery_state = RCVRY_STATE_NONE;
+				}
+			} else if (evt_data->event == RCVRY_EVT_REOPEN_ERR || evt_data->event == RCVRY_EVT_REOPEN_TIMEOUT) {
+				mxman_init_rcvry_fsm_params(mxman);
+				recovery_state = RCVRY_STATE_FAILED;
+			} else if (evt_data->event == RCVRY_EVT_ERR_CHIP || evt_data->event == RCVRY_EVT_ERR_HOST) {
+				mxman_init_rcvry_fsm_params(mxman);
+				recovery_state = RCVRY_STATE_FAILED;
+			} else if (evt_data->event == RCVRY_EVT_ERR_WLAN) {
+				if (th->err_count >= 2) {
+					mxman_init_rcvry_fsm_params(mxman);
+					recovery_state = RCVRY_STATE_FAILED;
+				} else if (th->target_sub == SCSC_SUBSYSTEM_WPAN) {
+					mxman_perform_warm_reset(mxman, true);
+					recovery_state = RCVRY_STATE_WARM_RESET;
+				} else if (th->target_sub == SCSC_SUBSYSTEM_WLAN) {
+					mxman_init_rcvry_fsm_params(mxman);
+					recovery_state = RCVRY_STATE_FAILED;
+				}
+			} else if (evt_data->event == RCVRY_EVT_ERR_WPAN) {
+				if (th->err_count >= 2) {
+					mxman_init_rcvry_fsm_params(mxman);
+					recovery_state = RCVRY_STATE_FAILED;
+				} else if (th->target_sub == SCSC_SUBSYSTEM_WLAN) {
+					mxman_perform_warm_reset(mxman, true);
+					recovery_state = RCVRY_STATE_WARM_RESET;
+				} else if (th->target_sub == SCSC_SUBSYSTEM_WPAN) {
+					mxman_init_rcvry_fsm_params(mxman);
+					recovery_state = RCVRY_STATE_FAILED;
+				}
+			}
+			break;
+		case RCVRY_STATE_FAILED:
+			if (evt_data->event == RCVRY_EVT_FAILURE_WORK_DONE || evt_data->event == RCVRY_EVT_FAILURE_WORK_ERR
+				|| evt_data->event == RCVRY_EVT_REOPEN_DONE || evt_data->event == RCVRY_EVT_REOPEN_ERR 
+				|| evt_data->event == RCVRY_EVT_REOPEN_TIMEOUT) {
+				mxman_perform_cold_reset(mxman);
+				recovery_state = RCVRY_STATE_COLD_RESET;
+			}
+			break;
+		default:
+			break;
+		}
+
+		//if (old_state != recovery_state) {
+			SCSC_TAG_INFO(MXMAN, "Recovery state (%s) -> (%s) on event %s. target sub %d Error Count %d complete %d\n",
+						rcvry_state_str[old_state], rcvry_state_str[recovery_state], 
+						rcvry_event_str[evt_data->event], th->target_sub, th->err_count, evt_data->complete);
+		//}
+
+		if (evt_data->complete)
+			complete(&th->reopen_completion);
 	}
+
+	kfree(evt_data);
+
+	return 0;
 }
+
+int mxman_recovery_thread_init(struct mxman* mxman)
+{
+	int ret = 0;
+	struct rcvry_fsm_thread *th = &mxman->rcvry_thread;
+
+	spin_lock_init(&th->kfifo_lock);
+	init_completion(&th->reopen_completion);
+	init_waitqueue_head(&th->evt_wait_q);
+
+	th->err_count = 0;
+	th->target_sub = SCSC_SUBSYSTEM_INVALID;
+
+	ret = kfifo_alloc(&th->evt_queue, 10 * sizeof(struct rcvry_event_record), GFP_KERNEL);
+	if (ret)
+		goto exit;
+
+	th->task = kthread_run(mxman_handle_rcvry_fsm, mxman, "recovery_fsm_handling");
+	if (IS_ERR(th->task)) {
+		ret = PTR_ERR(th->task);
+		kfifo_free(&th->evt_queue);
+		SCSC_TAG_ERR(MXMAN, "%s: Failed to start mxman_handle_rcvry_fsm (%d)\n", __func__, ret);
+	}
+
+exit:
+	return ret;
+}
+
+void mxman_recovery_thread_deinit(struct mxman* mxman)
+{
+	struct rcvry_fsm_thread *th = &mxman->rcvry_thread;
+
+	kthread_stop(th->task);
+	th->task = NULL;
+
+	kfifo_free(&th->evt_queue);
+}
+#endif
 
 /*
  * workqueue thread
@@ -2598,7 +3478,10 @@ static void mxman_close_without_lock(struct mxman *mxman, enum scsc_subsystem su
 	}
 
 	/* For now reset chip only when we are shutting down last service on last active subsystem */
-	mxman_reset_chip(mxman);
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	if(!mxman_warm_reset_in_progress())
+#endif
+		mxman_reset_chip(mxman);
 }
 
 static int __mxman_open(struct mxman *mxman, enum scsc_subsystem sub, void *data, size_t data_sz)
@@ -2607,7 +3490,11 @@ static int __mxman_open(struct mxman *mxman, enum scsc_subsystem sub, void *data
 	struct scsc_mif_abs *mif  = scsc_mx_get_mif_abs(mxman->mx);
 
 	SCSC_TAG_INFO(MXMAN, "Number of wlan_users=%d wpan_users=%d Maxwell state=%d\n", mxman->users, mxman->users_wpan, mxman->mxman_state);
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	if (mxman->users == 0 && mxman->users_wpan == 0 && mxman->mxman_state == MXMAN_STATE_STARTING && !mxman_warm_reset_in_progress())
+#else
 	if (mxman->users == 0 && mxman->users_wpan == 0 && mxman->mxman_state == MXMAN_STATE_STARTING)
+#endif
 	{
 		/*
 		 * If chip is off, memory will be allocated and FW will be loaded to shared dram.
@@ -2652,7 +3539,10 @@ static int __mxman_open(struct mxman *mxman, enum scsc_subsystem sub, void *data
 				mxman_scan_dump_mode();
 			}
 #endif
-			mxman_close_on_start_failure(mxman, sub);
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+			if (mxman_check_recovery_state_none())
+#endif
+				mxman_close_on_start_failure(mxman, sub);
 			return ret;
 		}
 		ret = wait_for_mm_msg_start_ind(mxman);
@@ -2668,7 +3558,10 @@ static int __mxman_open(struct mxman *mxman, enum scsc_subsystem sub, void *data
 				mxman_scan_dump_mode();
 			}
 #endif
-			mxman_close_on_start_failure(mxman, sub);
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+			if (mxman_check_recovery_state_none())
+#endif
+				mxman_close_on_start_failure(mxman, sub);
 			return ret;
 		}
 
@@ -2751,9 +3644,9 @@ int mxman_open(struct mxman *mxman, enum scsc_subsystem sub, void *data, size_t 
 	SCSC_TAG_INFO(MXMAN, "Auto-recovery: %s\n", mxman_recovery_disabled() ? "off" : "on");
 	srvman = scsc_mx_get_srvman(mxman->mx);
 	if (srvman && (srvman->error != ALLOWED_START_STOP)) {
-		mutex_unlock(&mxman->mxman_mutex);
 		SCSC_TAG_INFO(MXMAN, "Called during error - ignore\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto error;
 	}
 
 	SCSC_TAG_INFO(MXMAN, "Mxman Start Current state %d wlan_users=%d wpan_users=%d\n", mxman->mxman_state, mxman->users, mxman->users_wpan);
@@ -2806,8 +3699,7 @@ int mxman_open(struct mxman *mxman, enum scsc_subsystem sub, void *data, size_t 
 				else
 					mxman->mxman_state = MXMAN_STATE_STOPPED;
 			}
-			mutex_unlock(&mxman->mxman_mutex);
-			return ret;
+			goto error;
 		}
 
 		/* Check the h/w and f/w versions are compatible */
@@ -2836,8 +3728,10 @@ int mxman_open(struct mxman *mxman, enum scsc_subsystem sub, void *data, size_t 
 		mxman_fm_set_params(&mxman->fm_params);
 	}
 #endif
-
 error:
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	mxman_send_rcvry_evt_to_fsm_wait_completion(mxman, (ret) ? RCVRY_EVT_REOPEN_ERR : RCVRY_EVT_REOPEN_DONE);
+#endif
 	SCSC_TAG_INFO(MXMAN, "Exit state %d users_wlan=%d users_wpan=%d\n", mxman->mxman_state, mxman->users, mxman->users_wpan);
 	mutex_unlock(&mxman->mxman_mutex);
 	return ret;
@@ -2850,7 +3744,11 @@ int mxman_stop(struct mxman *mxman, enum scsc_subsystem sub)
 	 * Ask the subsystem to stop (MM_STOP_REQ), and wait
 	 * for response (MM_STOP_RSP).
 	 */
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	if (!mxman_subsys_in_failed_state(mxman, sub) && !mxman_warm_reset_in_progress()) {
+#else
 	if (!mxman_subsys_in_failed_state(mxman, sub)) {
+#endif
 		SCSC_TAG_INFO(MXMAN, "Sending mxman stop %s subsystem\n", (sub == SCSC_SUBSYSTEM_WPAN) ? "WPAN" : "WLAN");
 		ret = send_mm_msg_stop_blocking(mxman, sub);
 		if (ret)
@@ -2883,9 +3781,10 @@ void mxman_syserr(struct mxman *mxman, struct mx_syserr_decode *syserr)
 
 static __always_inline void mxman_promote_error(struct mxman *mxman, enum scsc_subsystem *sub)
 {
-	if (single_subsystem_recovery == true)
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	if (enable_split_recovery == true)
 		return;
-
+#endif
 	/* If full recovery is enabled we may need to promote the subsystem to
 	full WLAN_WPAN failure if WLAN and WPAN are ON */
 	if (mxman_subsys_active(mxman, SCSC_SUBSYSTEM_WLAN_WPAN)) {
@@ -2901,8 +3800,77 @@ static __always_inline void mxman_promote_error(struct mxman *mxman, enum scsc_s
 	return;
 }
 
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+void mxman_set_failure_params(struct mxman *mxman)
+{
+	struct rcvry_fsm_thread	*th = &mxman->rcvry_thread;
+
+	if (th->last_panic_sub == SCSC_SUBSYSTEM_INVALID) {
+		mxman->mxman_next_state = MXMAN_STATE_FROZEN;
+		return;
+	}
+
+	mxman_promote_error(mxman, &th->last_panic_sub);
+
+	switch (th->last_panic_sub) {
+	case SCSC_SUBSYSTEM_WLAN:
+		mxman->mxman_next_state = MXMAN_STATE_FAILED_WLAN;
+		mxman->scsc_panic_code = th->last_panic_code;
+		mxman->scsc_panic_code_wpan = 0;
+		break;
+	case SCSC_SUBSYSTEM_WPAN:
+		mxman->mxman_next_state = MXMAN_STATE_FAILED_WPAN;
+		mxman->scsc_panic_code = 0;
+		mxman->scsc_panic_code_wpan = th->last_panic_code;
+		break;
+	case SCSC_SUBSYSTEM_PMU:
+		if (mxman_subsys_active(mxman, SCSC_SUBSYSTEM_WLAN))
+			mxman->mxman_next_state = MXMAN_STATE_FAILED_WLAN;
+		else if (mxman_subsys_active(mxman, SCSC_SUBSYSTEM_WPAN))
+			mxman->mxman_next_state = MXMAN_STATE_FAILED_WPAN;
+		else if (mxman_subsys_active(mxman, SCSC_SUBSYSTEM_WLAN_WPAN))
+			mxman->mxman_next_state = MXMAN_STATE_FAILED_WLAN_WPAN;
+		else
+			mxman->mxman_next_state = MXMAN_STATE_FAILED_PMU;
+		mxman->scsc_panic_code = th->last_panic_code;
+		mxman->scsc_panic_code_wpan = th->last_panic_code;
+		break;
+	case SCSC_SUBSYSTEM_WLAN_WPAN:
+		mxman->mxman_next_state = MXMAN_STATE_FAILED_WLAN_WPAN;
+		mxman->scsc_panic_code = th->last_panic_code;
+		mxman->scsc_panic_code_wpan = th->last_panic_code;
+		break;
+	default:
+		SCSC_TAG_ERR(MXMAN, "Received invalid subsystem %d value\n", th->last_panic_sub);
+		return;
+	};
+
+	strlcpy(mxman->failure_reason, th->last_failure_reason, sizeof(mxman->failure_reason));
+	/* If recovery is disabled, don't let it be
+	 * re-enabled from now on. Device must reboot
+	 */
+	if (mxman_recovery_disabled())
+		disable_recovery_until_reboot = true;
+
+	/* Populate syserr info with panic equivalent or best we can */
+	if (th->last_panic_level == MX_SYSERR_LEVEL_8)
+		mxman->last_syserr.subsys = th->last_panic_code >> SYSERR_SUB_SYSTEM_POSN;
+	mxman->last_syserr.level = th->last_panic_level;
+	mxman->last_syserr.type = th->last_panic_code;
+	mxman->last_syserr.subcode = th->last_panic_code;
+
+	/* mark the subsystem that triggered the panic */
+	mxman->scsc_panic_sub = th->last_panic_sub;
+	if (th->last_panic_level == MX_SYSERR_LEVEL_7)
+		atomic_inc(&mxman->cancel_resume);
+}
+#endif
+
 void mxman_fail(struct mxman *mxman, u16 failure_source, const char *reason, enum scsc_subsystem sub)
 {
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	struct rcvry_fsm_thread		*th = &mxman->rcvry_thread;
+#endif
 	SCSC_TAG_WARNING(MXMAN, "WLBT FW failure 0x%x subsystem id: %d\n", failure_source, sub);
 
 	/* For FW failure, scsc_panic_code is not set up fully until process_panic_record() checks it */
@@ -2919,7 +3887,12 @@ void mxman_fail(struct mxman *mxman, u16 failure_source, const char *reason, enu
 		SCSC_TAG_WARNING(MXMAN, "WLBT FW failure - scandump requested but not supported in kernel\n");
 #endif
 	}
-
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	th->last_panic_sub = sub;
+	th->last_panic_code = failure_source;
+	th->last_panic_level = MX_SYSERR_LEVEL_7;
+	strlcpy(th->last_failure_reason, reason, sizeof(th->last_failure_reason));
+#else
 	/* The STARTING state allows a crash during firmware boot to be handled */
 	if (!mxman_in_starting_state(mxman) && !mxman_in_started_state(mxman)) {
 		SCSC_TAG_WARNING(MXMAN, "Not in MXMAN_STATE_STARTED state, ignore (state %d)\n", mxman->mxman_state);
@@ -2980,14 +3953,23 @@ void mxman_fail(struct mxman *mxman, u16 failure_source, const char *reason, enu
 	/* mark the subsystem that triggered the panic */
 	mxman->scsc_panic_sub = sub;
 	atomic_inc(&mxman->cancel_resume);
+#endif
 	failure_wq_start(mxman);
 }
 
 void mxman_fail_level8(struct mxman *mxman, u16 failure_source, const char *reason, enum scsc_subsystem sub)
 {
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	struct rcvry_fsm_thread		*th = &mxman->rcvry_thread;
+#endif
 	SCSC_TAG_WARNING(MXMAN, "WLBT FW level 8 failure 0x%0x\n", failure_source);
 
-
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	th->last_panic_sub = sub;
+	th->last_panic_code = failure_source;
+	th->last_panic_level = MX_SYSERR_LEVEL_8;
+	strlcpy(th->last_failure_reason, reason, sizeof(th->last_failure_reason));
+#else
 	/* The STARTING state allows a crash during firmware boot to be handled */
 	if (!mxman_in_starting_state(mxman) && !mxman_in_started_state(mxman)) {
 		SCSC_TAG_WARNING(MXMAN, "Not in MXMAN_STATE_STARTED state, ignore (state %d)\n", mxman->mxman_state);
@@ -3050,18 +4032,19 @@ void mxman_fail_level8(struct mxman *mxman, u16 failure_source, const char *reas
 
 	/* mark the subsystem that triggered the panic */
 	mxman->scsc_panic_sub = sub;
+#endif
 	failure_wq_start(mxman);
 }
 
 void mxman_freeze(struct mxman *mxman)
 {
 	SCSC_TAG_WARNING(MXMAN, "WLBT FW frozen\n");
-
+#if !defined(CONFIG_WLBT_SPLIT_RECOVERY)
 	if(mxman->panic_in_progress) {
 		SCSC_TAG_WARNING(MXMAN, "Last panic in progress. Reject freeze\n");
 		return;
 	}
-
+#endif
 	if (mxman_in_started_state(mxman)) {
 #if defined(CONFIG_SCSC_PCIE_CHIP)
 		if (scsc_mx_service_claim(MXMAN_FREEZE)) {
@@ -3073,7 +4056,11 @@ void mxman_freeze(struct mxman *mxman)
 #if defined(CONFIG_SCSC_PCIE_CHIP)
 		scsc_mx_service_release(MXMAN_FREEZE);
 #endif
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+		mxman->rcvry_thread.last_panic_sub = SCSC_SUBSYSTEM_INVALID;
+#else
 		mxman->mxman_next_state = MXMAN_STATE_FROZEN;
+#endif
 		failure_wq_start(mxman);
 	} else {
 		SCSC_TAG_WARNING(MXMAN, "Not in MXMAN_STATE_STARTED state, ignore (state %d)\n", mxman->mxman_state);
@@ -3114,8 +4101,9 @@ void mxman_init(struct mxman *mxman, struct scsc_mx *mx)
 
 	mxman->syserr_recovery_in_progress = false;
 	mxman->last_syserr_recovery_time = 0;
+#if !defined(CONFIG_WLBT_SPLIT_RECOVERY)
 	mxman->panic_in_progress = false;
-
+#endif
 	/* set the initial state */
 	mxman->mxman_state = MXMAN_STATE_STOPPED;
 	(void)snprintf(mxman->fw_build_id, sizeof(mxman->fw_build_id), FW_BUILD_ID_UNKNOWN);
@@ -3137,6 +4125,10 @@ void mxman_init(struct mxman *mxman, struct scsc_mx *mx)
 	mxman_create_sysfs_wlbt_dcxo_caldata();
 #endif
 #endif
+#ifdef CONFIG_HDM_WLBT_SUPPORT
+	mxman_create_sysfs_hdm_wlan_loader();
+	mxman_create_sysfs_hdm_bt_loader();
+#endif
 	scsc_lerna_init();
 
 #if IS_ENABLED(CONFIG_SCSC_MXLOGGER)
@@ -3144,6 +4136,10 @@ void mxman_init(struct mxman *mxman, struct scsc_mx *mx)
 #endif
 #if IS_ENABLED(CONFIG_SCSC_LOG_COLLECTION)
 	scsc_log_collector_register_mx_cb(&mx_cb);
+#endif
+
+#if defined(CONFIG_SCSC_XO_CDAC_CON)
+	mxman->is_dcxo_set = false;
 #endif
 }
 
@@ -3161,6 +4157,10 @@ void mxman_deinit(struct mxman *mxman)
 #if defined(CONFIG_WLBT_DCXO_TUNE)
 	mxman_destroy_sysfs_wlbt_dcxo_caldata();
 #endif
+#endif
+#ifdef CONFIG_HDM_WLBT_SUPPORT
+	mxman_destroy_sysfs_hdm_wlan_loader();
+	mxman_destroy_sysfs_hdm_bt_loader();
 #endif
 	active_mxman = NULL;
 	mxproc_remove_info_proc_dir(&mxman->mxproc);
@@ -3282,12 +4282,17 @@ int mxman_suspend(struct mxman *mxman)
 	}
 
 	if (mxman_in_started_state(mxman)) {
-#if defined(CONFIG_SCSC_BB_PAEAN)
+#if defined(CONFIG_SCSC_PCIE_CHIP)
 		(void)message;
 		if (mxman_subsys_active(mxman, SCSC_SUBSYSTEM_WLAN) || mxman_subsys_active(mxman, SCSC_SUBSYSTEM_WPAN)) {
 			SCSC_TAG_INFO(MXMAN, "Suppressing MM_HOST_SUSPEND_IND, mxlogger_generate_sync_record()\n");
+#if defined(CONFIG_SCSC_BB_PAEAN)
 			SCSC_TAG_INFO(PLAT_MIF, "setting SPMI register 0x0\n");
 			mif->acpm_write_reg(mif, 0x0, 0x0);
+#elif defined(CONFIG_SCSC_BB_REDWOOD)
+			SCSC_TAG_INFO(PLAT_MIF, "setting HOST_SUSPEND_INTERRUPT GPIO(XWAKE_IN_WPAN) 0x0\n");
+			mxman_res_control_suspend_gpio(mxman, 0x0);
+#endif
 		}
 #else
 		/* For PCIe based chips, firmware does not need this information
@@ -3341,12 +4346,17 @@ void mxman_resume(struct mxman *mxman)
 	mif = scsc_mx_get_mif_abs(mxman->mx);
 
 	if (mxman_in_started_state(mxman)) {
-#if defined(CONFIG_SCSC_BB_PAEAN)
+#if defined(CONFIG_SCSC_PCIE_CHIP)
 		(void)message;
 		if (mxman_subsys_active(mxman, SCSC_SUBSYSTEM_WLAN) || mxman_subsys_active(mxman, SCSC_SUBSYSTEM_WPAN)) {
 			SCSC_TAG_INFO(MXMAN, "Suppressing MM_HOST_RESUME_IND, mxlogger_generate_sync_record()\n");
-                        SCSC_TAG_INFO(PLAT_MIF, "setting SPMI register 0x1\n");
-                        mif->acpm_write_reg(mif, 0x0, 0x1);
+#if defined(CONFIG_SCSC_BB_PAEAN)
+            SCSC_TAG_INFO(PLAT_MIF, "setting SPMI register 0x1\n");
+            mif->acpm_write_reg(mif, 0x0, 0x1);
+#elif defined(CONFIG_SCSC_BB_REDWOOD)
+			SCSC_TAG_INFO(PLAT_MIF, "setting HOST_SUSPEND_INTERRUPT GPIO(XWAKE_IN_WPAN) 0x1\n");
+			mxman_res_control_suspend_gpio(mxman, 0x1);
+#endif
 		}
 #else
 		/* For PCIe based chips, firmware does not need this information

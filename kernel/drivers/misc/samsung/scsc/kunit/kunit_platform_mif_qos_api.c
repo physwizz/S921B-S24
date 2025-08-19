@@ -1,3 +1,7 @@
+#define sprintf(args...) (0)
+#define cpufreq_cpu_get(args...)	((void*)0)
+#define cpufreq_cpu_out(args...)	(0)
+
 static int platform_mif_set_affinity_cpu(struct scsc_mif_abs *interface, u8 cpu);
 int (*fp_platform_mif_set_affinity_cpu)(struct scsc_mif_abs *interface, u8 cpu) = &platform_mif_set_affinity_cpu;
 

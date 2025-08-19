@@ -276,6 +276,8 @@
 			   <GIC_SPI INTREQ__DMC_TZCINT_MIF1 IRQ_TYPE_LEVEL_HIGH>,
 			   <GIC_SPI INTREQ__DMC_TZCINT_MIF2 IRQ_TYPE_LEVEL_HIGH>,
 			   <GIC_SPI INTREQ__DMC_TZCINT_MIF3 IRQ_TYPE_LEVEL_HIGH>;
+		/* give affinity to core #2 for TZASC interrupt */
+		interrupt-affinity = <0x4>;
 	};
 
 	seh {

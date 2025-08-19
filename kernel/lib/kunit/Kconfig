@@ -75,6 +75,7 @@ config KUNIT_MANAGER
 	tristate "Manager for KUnit"
 	depends on SEC_KUNIT
 	depends on !UML
+	depends on CC_IS_CLANG
 	default m
 	help
 	  Enables KUnit Manager. KUnit Manager is a sysfs node for triggering

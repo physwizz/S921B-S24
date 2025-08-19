@@ -1050,6 +1050,18 @@ TRACE_EVENT_CONDITION(sgpu_ifpo_power_off,
 	TP_printk("%d", __entry->count)
 );
 
+TRACE_EVENT(sgpu_pm_monitor_update,
+	TP_PROTO(enum sgpu_power_states state),
+	TP_ARGS(state),
+	TP_STRUCT__entry(
+		__field(u32, state)
+	),
+	TP_fast_assign(
+		__entry->state = state;
+	),
+	TP_printk("state=%u", __entry->state)
+);
+
 #undef AMDGPU_JOB_GET_TIMELINE_NAME
 
 #ifdef CONFIG_DRM_SGPU_GRAPHIC_MEMORY_RECLAIM

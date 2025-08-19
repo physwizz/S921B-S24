@@ -134,22 +134,6 @@ struct dmabuf_fd_iterdata {
 	int fd_ref_cnt;
 };
 
-int dmabuf_traverse_filetable(const void *t, struct file *file, unsigned fd)
-{
-	struct dmabuf_fd_iterdata *iterdata = (struct dmabuf_fd_iterdata*)t;
-	struct dma_buf *dmabuf;
-
-	if (!is_dma_buf_file(file))
-		return 0;
-
-	dmabuf = file->private_data;
-
-	iterdata->fd_ref_cnt++;
-	iterdata->fd_ref_size += dmabuf->size >> 10;
-
-	return 0;
-}
-
 static int dmabuf_trace_buffer_size_compare(const void *p1, const void *p2)
 {
 	if (*((size_t *)p1) > (*((size_t *)p2)))
@@ -157,6 +141,39 @@ static int dmabuf_trace_buffer_size_compare(const void *p1, const void *p2)
 	else if (*((size_t *)p1) < (*((size_t *)p2)))
 		return -1;
 	return 0;
+}
+
+static bool dmabuf_iterate_fd(struct files_struct *files, struct dmabuf_fd_iterdata *iterdata)
+{
+	struct fdtable *fdt;
+	unsigned int n = 0;
+
+	if (!files)
+		return true;
+
+	if (!spin_trylock(&files->file_lock))
+		return false;
+
+	for (fdt = files_fdtable(files); n < fdt->max_fds; n++) {
+		struct dma_buf *dmabuf;
+		struct file *file;
+
+		file = rcu_dereference_check_fdtable(files, fdt->fd[n]);
+		if (!file)
+			continue;
+
+		if (!is_dma_buf_file(file))
+			continue;
+
+		dmabuf = file->private_data;
+
+		iterdata->fd_ref_cnt++;
+		iterdata->fd_ref_size += dmabuf->size >> 10;
+	}
+
+	spin_unlock(&files->file_lock);
+
+	return true;
 }
 
 void __show_dmabuf_trace_info(struct memlog_obj *obj)
@@ -185,7 +202,7 @@ void __show_dmabuf_trace_info(struct memlog_obj *obj)
 
 	list_for_each_entry(task, &head_task.node, node) {
 		struct dmabuf_fd_iterdata iterdata;
-		bool locked;
+		bool locked = false;
 
 		iterdata.fd_ref_cnt = iterdata.fd_ref_size = 0;
 
@@ -196,9 +213,8 @@ void __show_dmabuf_trace_info(struct memlog_obj *obj)
 		 * because spin_trylock() could be failed if locked before.
 		 * spin_unlock() is used instead of task_unlock() to match the pair.
 		 */
-		locked = spin_trylock(&task->task->alloc_lock);
-		if (locked) {
-			iterate_fd(task->task->files, 0, dmabuf_traverse_filetable, &iterdata);
+		if (spin_trylock(&task->task->alloc_lock)) {
+			locked = dmabuf_iterate_fd(task->task->files, &iterdata);
 			spin_unlock(&task->task->alloc_lock);
 		}
 
@@ -223,10 +239,11 @@ void __show_dmabuf_trace_info(struct memlog_obj *obj)
 			break;
 		}
 	}
-	mutex_unlock(&trace_lock);
 
-	if (!num_buffer)
+	if (!num_buffer) {
+		mutex_unlock(&trace_lock);
 		return;
+	}
 
 	sort(sorted_array, num_buffer, sizeof(*sorted_array),
 	     dmabuf_trace_buffer_size_compare, NULL);
@@ -246,6 +263,8 @@ void __show_dmabuf_trace_info(struct memlog_obj *obj)
 		count = 1;
 	}
 	prlogger(obj, "%10zu : %8d\n", size / 1024, count);
+
+	mutex_unlock(&trace_lock);
 }
 
 void show_dmabuf_dva(struct device *dev)

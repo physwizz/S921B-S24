@@ -186,7 +186,7 @@ void als_eol_set_env(bool torch, int intensity)
 	printk(KERN_INFO "%s - gpio:%d intensity:%d(%d)",
 			__func__, env.gpio_led, intensity, env.led_curr);
 #else
-	printk(KERN_INFO "%s - env not set");
+	printk(KERN_INFO "%s - env not set", __func__);
 #endif
 	env.led_state = 1;
 }
@@ -369,11 +369,13 @@ int als_eol_parse_dt(void)
 {
 	struct device_node *np;
 
+#ifdef LED_DT_NODE_NAME
 	np = of_find_node_by_name(NULL, LED_DT_NODE_NAME);
 	if (np == NULL) {
 		printk(KERN_ERR "Can't find led node");
 		return -ENODEV;
 	}
+#endif
 #if IS_ENABLED(CONFIG_LEDS_S2MPB02) || IS_ENABLED(CONFIG_LEDS_SM5714) || IS_ENABLED(CONFIG_LEDS_AW36518_FLASH)
 	gpio_torch = of_get_named_gpio(np, "torch-gpio", 0);
 	gpio_flash = of_get_named_gpio(np, "flash-gpio", 0);

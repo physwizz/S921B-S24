@@ -54,7 +54,8 @@ int dsp_kernel_manager_probe(struct npu_device *device);
 void dsp_kernel_manager_remove(struct dsp_kernel_manager *kmgr);
 
 int dsp_graph_add_kernel(struct npu_device *device,
-		struct npu_session *session, void *kernel_name, unsigned int unique_id);
+		struct npu_session *session, void *kernel_name,
+		unsigned int kernel_size, unsigned int unique_id);
 
 void dsp_graph_remove_kernel(struct npu_device *device, struct npu_session *session);
 #ifdef CONFIG_NPU_KUNIT_TEST

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) 2013-2022 TRUSTONIC LIMITED
+ * Copyright (c) 2013-2023 TRUSTONIC LIMITED
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -18,6 +18,11 @@
 
 #include <linux/kref.h>
 #include "platform.h"
+
+/* Kinibi uses 4k-pages so far */
+#define KINIBI_PAGE_SIZE		BIT(12)
+#define KINIBI_PAGE_MASK		~(KINIBI_PAGE_SIZE - 1)
+#define KINIBI_PAGE_ALIGN(addr)	ALIGN(addr, KINIBI_PAGE_SIZE)
 
 /*
  * This represents the maximum number of entries in a Page Table Entries
@@ -55,6 +60,15 @@ union mmu_table {
 };
 
 /*
+ * MMU_shadow allocates a pair of shadow buffer and client virtual address
+ */
+struct mmu_shadow {
+	void *buffer;
+	void *cva;
+	size_t order;
+};
+
+/*
  * MMU table allocated to the Daemon or a TLC describing a world shared
  * buffer.
  * When users map a malloc()ed area into SWd, a MMU table is allocated.
@@ -76,6 +90,8 @@ struct tee_mmu {
 	u32				offset;
 	u32				length;
 	u32				flags;
+	/* Position of the first page where the buffer address points to */
+	u32				first_page_pos;
 	/* Pages are from user space */
 	int				user;
 	/* Some front-ends need access to pages */
@@ -84,6 +100,8 @@ struct tee_mmu {
 	struct dma_buf			*dma_buf;
 	struct dma_buf_attachment	*attach;
 	struct sg_table			*sgt;
+	struct page			**all_pages;
+	struct mmu_shadow		shadow;
 	u64				handle;
 };
 

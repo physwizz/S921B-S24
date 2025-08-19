@@ -365,7 +365,7 @@ irqreturn_t platform_cfg_req_isr(int irq, void *data)
 		platform_set_wlbt_regs(platform);
 #endif
 	} else {
-#if IS_ENABLED(CONFIG_SOC_S5E8835) || IS_ENABLED(CONFIG_SOC_S5E8845)
+#if IS_ENABLED(CONFIG_SOC_S5E8835) || IS_ENABLED(CONFIG_SOC_S5E8845) || IS_ENABLED(CONFIG_SOC_S5E5535)
 		pr_info("[%s] ????\n", __func__);
 		return IRQ_HANDLED;
 #else
@@ -416,6 +416,9 @@ void platform_mif_unregister_irq(struct platform_mif *platform)
 	/* clear affinity mask */
 	irq_set_affinity_hint(platform->wlbt_irq[PLATFORM_MIF_MBOX].irq_num, NULL);
 #endif
+#ifdef CONFIG_SOC_S5E5535
+	devm_free_irq(platform->dev, platform->wlbt_irq[PLATFORM_MIF_ALIVE].irq_num, platform);
+#endif
 	devm_free_irq(platform->dev, platform->wlbt_irq[PLATFORM_MIF_MBOX].irq_num, platform);
 	devm_free_irq(platform->dev, platform->wlbt_irq[PLATFORM_MIF_MBOX_WPAN].irq_num, platform);
 	devm_free_irq(platform->dev, platform->wlbt_irq[PLATFORM_MIF_WDOG].irq_num, platform);
@@ -432,6 +435,22 @@ int platform_mif_register_irq(struct platform_mif *platform)
 	int err;
 
 	SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "Registering IRQs\n");
+
+#ifdef CONFIG_SOC_S5E5535
+	/* Register ALIVE irq */
+	SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev,
+			  "Registering ALIVE irq: %d flag 0x%x\n",
+			  platform->wlbt_irq[PLATFORM_MIF_ALIVE].irq_num, platform->wlbt_irq[PLATFORM_MIF_ALIVE].flags);
+
+	err = devm_request_irq(platform->dev, platform->wlbt_irq[PLATFORM_MIF_ALIVE].irq_num, platform_alive_isr,
+			       platform->wlbt_irq[PLATFORM_MIF_ALIVE].flags, IRQ_NAME_ALIVE, platform);
+	if (IS_ERR_VALUE((unsigned long)err)) {
+		SCSC_TAG_ERR_DEV(PLAT_MIF, platform->dev,
+			"Failed to register ALIVE handler: %d. Aborting.\n", err);
+		err = -ENODEV;
+		return err;
+	}
+#endif
 
 	/* Register MBOX irq */
 	SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "Registering MBOX irq: %d flag 0x%x\n",
@@ -590,6 +609,18 @@ irqreturn_t platform_wdog_isr(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+/* TODO: ALIVE IRQ seems not connected ., set to if 0*/
+/* #ifdef CONFIG_SCSC_ENABLE_ALIVE_IRQ */
+#ifdef CONFIG_SOC_S5E5535
+irqreturn_t platform_alive_isr(int irq, void *data)
+{
+	struct platform_mif *platform = (struct platform_mif *)data;
+
+	SCSC_TAG_INFO_DEV(PLAT_MIF, platform->dev, "INT received\n");
+
+	return IRQ_HANDLED;
+}
+#endif
 
 int platform_mif_irq_get_ioresource_mem(
 	struct platform_device *pdev,

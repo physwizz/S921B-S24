@@ -26,7 +26,7 @@
 #include <linux/pm.h>
 #include <linux/delay.h>
 #include <linux/pm_wakeup.h>
-#include <common_define.h>
+#include "common_define.h"
 
 typedef struct timer_manager timer_manager;
 

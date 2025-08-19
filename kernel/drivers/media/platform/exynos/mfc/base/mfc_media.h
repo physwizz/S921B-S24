@@ -380,6 +380,8 @@ enum v4l2_mpeg_mfc51_video_frame_type {
 					(V4L2_CID_MPEG_MFC_BASE + 160)
 #define V4L2_CID_MPEG_VIDEO_HEVC_HIERARCHICAL_CODING_LAYER_BIT6 \
 					(V4L2_CID_MPEG_MFC_BASE + 161)
+#define V4L2_CID_MPEG_MFC_HEIF_MODE	\
+					(V4L2_CID_MPEG_MFC_BASE + 162)
 
 /* CIDs for VP9 encoding. Number gaps are for compatibility */
 #define V4L2_CID_MPEG_VIDEO_VP9_VERSION				\

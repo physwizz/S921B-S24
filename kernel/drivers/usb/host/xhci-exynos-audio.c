@@ -63,6 +63,8 @@ void xhci_exynos_enable_event_ring(struct xhci_hcd *xhci)
 		  "// [USB Audio] Enabling event ring interrupter %p by writing 0x%x to irq_pending",
 		  g_xhci_exynos_audio->ir_set_audio, (unsigned int)ER_IRQ_ENABLE(temp));
 	writel(ER_IRQ_ENABLE(temp), &g_xhci_exynos_audio->ir_set_audio->irq_pending);
+
+	g_hwinfo->mem_init = false;
 }
 EXPORT_SYMBOL_GPL(xhci_exynos_enable_event_ring);
 
@@ -273,8 +275,6 @@ int xhci_exynos_alloc_event_ring(struct xhci_hcd *xhci, gfp_t flags)
 		/* for AUDIO erst */
 		g_xhci_exynos_audio->event_ring_audio = xhci_ring_alloc(xhci, ERST_NUM_SEGS, 1, TYPE_EVENT, 0, flags);
 		if (!g_xhci_exynos_audio->event_ring_audio)
-			goto fail;
-		if (xhci_check_trb_in_td_math(xhci) < 0)
 			goto fail;
 		g_xhci_exynos_audio->erst_audio.entries =
 		    //dma_pre_alloc_coherent(xhci, sizeof(struct xhci_erst_entry) * ERST_NUM_SEGS, &dma, flags);
@@ -489,6 +489,7 @@ struct xhci_device_context_array *xhci_exynos_alloc_dcbaa(struct xhci_hcd *xhci,
 		xhci->dcbaa->dma = EXYNOS_URAM_DCBAA_ADDR;
 
 		g_hwinfo->need_first_probe = true;
+		g_hwinfo->mem_init = true;
 	} else
 		xhci_info(xhci, "URAM qurik is not set! Please check it\n");
 
@@ -591,15 +592,10 @@ static struct xhci_segment *xhci_segment_alloc_uram_ep(struct xhci_hcd *xhci,
 			dma = EXYNOS_URAM_ISOC_OUT_RING_ADDR;
 		xhci_info(xhci, "First ISOC-OUT Ring is allocated at 0x%llx", dma);
 	} else if (endpoint_type == ISOC_IN_EP) {
-		if (!g_hwinfo->feedback)
-			seg->trbs = ioremap(EXYNOS_URAM_ISOC_IN_RING_ADDR, TRB_SEGMENT_SIZE);
-		else
-			seg->trbs = dma_pool_zalloc(xhci->segment_pool, flags, &dma);
+		seg->trbs = dma_pool_zalloc(xhci->segment_pool, flags, &dma);
 		if (!seg->trbs)
 			return NULL;
 
-		if (!g_hwinfo->feedback)
-			dma = EXYNOS_URAM_ISOC_IN_RING_ADDR;
 		xhci_info(xhci, "First ISOC-IN Ring is allocated at 0x%llx", dma);
 	} else {
 		xhci_err(xhci, "%s : Unexpected EP Type!\n", __func__);

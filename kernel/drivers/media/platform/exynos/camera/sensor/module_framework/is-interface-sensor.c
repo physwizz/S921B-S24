@@ -4117,12 +4117,13 @@ int get_sensor_seamless_mode_info(struct is_sensor_interface *itf,
 }
 
 int get_sensor_applied_seamless_mode(struct is_sensor_interface *itf,
-				struct is_sensor_seamless_ctl *applied_seamless_mode)
+				struct is_sensor_seamless_ctl *applied_seamless_mode, u32 fcount)
 {
 	struct is_device_sensor_peri *sensor_peri;
 	cis_shared_data *cis_data;
 	unsigned int ref_history_index;
 	unsigned int ctrl_delay = 0;
+	u32 vsync_count;
 
 	if (unlikely(!itf) || (itf->magic != SENSOR_INTERFACE_MAGIC))
 		goto p_err;
@@ -4134,11 +4135,13 @@ int get_sensor_applied_seamless_mode(struct is_sensor_interface *itf,
 	if (unlikely(!cis_data))
 		goto p_err;
 
+	vsync_count = (fcount > cis_data->sen_vsync_count) ? fcount : cis_data->sen_vsync_count;
+
 	if (sensor_peri->cis.ctrl_delay == N_PLUS_ONE_FRAME) {
-		ref_history_index = (cis_data->sen_vsync_count % NUM_FRAMES);
+		ref_history_index = (vsync_count % NUM_FRAMES);
 		ctrl_delay = 1;
 	} else {
-		ref_history_index = ((NUM_FRAMES + cis_data->sen_vsync_count - 1) % NUM_FRAMES);
+		ref_history_index = ((NUM_FRAMES + vsync_count - 1) % NUM_FRAMES);
 		ctrl_delay = 2;
 	}
 
@@ -4149,10 +4152,10 @@ int get_sensor_applied_seamless_mode(struct is_sensor_interface *itf,
 	if (!cis_data->stream_on)
 		applied_seamless_mode->mode &= ~SENSOR_MODE_AEB;
 
-	if (cis_data->seamless_update_vsync_cnt + ctrl_delay == cis_data->sen_vsync_count)
+	if (cis_data->seamless_update_vsync_cnt + ctrl_delay == vsync_count)
 		info("%s [%d][%d][%s] SS_DBG LN2[%d] LN4[%d] 12bit[%d] AEB[%d] RM[%d,%d]\n",
 			__func__, sensor_peri->cis.id,
-			cis_data->sen_vsync_count, sensor_peri->module->sensor_name,
+			vsync_count, sensor_peri->module->sensor_name,
 			(applied_seamless_mode->mode & SENSOR_MODE_LN2),
 			(applied_seamless_mode->mode & SENSOR_MODE_LN4),
 			(applied_seamless_mode->mode & SENSOR_MODE_REAL_12BIT),
@@ -4162,7 +4165,7 @@ int get_sensor_applied_seamless_mode(struct is_sensor_interface *itf,
 	else
 		dbg_sensor(1, "%s [%d][%d][%s] SS_DBG LN2[%d] LN4[%d] 12bit[%d] AEB[%d] RM[%d,%d]\n",
 			__func__, sensor_peri->cis.id,
-			cis_data->sen_vsync_count, sensor_peri->module->sensor_name,
+			vsync_count, sensor_peri->module->sensor_name,
 			(applied_seamless_mode->mode & SENSOR_MODE_LN2),
 			(applied_seamless_mode->mode & SENSOR_MODE_LN4),
 			(applied_seamless_mode->mode & SENSOR_MODE_REAL_12BIT),

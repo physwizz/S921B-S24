@@ -31,8 +31,8 @@
 		ecs_dynamic { };
 
 		tex {
-			top-app		= <110>;
-			foreground	= <110>;
+			top-app = <110>;
+			foreground = <110>;
 		};
 
 		cgroup_boost {

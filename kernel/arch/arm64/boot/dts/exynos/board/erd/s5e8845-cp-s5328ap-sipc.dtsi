@@ -508,30 +508,16 @@
 						iod,attrs = <(IO_ATTR_NO_CHECK_MAXQ | IO_ATTR_SIPC5)>;
 					};
 					io_device_12 {
-						iod,name = "smd4";
-						iod,ch = <SIPC_CH_ID_SMD4>;
-						iod,format = <IPC_RAW>;
-						iod,io_type = <IODEV_IPC>;
-						iod,link_type = <LINKDEV_SHMEM>;
-						iod,attrs = <(IO_ATTR_OPTION_REGION | IO_ATTR_SBD_IPC | IO_ATTR_SIPC5)>;
-						iod,ul_num_buffers = <16>;
-						iod,ul_buffer_size = <2048>;
-						iod,dl_num_buffers = <128>;
-						iod,dl_buffer_size = <2048>;
-						iod,option_region = "kor_skt";
-					};
-					io_device_13 {
 						iod,name = "umts_ciq0";
 						iod,ch = <SIPC_CH_ID_CIQ_DATA>;
 						iod,format = <IPC_RAW>;
 						iod,io_type = <IODEV_IPC>;
 						iod,link_type = <LINKDEV_SHMEM>;
-						iod,attrs = <(IO_ATTR_OPTION_REGION | IO_ATTR_SBD_IPC | IO_ATTR_SIPC5)>;
+						iod,attrs = <(IO_ATTR_SBD_IPC | IO_ATTR_SIPC5)>;
 						iod,ul_num_buffers = <16>;
 						iod,ul_buffer_size = <2048>;
 						iod,dl_num_buffers = <128>;
 						iod,dl_buffer_size = <2048>;
-						iod,option_region = "usa_spr";
 					};
 				}; /* end of iodevs */
 			}; /* end of cpif */

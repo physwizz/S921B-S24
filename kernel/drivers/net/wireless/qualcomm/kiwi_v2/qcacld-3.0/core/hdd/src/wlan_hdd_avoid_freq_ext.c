@@ -87,12 +87,6 @@ __wlan_hdd_cfg80211_avoid_freq_ext(struct wiphy *wiphy,
 	if (ret)
 		return ret;
 
-	if (hdd_is_connection_in_progress(NULL, NULL)) {
-		hdd_debug_rl("Update chan list refused: conn in progress");
-		ret = -EPERM;
-		goto out;
-	}
-
 	qdf_mem_zero(&avoid_freq_list, sizeof(struct ch_avoid_ind_type));
 
 	if (!data && data_len == 0) {

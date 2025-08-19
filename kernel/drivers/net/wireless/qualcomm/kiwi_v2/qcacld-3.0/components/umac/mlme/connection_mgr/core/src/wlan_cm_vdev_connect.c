@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2015, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -1097,12 +1097,11 @@ QDF_STATUS cm_connect_start_ind(struct wlan_objmgr_vdev *vdev,
 	if (wlan_get_vendor_ie_ptr_from_oui(HS20_OUI_TYPE,
 					    HS20_OUI_TYPE_SIZE,
 					    req->assoc_ie.ptr,
-					    req->assoc_ie.len)) {
+					    req->assoc_ie.len))
 		src_cfg.bool_value = true;
-		wlan_cm_roam_cfg_set_value(wlan_vdev_get_psoc(vdev),
-					   wlan_vdev_get_id(vdev),
-					   HS_20_AP, &src_cfg);
-	}
+	wlan_cm_roam_cfg_set_value(wlan_vdev_get_psoc(vdev),
+				   wlan_vdev_get_id(vdev),
+				   HS_20_AP, &src_cfg);
 	if (req->source != CM_MLO_LINK_SWITCH_CONNECT)
 		ml_nlink_conn_change_notify(
 			psoc, wlan_vdev_get_id(vdev),
@@ -1174,6 +1173,13 @@ cm_check_nontx_mbssid_partner_entries(struct cm_connect_req *conn_req)
 	entry = conn_req->cur_candidate->entry;
 	mld_addr = util_scan_entry_mldaddr(entry);
 
+	/*
+	 * If the entry is not one of following, return gracefully:
+	 *   -AP is not ML type
+	 *   -AP is SLO
+	 *   -AP is not a member of MBSSID set
+	 *   -AP BSSID equals to TxBSSID in MBSSID set
+	 */
 	if (!mld_addr || !entry->ml_info.num_links ||
 	    !entry->mbssid_info.profile_num ||
 	    !qdf_mem_cmp(entry->mbssid_info.trans_bssid, &entry->bssid,
@@ -1188,6 +1194,11 @@ cm_check_nontx_mbssid_partner_entries(struct cm_connect_req *conn_req)
 		partner_info = &entry->ml_info.link_info[idx];
 		partner_entry = cm_get_entry(candidate_list,
 					     &partner_info->link_addr);
+		/*
+		 * If partner entry is not found in candidate list or if
+		 * the MLD address of the entry is not equal to current
+		 * candidate MLD address, treat it as entry not found.
+		 */
 		if (!partner_entry ||
 		    !qdf_is_macaddr_equal(mld_addr,
 					  &partner_entry->ml_info.mld_mac_addr)) {

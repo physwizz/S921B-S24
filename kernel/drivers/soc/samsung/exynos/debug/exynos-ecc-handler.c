@@ -21,7 +21,7 @@
 struct ecc_irq_desc {
 	int irq;
 	struct cpumask affinity;
-	unsigned int skip_panic;
+	unsigned int policy;
 };
 
 struct exynos_ecc_desc {
@@ -29,6 +29,13 @@ struct exynos_ecc_desc {
 	struct cpumask ecc_online_cpus;
 	raw_spinlock_t lock;
 	int irq_num;
+};
+
+const static char *ecc_policy[] = {
+	"Go Panic",
+	"Skip Panic",
+	"WDT after dump",
+	"WDT",
 };
 
 static struct exynos_ecc_desc ecc_desc;
@@ -62,13 +69,16 @@ static irqreturn_t exynos_ecc_handler(int irq, void *dev_id)
 	if (!ecc_irq_desc)
 		panic("Unexpected ECC IRQ(%d)", irq);
 
+	if (ecc_irq_desc->policy == ECC_DIRECT_WDT)
+		dbg_snapshot_expire_watchdog();
+
 	if (!cpumask_test_cpu(cpu, &ecc_irq_desc->affinity))
 		panic("ECC error in other cpu");
 
-	if (ecc_irq_desc->skip_panic)
-		dbg_snapshot_ecc_dump(false);
+	if (ecc_irq_desc->policy <= ECC_DUMP_WDT)
+		dbg_snapshot_ecc_dump(ecc_irq_desc->policy);
 	else
-		dbg_snapshot_ecc_dump(true);
+		dbg_snapshot_ecc_dump(ECC_GO_PANIC);
 
 	return IRQ_HANDLED;
 }
@@ -131,7 +141,6 @@ static int exynos_ecc_handler_probe(struct platform_device *pdev)
 	char *buf = (char *)__get_free_page(GFP_KERNEL);
 	int irq_num;
 	int err = 0, idx = 0;
-	bool is_need_skip_panic = false;
 
 	if (!buf) {
 		err = -ENOMEM;
@@ -143,11 +152,6 @@ static int exynos_ecc_handler_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Invalid Interrupt-names property count(%d)\n", irq_num);
 		err = -EINVAL;
 		goto err_irq_name_counts;
-	}
-
-	if (irq_num == of_property_count_u32_elems(np, "skip-panic")) {
-		dev_info(&pdev->dev, "skip-panic property is valid\n");
-		is_need_skip_panic = true;
 	}
 
 	ecc_desc.ecc_irqs = kzalloc(sizeof(struct ecc_irq_desc) * irq_num, GFP_KERNEL);
@@ -170,9 +174,10 @@ static int exynos_ecc_handler_probe(struct platform_device *pdev)
 			break;
 		}
 
-		if (is_need_skip_panic)
-			of_property_read_u32_index(np, "skip-panic", idx,
-						   &ecc_desc.ecc_irqs[idx].skip_panic);
+		if (!of_property_read_u32_index(np, "policy", idx, &val))
+			ecc_desc.ecc_irqs[idx].policy = val;
+		else
+			ecc_desc.ecc_irqs[idx].policy = ECC_GO_PANIC;
 
 		irq = platform_get_irq(pdev, idx);
 		err = request_irq(irq, exynos_ecc_handler, IRQF_NOBALANCING,
@@ -182,8 +187,9 @@ static int exynos_ecc_handler_probe(struct platform_device *pdev)
 					irq, name);
 			break;
 		}
-		dev_info(&pdev->dev, "Success to request irq%u for ecc handler[%s]%s\n", irq, name,
-					!!ecc_desc.ecc_irqs[idx].skip_panic ? "skip panic" : "");
+		dev_info(&pdev->dev, "Success to request irq%u for ecc handler[%s],"
+				" policy - %s\n", irq, name,
+				ecc_policy[ecc_desc.ecc_irqs[idx].policy]);
 
 		cpumask_clear(&affinity_mask);
 		if (!of_property_read_u32_index(np, "interrupt-affinity", idx, &val)) {

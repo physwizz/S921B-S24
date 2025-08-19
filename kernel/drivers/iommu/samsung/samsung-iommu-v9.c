@@ -265,6 +265,147 @@ static bool samsung_sysmmu_capable(struct device *dev, enum iommu_cap cap)
 	return cap == IOMMU_CAP_CACHE_COHERENCY;
 }
 
+#define REG_MMU_SWALKER_PM_CFG		0x4000
+#define REG_MMU_SWALKER_PM_INIT		0x4004
+#define REG_MMU_SWALKER_PM_EVENT(n)	0x4010 + (n) * 0x4
+#define REG_MMU_SWALKER_PM_CNT(n)	0x4020 + (n) * 0x4
+#define REG_MMU_PMMUn_PM_CFG(idx)	0x4800 + (idx) * 0x100
+#define REG_MMU_PMMUn_PM_INIT(idx)	0x4804 + (idx) * 0x100
+#define REG_MMU_PMMUn_PM_EVENT(idx, n)	0x4810 + (idx) * 0x100 + (n) * 0x4
+#define REG_MMU_PMMUn_PM_CNT(idx, n)	0x4820 + (idx) * 0x100 + (n) * 0x4
+void __sysmmu_set_perf_measure(struct sysmmu_drvdata *drvdata)
+{
+	void __iomem *sfrbase = drvdata->sfrbase;
+	int i, num_pmmu = drvdata->num_pmmu;
+	/* Configuration Stage */
+	/* Initialize counters */
+	writel(0x1, sfrbase + REG_MMU_SWALKER_PM_INIT);
+	for (i = 0; i < num_pmmu; i++)
+		writel(0x1, sfrbase + REG_MMU_PMMUn_PM_INIT(i));
+
+	/*
+	 * Counter0 : read request of TLB0
+	 * Counter1 : TLB miss of read request of TLB0
+	 * Counter2 : write request of TLB0
+	 * Counter3 : TLB miss of write request of TLB0
+	 */
+
+	/* stlb */
+	writel(0x12, sfrbase + REG_MMU_SWALKER_PM_EVENT(0)); /* read miss */
+	writel(0x10, sfrbase + REG_MMU_SWALKER_PM_EVENT(1)); /* read total */
+	writel(0x22, sfrbase + REG_MMU_SWALKER_PM_EVENT(2)); /* write miss */
+	writel(0x20, sfrbase + REG_MMU_SWALKER_PM_EVENT(3)); /* write total */
+
+	/* ptlb */
+	for (i = 0; i < num_pmmu; i++)
+		writel(0x12, sfrbase + REG_MMU_PMMUn_PM_EVENT(i, 0)); /* read miss */
+	for (i = 0; i < num_pmmu; i++)
+		writel(0x10, sfrbase + REG_MMU_PMMUn_PM_EVENT(i, 1)); /* read total */
+	for (i = 0; i < num_pmmu; i++)
+		writel(0x22, sfrbase + REG_MMU_PMMUn_PM_EVENT(i, 2)); /* write miss */
+	for (i = 0; i < num_pmmu; i++)
+		writel(0x20, sfrbase + REG_MMU_PMMUn_PM_EVENT(i, 3)); /* write total */
+
+	/* Start measurement */
+	writel(0x1, sfrbase + REG_MMU_SWALKER_PM_CFG);
+	for (i = 0; i < num_pmmu; i++)
+		writel(0x1, sfrbase + REG_MMU_PMMUn_PM_CFG(i));
+
+	dev_dbg(drvdata->dev, "%s: set!\n", __func__);
+}
+
+void __sysmmu_get_perf_measure(struct sysmmu_drvdata *drvdata)
+{
+	void __iomem *sfrbase = drvdata->sfrbase;
+	int i, j, num_pmmu = drvdata->num_pmmu;
+	u32 cnt[4];
+
+	/* Stop measurement */
+	writel(0x0, sfrbase + REG_MMU_SWALKER_PM_CFG);
+	for (i = 0; i < num_pmmu; i++)
+		writel(0x0, sfrbase + REG_MMU_PMMUn_PM_CFG(i));
+
+	/* stlb */
+	for (i = 0; i < 4; i++)
+		cnt[i] = readl_relaxed(sfrbase + REG_MMU_SWALKER_PM_CNT(i));
+	dev_info(drvdata->dev, "[SWALKER][PMCNT] Read (miss/total) : %d / %d,", cnt[0], cnt[1]);
+	dev_info(drvdata->dev, " Write (miss/total) : %d / %d\n", cnt[2], cnt[3]);
+
+	/* ptlb */
+	for (i = 0; i < num_pmmu; i++) {
+		for (j = 0; j < 4; j++)
+			cnt[j] = readl_relaxed(sfrbase + REG_MMU_PMMUn_PM_CNT(i, j));
+
+		dev_info(drvdata->dev, "[PMMU %d][PMCNT] Read (miss/total) : %d / %d,", i,
+			 cnt[0], cnt[1]);
+		dev_info(drvdata->dev, " Write (miss/total) : %d / %d\n", cnt[2], cnt[3]);
+	}
+
+	dev_dbg(drvdata->dev, "%s: clear!\n", __func__);
+}
+
+void samsung_iommu_set_perf_measure(struct device *dev)
+{
+	struct iommu_fwspec *fwspec = dev_iommu_fwspec_get(dev);
+	struct sysmmu_clientdata *client = dev_iommu_priv_get(dev);
+	unsigned long flags;
+	int i;
+
+	if (!fwspec || !client) {
+		dev_err(dev, "has no IOMMU\n");
+		return;
+	}
+
+	for (i = 0; i < client->sysmmu_count; i++) {
+		struct sysmmu_drvdata *drvdata;
+
+		drvdata = client->sysmmus[i];
+		if (!drvdata->perf_mode)
+			continue;
+
+		spin_lock_irqsave(&drvdata->lock, flags);
+		if (drvdata->attached_count == 0 ||
+				!pm_runtime_active(drvdata->dev)) {
+			spin_unlock_irqrestore(&drvdata->lock, flags);
+			continue;
+		}
+		__sysmmu_set_perf_measure(drvdata);
+		spin_unlock_irqrestore(&drvdata->lock, flags);
+	}
+}
+EXPORT_SYMBOL_GPL(samsung_iommu_set_perf_measure);
+
+void samsung_iommu_get_perf_measure(struct device *dev)
+{
+	struct iommu_fwspec *fwspec = dev_iommu_fwspec_get(dev);
+	struct sysmmu_clientdata *client = dev_iommu_priv_get(dev);
+	unsigned long flags;
+	int i;
+
+	if (!fwspec || !client) {
+		dev_err(dev, "has no IOMMU\n");
+		return;
+	}
+
+	for (i = 0; i < client->sysmmu_count; i++) {
+		struct sysmmu_drvdata *drvdata;
+
+		drvdata = client->sysmmus[i];
+		if (!drvdata->perf_mode)
+			continue;
+
+		spin_lock_irqsave(&drvdata->lock, flags);
+		if (drvdata->attached_count == 0 ||
+				!pm_runtime_active(drvdata->dev)) {
+			spin_unlock_irqrestore(&drvdata->lock, flags);
+			continue;
+		}
+		__sysmmu_get_perf_measure(drvdata);
+		spin_unlock_irqrestore(&drvdata->lock, flags);
+	}
+}
+EXPORT_SYMBOL_GPL(samsung_iommu_get_perf_measure);
+
 static inline size_t get_log_fit_pages(struct samsung_iommu_log *log, int len)
 {
 	return DIV_ROUND_UP(sizeof(*(log->log)) * len, PAGE_SIZE);
@@ -1405,6 +1546,8 @@ static int sysmmu_parse_dt(struct device *sysmmu, struct sysmmu_drvdata *data)
 	/* use cacheable override mode */
 	data->cacheable_override_mode = of_property_read_bool(sysmmu->of_node,
 							      "sysmmu,cacheable-override");
+	/* use performance mode */
+	data->perf_mode = of_property_read_bool(sysmmu->of_node, "sysmmu,performance");
 
 	ret = of_property_read_u32_index(sysmmu->of_node, "vmid_mask", 0, &mask);
 	if (!ret && (mask & ((1 << data->max_vm) - 1)))

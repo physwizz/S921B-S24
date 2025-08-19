@@ -53,6 +53,12 @@
 #define MAX_BUF 4095
 #define SENDSZ 16
 
+#define VALID_VRECT_LEVEL	2700
+
+#if defined(CONFIG_MST_PCR)
+static bool use_pcr_fix_mode;
+#endif
+
 static char * __read_mostly carrierid;
 module_param(carrierid, charp, 0444);
 
@@ -2880,6 +2886,9 @@ static void mfc_send_mst_cmd(int cmd, struct mfc_charger_data *charger, u8 irq_s
 #if defined(CONFIG_MST_PCR)
 		pr_info("%s : MST ISET_PCR : %d\n", __func__, charger->pdata->mst_iset_pcr);
 		mfc_reg_write(charger->client, MFC_ISET_PCR, charger->pdata->mst_iset_pcr);
+		if (use_pcr_fix_mode) {
+			mfc_reg_write(charger->client, PCR_FIX_MODE, 0x01);
+		}
 		/* set PCR mode2 */
 		mfc_reg_write(charger->client, MFC_MST_MODE_SEL_REG, MFC_TX_MODE_MST_PCR_MODE2);
 #else
@@ -3170,6 +3179,32 @@ static bool is_wpc_auth_support(struct mfc_charger_data *charger)
 	return true;
 }
 
+static void mfc_set_epp_count(struct mfc_charger_data *charger, unsigned int count)
+{
+	if (delayed_work_pending(&charger->epp_count_work)) {
+		__pm_relax(charger->epp_count_ws);
+		cancel_delayed_work(&charger->epp_count_work);
+	}
+
+	charger->epp_count = count;
+	pr_info("%s: %d\n", __func__, count);
+	if (count <= 0)
+		return;
+
+	__pm_stay_awake(charger->epp_count_ws);
+	queue_delayed_work(charger->wqueue, &charger->epp_count_work, msecs_to_jiffies(6000));
+}
+
+static void mfc_epp_count_work(struct work_struct *work)
+{
+	struct mfc_charger_data *charger =
+		container_of(work, struct mfc_charger_data, epp_count_work.work);
+
+	pr_info("%s: %d\n", __func__, charger->epp_count);
+	charger->epp_count = 0;
+	__pm_relax(charger->epp_count_ws);
+}
+
 static void mfc_wpc_mode_change_work(struct work_struct *work)
 {
 	struct mfc_charger_data *charger =
@@ -3192,11 +3227,13 @@ static void mfc_wpc_mode_change_work(struct work_struct *work)
 		pr_info("%s: MFC_RX_MODE_WPC_BPP\n", __func__);
 		/*TODO: enable FWC AUTH*/
 		mfc_epp_enable(charger, 1);
+		mfc_set_epp_count(charger, 0);
 		break;
 	case MFC_RX_MODE_WPC_EPP:
 		pr_info("@EPP %s: MFC_RX_MODE_WPC_EPP\n", __func__);
 		if (!is_3rd_pad((charger->mpp_epp_tx_id & 0xFFFF)))
 			mfc_epp_enable(charger, 1);
+		mfc_set_epp_count(charger, 0);
 
 		if (is_samsung_pad((charger->mpp_epp_tx_id & 0xFF))) {
 			if (charger->is_full_status || charger->sleep_mode) {
@@ -4073,7 +4110,7 @@ static bool mfc_wpc_check_phm_exit_state(struct mfc_charger_data *charger)
 			return true;
 
 		if ((status_l & MFC_INTA_L_STAT_VRECT_MASK) &&
-			(vrect > 5000))
+			(vrect > VALID_VRECT_LEVEL))
 			return true;
 	}
 
@@ -4191,7 +4228,7 @@ static void mfc_rx_phm_work(struct work_struct *work)
 		__pm_relax(charger->wpc_rx_phm_ws);
 		return;
 	}
-	if (!is_phm_supported_pad(charger)) {
+	if (charger->rx_phm_state == ENTER_PHM && !is_phm_supported_pad(charger)) {
 		pr_info("%s: rx_phm unsupported\n", __func__);
 		charger->rx_phm_state = NONE_PHM;
 		__pm_relax(charger->wpc_rx_phm_ws);
@@ -5295,6 +5332,7 @@ static void mfc_wpc_pdrc_work(struct work_struct *work)
 			return;
 		}
 		mfc_set_online(charger, SEC_BATTERY_CABLE_WIRELESS_FAKE);
+		mfc_set_epp_count(charger, charger->epp_count + 1);
 	} else if ((is_wireless_fake_type(charger->pdata->cable_type)) && (charger->pdrc_state == 1)) {
 		union power_supply_propval value = {0, };
 
@@ -5857,10 +5895,19 @@ static irqreturn_t mfc_wpc_pdrc_irq_thread(int irq, void *irq_data)
 			__pm_relax(charger->wpc_pdrc_ws);
 
 		if (pdrc_state) {
+			unsigned int epp_clear_delay = charger->epp_time;
+
+			charger->epp_time = 1000;
+			if ((charger->epp_count > 0) &&
+				(charger->epp_count >= charger->pdata->mpp_epp_max_count)) {
+				epp_clear_delay = 6000;
+				mfc_set_epp_count(charger, 0);
+			}
+			pr_info("%s: set delay(%d), count(%d, %d)\n",
+				__func__, epp_clear_delay, charger->epp_count, charger->pdata->mpp_epp_max_count);
 			__pm_stay_awake(charger->epp_clear_ws);
 			queue_delayed_work(charger->wqueue, &charger->epp_clear_timer_work,
-				msecs_to_jiffies(charger->epp_time));
-			charger->epp_time = 1000;
+				msecs_to_jiffies(epp_clear_delay));
 		}
 	}  else {
 		if (!delayed_work_pending(&charger->wpc_pdrc_work))
@@ -6787,6 +6834,10 @@ static int mfc_chg_parse_dt(struct device *dev,
 		pr_info("%s: fail to read mst_iset_pcr. default set 2.8A(0x06)\n", __func__);
 		pdata->mst_iset_pcr = 0x06;  /* 2.8A */
 	}
+	use_pcr_fix_mode = of_property_read_bool(np, "battery,pcr_fix_mode");
+	if (use_pcr_fix_mode) {
+		pr_info("%s: Using PCR_FIX_MODE for MST\n", __func__);
+	}
 #endif
 
 	ret = of_property_read_u32(np, "battery,mpp_epp_vout",
@@ -6801,6 +6852,13 @@ static int mfc_chg_parse_dt(struct device *dev,
 	if (ret) {
 		pr_err("%s: mpp_epp_def_power is Empty\n", __func__);
 		pdata->mpp_epp_def_power = TX_RX_POWER_5W * 100000;
+	}
+
+	ret = of_property_read_u32(np, "battery,mpp_epp_max_count",
+				&pdata->mpp_epp_max_count);
+	if (ret) {
+		pr_err("%s: mpp_epp_max_count is Empty\n", __func__);
+		pdata->mpp_epp_max_count = 3;
 	}
 
 	mfc_chg_parse_iec_data(np, pdata);
@@ -7113,6 +7171,7 @@ static int cps4038_charger_probe(
 	charger->wpc_rx_phm_ws = wakeup_source_register(&client->dev, "wpc_rx_phm_ws");
 	charger->wpc_phm_exit_ws = wakeup_source_register(&client->dev, "wpc_phm_exit_ws");
 	charger->epp_clear_ws = wakeup_source_register(&client->dev, "epp_clear_ws");
+	charger->epp_count_ws = wakeup_source_register(&client->dev, "epp_count_ws");
 
 	/* wpc_det */
 	if (charger->pdata->irq_wpc_det) {
@@ -7146,6 +7205,7 @@ static int cps4038_charger_probe(
 	INIT_DELAYED_WORK(&charger->wpc_deactivate_work, mfc_wpc_deactivate_work);
 	INIT_DELAYED_WORK(&charger->wpc_phm_exit_work, mfc_wpc_phm_exit_work);
 	INIT_DELAYED_WORK(&charger->epp_clear_timer_work, mfc_epp_clear_timer_work);
+	INIT_DELAYED_WORK(&charger->epp_count_work, mfc_epp_count_work);
 
 	/*
 	 * Default Idle voltage of the INT_A is LOW.

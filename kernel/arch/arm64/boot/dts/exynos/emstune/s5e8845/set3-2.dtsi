@@ -2,8 +2,8 @@
 	/* game mode - app boost */
 	set3_2: set@0302{
 		tex {
-			top-app		= <1>;
-			prio		= <110>;
+			top-app = <110>;
+			foreground = <110>;
 		};
 
 		cgroup_boost {

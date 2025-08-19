@@ -22,7 +22,8 @@
 				"CHUB", "VTS", "HSI0", "G3D", "M2M", "ICPU";
 		memory-region = <&header>, <&log_kernel>, <&log_s2d>,
 				<&log_first>, <&log_arrdumprst>, <&log_platform>,
-				<&log_kevents>, <&log_backtrace>, <&log_kevents_small>;
+				<&log_kevents>, <&log_backtrace>, <&log_kevents_small>,
+				<&wdtmsg>;
 	};
 
 	getcpustate {
@@ -91,7 +92,7 @@
 		samsung,mem-to-file-allow = <1>;
 	};
 
-	exynos-ecc-handler {
+	ecc_handler: exynos-ecc-handler {
 		compatible = "samsung,exynos-ecc-handler";
 		interrupts = <GIC_SPI INTREQ__CPUCL0_ERRIRQ_0 IRQ_TYPE_LEVEL_HIGH>,
 			<GIC_SPI INTREQ__CPUCL0_ERRIRQ_1 IRQ_TYPE_LEVEL_HIGH>,
@@ -133,6 +134,10 @@
 				<0x10>, <0x20>, <0x40>, <0x80>,
 				<0xff>, <0x1>, <0x2>, <0x4>, <0x8>,
 				<0x10>, <0x20>, <0x40>, <0x80>;
+		policy = <0x0>, <0x0>, <0x0>, <0x0>, <0x0>,
+		       <0x0>, <0x0>, <0x0>, <0x0>,
+		       <0x0>, <0x3>, <0x3>, <0x3>, <0x3>,
+		       <0x3>, <0x3>, <0x3>, <0x3>;
 	};
 
 	exynos-adv_tracer {

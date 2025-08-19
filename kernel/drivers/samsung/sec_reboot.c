@@ -25,7 +25,10 @@
 #include <linux/sti/abc_common.h>
 #endif
 
+#if defined(CONFIG_SEC_KEY_NOTIFIER)
 extern void hard_reset_delay(void);
+#endif
+
 /* MULTICMD
  * reserve 9bit | clk_change 1bit | dumpsink 2bit | param 1bit | dram_test 1bit | cp_debugmem 2bit | debuglevel 2bit | forceupload 2bit
  */
@@ -97,6 +100,10 @@ enum sec_reset_reason {
 	SEC_RESET_REASON_FWUP      = (SEC_RESET_REASON_PREFIX | 0x9), /* emergency firmware update */
 	SEC_RESET_REASON_EM_FUSE   = (SEC_RESET_REASON_PREFIX | 0xa), /* EMC market fuse */
 	SEC_RESET_REASON_BOOTLOADER   = (SEC_RESET_REASON_PREFIX | 0xd), /* go to download mode */
+	SEC_RESET_REASON_WIRELESSD_BL	= (SEC_RESET_REASON_PREFIX | 0xe), /* go to wireless download BOTA mode */
+	SEC_RESET_REASON_RECOVERY_WD	= (SEC_RESET_REASON_PREFIX | 0xf), /* go to wireless download mode */
+	SEC_RESET_REASON_LPM   		= (SEC_RESET_REASON_PREFIX | 0x15), /* Reboot from LPM */
+	SEC_RESET_REASON_UNKNOWNKP = 0xC8,
 	SEC_RESET_REASON_EMERGENCY = 0x0,
 
 	SEC_RESET_SET_SECDBG       = (SEC_RESET_SET_PREFIX | 0x10000),
@@ -106,6 +113,7 @@ enum sec_reset_reason {
 	SEC_RESET_SET_SWSEL        = (SEC_RESET_SET_PREFIX | 0xe0000),
 	SEC_RESET_SET_SUD          = (SEC_RESET_SET_PREFIX | 0xf0000),
 	SEC_RESET_CP_DBGMEM        = (SEC_RESET_SET_PREFIX | 0x50000), /* cpmem_on: CP RAM logging */
+	SEC_RESET_SET_POWEROFF_WATCH   = (SEC_RESET_SET_PREFIX | 0x90000), /* Power off Watch mode */
 #if IS_ENABLED(CONFIG_SEC_ABC)
 	SEC_RESET_USER_DRAM_TEST   = (SEC_RESET_SET_PREFIX | 0x60000), /* USER DRAM TEST */
 #endif
@@ -294,7 +302,9 @@ static int sec_reboot(struct notifier_block *this,
 {
 	local_irq_disable();
 
+#if defined(CONFIG_SEC_KEY_NOTIFIER)
 	hard_reset_delay();
+#endif
 
 	if (sec_reboot_on_panic && !cmd)
 		cmd = panic_str;
@@ -317,15 +327,25 @@ static int sec_reboot(struct notifier_block *this,
 		else if (!strcmp(cmd, "download"))
 			regmap_write(pmureg, panic_inform, SEC_RESET_REASON_DOWNLOAD);
 		else if (!strcmp(cmd, "bootloader"))
+#if !defined(CONFIG_SOC_S5E8845)
 			regmap_write(pmureg, panic_inform, SEC_RESET_REASON_BOOTLOADER);
+#else
+			regmap_write(pmureg, panic_inform, SEC_RESET_REASON_UNKNOWNKP);
+#endif
 		else if (!strcmp(cmd, "upload"))
 			regmap_write(pmureg, panic_inform, SEC_RESET_REASON_UPLOAD);
 		else if (!strcmp(cmd, "secure"))
 			regmap_write(pmureg, panic_inform, SEC_RESET_REASON_SECURE);
+		else if (!strcmp(cmd, "wdownload"))
+			regmap_write(pmureg, panic_inform, SEC_RESET_REASON_RECOVERY_WD);
+		else if (!strcmp(cmd, "wirelessd"))
+			regmap_write(pmureg, panic_inform, SEC_RESET_REASON_WIRELESSD_BL);
 		else if (!strcmp(cmd, "fwup"))
 			regmap_write(pmureg, panic_inform, SEC_RESET_REASON_FWUP);
 		else if (!strcmp(cmd, "em_mode_force_user"))
 			regmap_write(pmureg, panic_inform, SEC_RESET_REASON_EM_FUSE);
+		else if (!strncmp(cmd, "lpm_", 4))
+			regmap_write(pmureg, panic_inform, SEC_RESET_REASON_LPM);
 #if IS_ENABLED(CONFIG_SEC_ABC)
 		else if (!strcmp(cmd, "user_dram_test") && sec_abc_get_enabled())
 			regmap_write(pmureg, panic_inform, SEC_RESET_USER_DRAM_TEST);
@@ -376,7 +396,30 @@ static int sec_reboot(struct notifier_block *this,
 			regmap_write(pmureg, panic_inform, SEC_RESET_CP_DBGMEM | 0x1);
 		else if (!strncmp(cmd, "mbsmem_off", 10))
 			regmap_write(pmureg, panic_inform, SEC_RESET_CP_DBGMEM | 0x2);
-		else if (!strncmp(cmd, "panic", 5)) {
+		else if (!strncmp(cmd, "watchonly", 9)) {
+			int wcoff = 10;
+			int ret = 0;
+
+			if (!strncmp(cmd + wcoff, "exercise", 8))
+				wcoff += 10;
+			else
+				wcoff += 1;
+
+			if (((char*)cmd)[wcoff] == '0')
+				ret = kstrtoul(cmd + (wcoff + 1), 0, &value);
+			else
+				ret = kstrtoul(cmd + wcoff, 0, &value);
+			if (ret)
+				value = 0;
+
+			if (((char*)cmd)[wcoff - 1] == '+')
+				value |= 1 << 0xf;
+
+			if (((char*)cmd)[wcoff - 2] == '1')
+				value |= 1 << 0xe;
+
+			regmap_write(pmureg, panic_inform, SEC_RESET_SET_POWEROFF_WATCH | value);
+		} else if (!strncmp(cmd, "panic", 5)) {
 			/*
 			 * This line is intentionally blanked because the PANIC INFORM is used for upload cause
 			 * in sec_debug_set_upload_cause() only in case of  panic() .

@@ -174,6 +174,13 @@ config SEC_DISPLAYPORT_DBG
 	help
 	  Samsung specific debug code for displayport
 
+config EXYNOS_DPU_USE_DUAL_DRV
+	bool "Use DPU Dual Driver"
+	depends on DRM_SAMSUNG_DECON
+	default n
+	help
+	  If this menu is disabled, you can use legacy exynos dpu driver
+
 source "drivers/gpu/drm/samsung/dpu/panel/Kconfig"
 source "drivers/gpu/drm/samsung/dpu/mcd_cal/Kconfig"
 source "drivers/gpu/drm/samsung/dpu/tests/Kconfig"

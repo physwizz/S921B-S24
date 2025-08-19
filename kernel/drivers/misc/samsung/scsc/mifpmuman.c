@@ -17,7 +17,8 @@
 
 #if IS_ENABLED(CONFIG_SOC_S5E8825) || IS_ENABLED(CONFIG_SOC_S5E5515) \
 	|| IS_ENABLED(CONFIG_SOC_S5E8535) || IS_ENABLED(CONFIG_SOC_S5E8835) \
-	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845)
+	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845) \
+	|| IS_ENABLED(CONFIG_SOC_S5E5535)
 /* uses */
 #include "pmu_host_if.h"
 #endif
@@ -35,7 +36,8 @@ MODULE_PARM_DESC(pmu_cmd_timeout, "PMU command timeout in seconds, default 1");
 
 #if IS_ENABLED(CONFIG_SOC_S5E8825) || IS_ENABLED(CONFIG_SOC_S5E5515) \
 	|| IS_ENABLED(CONFIG_SOC_S5E8535) || IS_ENABLED(CONFIG_SOC_S5E8835) \
-	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845)
+	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845) \
+	|| IS_ENABLED(CONFIG_SOC_S5E5535)
 static void mifpmu_cmd_th_to_string(u32 cmd, char *buf, u8 buffer_size)
 {
 	memset(buf, 0, buffer_size);
@@ -49,6 +51,9 @@ static void mifpmu_cmd_th_to_string(u32 cmd, char *buf, u8 buffer_size)
 		break;
 	case PMU_AP_MSG_SUBSYS_ERROR_WLAN:
 		strlcpy(buf, "ERROR WLAN", buffer_size);
+		break;
+	case PMU_AP_MSG_SUBSYS_ERROR_WLAN_WPAN:
+		strlcpy(buf, "ERROR WLAN WPAN", buffer_size);
 		break;
 	case PMU_AP_MSG_PCIE_OFF_REQ:
 		strlcpy(buf, "PCIE OFF REQ", buffer_size);
@@ -82,6 +87,12 @@ static void mifpmu_cmd_fh_to_string(u32 cmd, char *buf, u8 buffer_size)
 	case PMU_AP_MSG_SUBSYS_RESET_WPAN_WLAN:
 		strlcpy(buf, "RESET WLAN and WPAN", buffer_size);
 		break;
+	case PMU_AP_CFG_MONITOR_CMD:
+		strlcpy(buf, "Monitor CFG(set false)", buffer_size);
+		break;
+	case PMU_AP_CFG_MONITOR_WPAN_WLAN:
+		strlcpy(buf, "Monitor CFG(set true)", buffer_size);
+		break;
 	case PMU_AP_MSG_SUBSYS_FAILURE_WLAN:
 		strlcpy(buf, "Force WLAN monitor", buffer_size);
 		break;
@@ -100,6 +111,17 @@ static void mifpmu_cmd_fh_to_string(u32 cmd, char *buf, u8 buffer_size)
 	case PMU_AP_MSG_WLBT_PCIE_OFF_REJECT_CANCEL:
 		strlcpy(buf, "PCIE OFF REJECT CANCEL", buffer_size);
 		break;
+#ifdef CONFIG_SCSC_XO_CDAC_CON
+	case PMU_AP_MSG_DCXO_CONFIG:
+		strlcpy(buf, "DCXO CONFIG", buffer_size);
+		break;
+#endif
+	case PMU_AP_MSG_SCAN2MEM_DUMP_START:
+		strlcpy(buf, "SCAN2MEM DUMP", buffer_size);
+		break;
+	case PMU_AP_MSG_SCAN2MEM_RECOVERY_START:
+		strlcpy(buf, "SCAN2MEM RECOVERY", buffer_size);
+		break;
 	default:
 		strlcpy(buf, "Incorrect command", buffer_size);
 		break;
@@ -113,7 +135,8 @@ static void mifpmu_isr(int irq, void *data)
 	struct scsc_mif_abs *mif;
 #if IS_ENABLED(CONFIG_SOC_S5E8825) || IS_ENABLED(CONFIG_SOC_S5E5515) \
 	|| IS_ENABLED(CONFIG_SOC_S5E8535) || IS_ENABLED(CONFIG_SOC_S5E8835) \
-	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845)
+	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845) \
+	|| IS_ENABLED(CONFIG_SOC_S5E5535)
 	u32 cmd;
 	char cmd_string[20];
 #endif
@@ -121,7 +144,8 @@ static void mifpmu_isr(int irq, void *data)
 	mif = pmu->mif;
 #if IS_ENABLED(CONFIG_SOC_S5E8825) || IS_ENABLED(CONFIG_SOC_S5E5515) \
 	|| IS_ENABLED(CONFIG_SOC_S5E8535) || IS_ENABLED(CONFIG_SOC_S5E8835) \
-	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845)
+	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845) \
+	|| IS_ENABLED(CONFIG_SOC_S5E5535)
 	pmu->last_msg = cmd = (u32)(mif->get_mbox_pmu(mif));
 
 	mifpmu_cmd_th_to_string(cmd, cmd_string, 20);
@@ -142,6 +166,12 @@ static void mifpmu_isr(int irq, void *data)
 	case PMU_AP_MSG_SUBSYS_ERROR_WLAN:
 		if (pmu->pmu_irq_handler)
 			pmu->pmu_irq_handler(pmu->irq_data, MIFPMU_ERROR_WLAN);
+		else
+			SCSC_TAG_ERR(MXMAN, "No handler for cmd 0%x\n", cmd);
+		break;
+	case PMU_AP_MSG_SUBSYS_ERROR_WLAN_WPAN:
+		if (pmu->pmu_irq_handler)
+			pmu->pmu_irq_handler(pmu->irq_data, MIFPMU_ERROR_WLAN_WPAN);
 		else
 			SCSC_TAG_ERR(MXMAN, "No handler for cmd 0%x\n", cmd);
 		break;
@@ -185,6 +215,12 @@ static void mifpmu_error_isr(int irq, void *data)
 		else
 			SCSC_TAG_ERR(MXMAN, "No handler for cmd 0%x\n", cmd);
 		break;
+	case PMU_AP_MSG_SUBSYS_ERROR_WLAN_WPAN:
+		if (pmu->pmu_irq_handler)
+			pmu->pmu_irq_handler(pmu->irq_data, MIFPMU_ERROR_WLAN_WPAN);
+		else
+			SCSC_TAG_ERR(MXMAN, "No handler for cmd 0%x\n", cmd);
+		break;
 	default:
 		SCSC_TAG_ERR(MXMAN, "Command not recognized. cmd 0x%x\n", cmd);
 		return;
@@ -225,12 +261,14 @@ int mifpmuman_load_fw(struct mifpmuman *pmu, int *ka_patch, size_t ka_patch_len)
 
 #if IS_ENABLED(CONFIG_SOC_S5E8825) || IS_ENABLED(CONFIG_SOC_S5E5515) \
 	|| IS_ENABLED(CONFIG_SOC_S5E8535) || IS_ENABLED(CONFIG_SOC_S5E8835) \
-	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845)
+	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845) \
+	|| IS_ENABLED(CONFIG_SOC_S5E5535)
 static int mifpmuman_send_msg_blocking(struct mifpmuman *pmu, u32 msg)
 {
 	struct scsc_mif_abs *mif;
 	int ret;
 	char cmd_string[28];
+	uint timeout = pmu_cmd_timeout * PMU_MSG_TIMEOUT;
 
 	mifpmu_cmd_fh_to_string(msg, cmd_string, 28);
 	SCSC_TAG_INFO(MXMAN, "Send %s PMU cmd [%s] 0x%x\n", "blocking", cmd_string, msg);
@@ -239,10 +277,17 @@ static int mifpmuman_send_msg_blocking(struct mifpmuman *pmu, u32 msg)
 		SCSC_TAG_ERR(MXMAN, "PMU not initialized\n");
 		return -ENODEV;
 	}
+
+	if (msg == PMU_AP_MSG_SCAN2MEM_RECOVERY_START) {
+		timeout = 10 * PMU_MSG_TIMEOUT;
+	}
+
 	/* Get abs implementation */
 	mif = pmu->mif;
 	ret = mif->set_mbox_pmu(mif, msg);
-	if (wait_for_completion_timeout(&pmu->msg_ack, pmu_cmd_timeout * PMU_MSG_TIMEOUT) == 0) {
+	if (msg == PMU_AP_MSG_SCAN2MEM_DUMP_START)
+		goto exit;
+	else if (wait_for_completion_timeout(&pmu->msg_ack, timeout) == 0) {
 		SCSC_TAG_ERR(MXMAN, "Timeout waiting for [%s] msg ACK\n", cmd_string);
 
 		/* On integrated chips, dump PMUCAL registers */
@@ -260,7 +305,7 @@ static int mifpmuman_send_msg_blocking(struct mifpmuman *pmu, u32 msg)
 #endif
 		return -ETIMEDOUT;
 	}
-
+exit:
 	/* reinit so completion can be re-used */
 	reinit_completion(&pmu->msg_ack);
 	SCSC_TAG_INFO(MXMAN, "PMU cmd [%s] 0x%x - complete\n", cmd_string, msg);
@@ -302,9 +347,24 @@ int mifpmuman_send_msg(struct mifpmuman *pmu, enum pmu_msg msg)
 }
 #endif
 
+#ifdef CONFIG_SCSC_XO_CDAC_CON
+int mifpmuman_send_rfic_dcxo_config(struct mifpmuman *pmu)
+{
+	u32 msg = PMU_AP_MSG_DCXO_CONFIG;
+	int r;
+
+	mutex_lock(&pmu->lock);
+	r = mifpmuman_send_msg_blocking(pmu, msg);
+        mutex_unlock(&pmu->lock);
+
+        return r;
+}
+#endif
+
 #if IS_ENABLED(CONFIG_SOC_S5E8825) || IS_ENABLED(CONFIG_SOC_S5E5515) \
 	|| IS_ENABLED(CONFIG_SOC_S5E8535) || IS_ENABLED(CONFIG_SOC_S5E8835) \
-	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845)
+	|| IS_ENABLED(CONFIG_SCSC_PCIE_CHIP) || IS_ENABLED(CONFIG_SOC_S5E8845) \
+	|| IS_ENABLED(CONFIG_SOC_S5E5535)
 int mifpmuman_start_subsystem(struct mifpmuman *pmu, enum scsc_subsystem sub)
 {
 	u32 msg;
@@ -368,7 +428,29 @@ int mifpmuman_stop_subsystem(struct mifpmuman *pmu, enum scsc_subsystem sub)
 
 	return r;
 }
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+int mifpmuman_recovery_mode_subsystem(struct mifpmuman *pmu, bool enable)
+{
+	u32 msg;
+	int r;
 
+	mutex_lock(&pmu->lock);
+	if (enable) {
+		SCSC_TAG_INFO(MXMAN, "Enabling Recovery mode\n");
+		msg = PMU_AP_CFG_MONITOR_CMD;
+	}
+	else {
+		SCSC_TAG_INFO(MXMAN, "Disabling Recovery mode\n");
+		msg = PMU_AP_CFG_MONITOR_WPAN_WLAN;
+	}
+
+	r = mifpmuman_send_msg_blocking(pmu, msg);
+
+	mutex_unlock(&pmu->lock);
+
+	return r;
+}
+#endif
 int mifpmuman_force_monitor_mode_subsystem(struct mifpmuman *pmu, enum scsc_subsystem sub)
 {
 	u32 msg;
@@ -392,6 +474,28 @@ int mifpmuman_force_monitor_mode_subsystem(struct mifpmuman *pmu, enum scsc_subs
 		SCSC_TAG_ERR(MXMAN, "Subsystem %d not found\n", sub);
 		mutex_unlock(&pmu->lock);
 		return -EIO;
+	}
+
+	r = mifpmuman_send_msg_blocking(pmu, msg);
+
+	mutex_unlock(&pmu->lock);
+
+	return r;
+}
+
+int mifpmuman_trigger_scan2mem(struct mifpmuman *pmu, bool dump)
+{
+	u32 msg;
+	int r;
+
+	mutex_lock(&pmu->lock);
+	if (dump) {
+		SCSC_TAG_INFO(MXMAN, "Triggering SCAN2MEM DUMP to pmu\n");
+		msg = PMU_AP_MSG_SCAN2MEM_DUMP_START;
+	}
+	else {
+		SCSC_TAG_INFO(MXMAN, "Triggering SCAN2MEM RECOVERY to pmu\n");
+		msg = PMU_AP_MSG_SCAN2MEM_RECOVERY_START;
 	}
 
 	r = mifpmuman_send_msg_blocking(pmu, msg);

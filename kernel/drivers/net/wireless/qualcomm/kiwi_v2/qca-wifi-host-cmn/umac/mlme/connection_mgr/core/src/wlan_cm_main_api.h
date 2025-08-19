@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2015, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -255,6 +255,36 @@ QDF_STATUS cm_connect_rsp(struct wlan_objmgr_vdev *vdev,
 QDF_STATUS cm_notify_connect_complete(struct cnx_mgr *cm_ctx,
 				      struct wlan_cm_connect_resp *resp,
 				      bool acquire_lock);
+
+/**
+ * cm_update_scan_mlme_info() - This API would be called after connect complete
+ * request or roam synch completion.
+ * @cm_ctx: connection manager context
+ * @resp: Connection complete resp.
+ *
+ * This API would be called after connection completion resp or roam synch
+ * propagation completion. This will update the assoc state in the scan
+ * entries
+ *
+ * Return: QDF status
+ */
+void cm_update_scan_mlme_info(struct cnx_mgr *cm_ctx,
+			      struct wlan_cm_connect_resp *resp);
+
+/**
+ * cm_update_scan_mlme_info() - This API would be called after connect complete
+ * request or roam synch completion.
+ * @cm_ctx: connection manager context
+ * @resp: Connection complete resp.
+ *
+ * This API would be called after connection completion resp or roam synch
+ * propagation completion. This will update the assoc state in the scan
+ * entries
+ *
+ * Return: QDF status
+ */
+void cm_update_scan_mlme_info(struct cnx_mgr *cm_ctx,
+			      struct wlan_cm_connect_resp *resp);
 
 /**
  * cm_connect_complete() - This API would be called after connect complete
@@ -1466,9 +1496,18 @@ cm_get_active_connect_req_param(struct wlan_objmgr_vdev *vdev,
 QDF_STATUS cm_get_rnr(struct wlan_objmgr_vdev *vdev, wlan_cm_id cm_id,
 		      struct reduced_neighbor_report *rnr);
 
+/**
+ * cm_get_curr_candidate_entry() - Get the current candidate from cnx mgr
+ * @vdev: VDEV object manager.
+ * @cm_id: cnx mgr ID.
+ *
+ * Get current entry of connection from the cnx mgr list.
+ * Caller to free the returned scan entry if not NULL.
+ *
+ * Return: Scan entry
+ */
 struct scan_cache_entry *
-cm_get_curr_candidate_entry(struct wlan_objmgr_vdev *vdev,
-			    wlan_cm_id cm_id);
+cm_get_curr_candidate_entry(struct wlan_objmgr_vdev *vdev, wlan_cm_id cm_id);
 
 /**
  * cm_free_connect_rsp_ies() - Function to free all connection IEs.

@@ -111,5 +111,6 @@ int is_vendor_device_info_set_mipi_phy(void __user *user_data);
 int is_vendor_device_info_get_sec2lsi_module_info(void __user *user_data);
 int is_vendor_device_info_get_sec2lsi_buff(void __user *user_data);
 int is_vendor_device_info_set_sec2lsi_buff(void __user *user_data);
+int is_vendor_device_info_get_lens_distance_data(void __user *user_data);
 
 #endif /* IS_VENDOR_DEVICE_INFO_H */

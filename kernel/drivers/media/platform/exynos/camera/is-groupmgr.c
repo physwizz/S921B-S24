@@ -2083,6 +2083,7 @@ static void is_group_update_dvfs(struct is_device_ischain *device,
 		dvfs_ctrl->thrott_ctrl = (device->resourcemgr->limited_fps > 0) ?
 						 IS_DVFS_SN_THROTTLING :
 						 IS_DVFS_THROTT_CTRL_OFF;
+		is_hw_check_psm_state(frame, dvfs_ctrl, group);
 		is_hw_check_iteration_state(frame, dvfs_ctrl, group);
 		ret = is_dvfs_sel_dynamic(dvfs_ctrl, reprocessing_mode);
 		if (ret == 0) {

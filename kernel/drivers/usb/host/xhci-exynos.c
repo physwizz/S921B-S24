@@ -39,6 +39,7 @@ extern int xhci_exynos_wake_lock(int is_main_hcd, int is_lock);
 
 static int is_rewa_enabled;
 static struct xhci_hcd_exynos *g_xhci_exynos;
+extern struct hcd_hw_info *g_hwinfo;
 
 extern struct usb_xhci_pre_alloc xhci_pre_alloc;
 extern struct xhci_exynos_audio *g_xhci_exynos_audio;
@@ -350,7 +351,6 @@ int xhci_exynos_inform_dp_use(int use, int lane_cnt)
 			ret = xhci_exynos_port_power_set(0, 2);
 		}
 #endif
-		ret = xhci_exynos_portsc_set(0);
 		udelay(1);
 	} else {
 #ifdef CONFIG_EXYNOS_USBDRD_PHY30
@@ -1003,7 +1003,8 @@ static int xhci_exynos_remove(struct platform_device *dev)
 	xhci->xhc_state |= XHCI_STATE_REMOVING;
 
 	if (xhci_exynos->port_state == PORT_USB2) {
-		usb_power_notify_control(0, 1);
+		if (xhci_exynos->dp_use == false)
+			usb_power_notify_control(0, 1);
 	}
 	xhci_exynos_port_power_set(1, 3);
 
@@ -1155,6 +1156,13 @@ static int __maybe_unused xhci_exynos_resume(struct device *dev)
 
 		if (ret)
 			return ret;
+
+		if (g_hwinfo->mem_init == true) {
+			ret = xhci_exynos_alloc_event_ring(xhci, GFP_KERNEL);
+			if (ret)
+				return ret;
+			xhci_exynos_enable_event_ring(xhci);
+		}
 	}
 
 	if (is_rewa_enabled == 1) {

@@ -22,8 +22,12 @@
 #include <soc/samsung/exynos-el3_mon.h>
 #include <soc/samsung/exynos/exynos-seh.h>
 
-#define ALLOC_SIZE	(PAGE_SIZE * 3)
-#define SJTAG_ENABLE	(-1)
+#define ALLOC_SIZE			(PAGE_SIZE * 3)
+#define SJTAG_ENABLE			(-1)
+
+#define RTIC_FIQ_MAGIC_MASK		(0xFFFF0000)
+#define RTIC_FIQ_MAGIC_VALUE		(0xDE2C0000)
+#define RTIC_FIQ_REGION_MASK		(0xFFFF)
 
 static char *smc_debug_mem;
 static unsigned long cm_debug_func_addr = 0;
@@ -52,21 +56,10 @@ static void exynos_smart_exception_handler(unsigned long target,
 	pr_err("========================================="
 		"=========================================\n");
 
-	if ((value > 0x0 && value < (PAGE_SIZE * 2))
-			&& !(value % 0x8) && (smc_debug_mem)) {
-
-		tmp = (unsigned long)smc_debug_mem;
-		tmp += (unsigned long)value;
-		ptr = (unsigned long *)tmp;
-	} else {
-		pr_err("%s: Invalid value(%x) and smc_debug_mem(%llx).\n", __func__, value, (uint64_t)smc_debug_mem);
-		/* make kernel panic */
-		BUG();
-		/* SHOULD NOT be here */
-		while(1);
-	}
-
-	if (id) {
+	if ((far & RTIC_FIQ_MAGIC_MASK) == RTIC_FIQ_MAGIC_VALUE) {
+		pr_err("%s: There has been RTIC 'miss-match' FIQ interrupt from"
+			" REGION %d\n\n", __func__, (int)far & RTIC_FIQ_REGION_MASK);
+	} else if (id) {
 		if (id & ldfw_id_mask) {
 			pr_err("%s: There has been an unexpected exception from "
 					"a LDFW which has smc id 0x%x\n\n", __func__, id);
@@ -77,6 +70,26 @@ static void exynos_smart_exception_handler(unsigned long target,
 	} else {
 		pr_err("%s: There has been an unexpected exception from "
 				"the EL3 monitor.\n\n", __func__);
+	}
+
+	if ((value > 0x0 && value < (PAGE_SIZE * 2))
+			&& !(value % 0x8) && (smc_debug_mem)) {
+
+		tmp = (unsigned long)smc_debug_mem;
+		tmp += (unsigned long)value;
+		ptr = (unsigned long *)tmp;
+	} else {
+		if (!(uint64_t)smc_debug_mem)
+			pr_err("%s:Secure Jtag must be fused. Just reboot.\n",
+								__func__);
+		else
+			pr_err("%s: Invalid value(%x) and smc_debug_mem(%llx).\n",
+					__func__, value, (uint64_t)smc_debug_mem);
+
+		/* make kernel panic */
+		BUG();
+		/* SHOULD NOT be here */
+		while(1);
 	}
 
 	if (id) {

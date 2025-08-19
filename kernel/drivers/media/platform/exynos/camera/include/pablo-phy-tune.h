@@ -21,4 +21,6 @@ u32 pablo_test_get_open_window(void);
 u32 pablo_test_get_total_err(void);
 u32 pablo_test_get_first_open(void);
 
+extern bool fst_phy_check_step;
+
 #endif

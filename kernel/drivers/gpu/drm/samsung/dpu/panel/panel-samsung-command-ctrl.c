@@ -53,6 +53,11 @@ static int exynos_panel_send_generic_command(struct exynos_panel *ctx,
 	int i, len, delay, ret;
 	u8 *payload;
 
+	if(!pmode) {
+		panel_err(ctx, " There is NO panel mode set \n");
+		return -EINVAL;
+	}
+
 	send_cmds = &pmode->cmd_list[type];
 	if (!send_cmds)
 		return -EINVAL;
@@ -246,6 +251,34 @@ static int panel_command_ctrl_enable(struct drm_panel *panel)
 	return 0;
 }
 
+static int panel_command_ctrl_lastclose(struct exynos_panel *ctx, bool close)
+{
+	const struct exynos_panel_mode *pmode = ctx->current_mode;
+	int ret = 0;
+
+	WARN_ON(!mutex_is_locked(&ctx->mode_lock));
+
+	if (!is_panel_active(ctx) && !is_panel_idle(ctx))
+		return 0;
+
+	if (!pmode) {
+		panel_err(ctx, "no current mode set\n");
+		return -EINVAL;
+	}
+
+	if (close)
+		ret = exynos_panel_send_generic_command(ctx, pmode, PANEL_CLOSE_CMDS);
+	else
+		ret = exynos_panel_send_generic_command(ctx, pmode, PANEL_OPEN_CMDS);
+
+	panel_info(ctx, "- : (%s) -> (%s)\n", ctx->lastclosed ? "close" : "open",
+					      close ? "close" : "open");;
+	if (!ret)
+		ctx->lastclosed = close;
+
+	return 0;
+}
+
 static const struct drm_panel_funcs panel_command_ctrl_drm_funcs = {
 	.disable = panel_command_ctrl_disable,
 	.unprepare = panel_command_ctrl_unprepare,
@@ -258,6 +291,7 @@ static const struct exynos_panel_funcs panel_command_ctrl_exynos_funcs = {
 	.set_brightness = panel_command_ctrl_set_brightness,
 	.set_lp_mode = panel_command_ctrl_lp_mode_set,
 	.mode_set = panel_command_ctrl_mode_set,
+	.lastclose = panel_command_ctrl_lastclose,
 };
 
 const struct exynos_panel_func_set samsung_panel_command_ctrl = {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -262,6 +262,7 @@ QDF_STATUS t2lm_handle_rx_resp(struct wlan_objmgr_vdev *vdev,
 	struct wlan_mlo_peer_context *ml_peer;
 	struct wlan_t2lm_info *t2lm_info;
 	uint8_t dir;
+	struct wlan_channel *channel;
 
 	if (!peer) {
 		t2lm_err("peer is null");
@@ -313,6 +314,19 @@ QDF_STATUS t2lm_handle_rx_resp(struct wlan_objmgr_vdev *vdev,
 			}
 		}
 	}
+
+	channel = wlan_vdev_mlme_get_bss_chan(vdev);
+	if (!channel) {
+		t2lm_err("vdev: %d channel infio not found",
+			 wlan_vdev_get_id(vdev));
+		return QDF_STATUS_E_FAILURE;
+	}
+
+	wlan_connectivity_t2lm_req_resp_event(vdev, t2lm_rsp.dialog_token, 0,
+					      false,
+					      channel->ch_freq,
+					      true,
+					      WLAN_CONN_DIAG_MLO_T2LM_RESP_EVENT);
 
 	return status;
 }
@@ -490,7 +504,8 @@ wlan_t2lm_validate_candidate(struct cnx_mgr *cm_ctx,
 	}
 
 	status = wlan_mlo_parse_bcn_prbresp_t2lm_ie(&t2lm_ctx,
-						    scan_entry->ie_list.t2lm[0]);
+						    util_scan_entry_t2lm(scan_entry),
+							util_scan_entry_t2lm_len(scan_entry));
 	if (QDF_IS_STATUS_ERROR(status))
 		goto end;
 

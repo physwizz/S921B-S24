@@ -1069,16 +1069,27 @@ static inline int exynos_pm_qos_get_value(struct exynos_pm_qos_constraints *c)
 {
 	struct plist_node *node;
 	int total_value = 0;
+	struct exynos_pm_qos_request *req;
 
 	if (plist_head_empty(&c->list))
 		return c->no_constraint_value;
 
 	switch (c->type) {
 	case EXYNOS_PM_QOS_MIN:
-		return plist_first(&c->list)->prio;
+		list_for_each_entry(node, &c->list.node_list, node_list) {
+			req = container_of(node, struct exynos_pm_qos_request, node);
+			if (!req->nosync)
+				break;
+		}
+		return node->prio;
 
 	case EXYNOS_PM_QOS_MAX:
-		return plist_last(&c->list)->prio;
+		list_for_each_entry_reverse(node, &c->list.node_list, node_list) {
+			req = container_of(node, struct exynos_pm_qos_request, node);
+			if (!req->nosync)
+				break;
+		}
+		return node->prio;
 
 	case EXYNOS_PM_QOS_SUM:
 		plist_for_each(node, &c->list)
@@ -1176,7 +1187,9 @@ void show_exynos_pm_qos_data(int index)
 	plist_for_each_entry(req, &c->list, node) {
 		char *state = "Default";
 
-		if ((req->node).prio != c->default_value) {
+		if (req->nosync) {
+			state = "Inactive";
+		} else if ((req->node).prio != c->default_value) {
 			active_reqs++;
 			state = "Active";
 		} else {
@@ -1311,7 +1324,7 @@ static ssize_t exynos_pm_qos_log_show(struct file *file, struct kobject *kobj,
 	if (offset == 0) {
 		index = c->log[c->log_index].time ? c->log_index : 0;
 		if (c->log[index].time != 0)
-			printed += snprintf(buf, count, "%15s %29s  %7s %7s %6s\n", "time", "node", "request", "target", "type");
+			printed += snprintf(buf, count, "%15s %16s %35s  %7s %7s %6s\n", "time", "process", "node", "request", "target", "type");
 		else {
 			printed += snprintf(buf, count, "There has no PM QoS history\n");
 			goto out;
@@ -1326,8 +1339,9 @@ static ssize_t exynos_pm_qos_log_show(struct file *file, struct kobject *kobj,
 		if (log->time == 0)
 			break;
 
-		len = snprintf(str, sizeof(str), "%5llu.%09llu %24s:%-5u %7u %7u %6s\n",
-				log->time / NSEC_PER_SEC, log->time % NSEC_PER_SEC, log->func, log->line,
+		len = snprintf(str, sizeof(str), "%5llu.%09llu %16s %30s:%-5u %7u %7u %6s\n",
+				log->time / NSEC_PER_SEC, log->time %
+				NSEC_PER_SEC, log->process_name, log->func, log->line,
 				log->prio, log->target, action_str[log->action]);
 
 		if (len + printed <= count) {
@@ -1350,6 +1364,7 @@ static void exynos_pm_qos_update_log(struct exynos_pm_qos_constraints *c, struct
 {
 	struct exynos_pm_qos_log *log = &c->log[c->log_index];
 
+	strncpy(log->process_name, req->process_name, PM_QOS_NAME_MAX);
 	log->time = req->time;
 	log->func = req->func;
 	log->line = req->line;
@@ -1381,6 +1396,8 @@ int exynos_pm_qos_update_target(struct exynos_pm_qos_constraints *c, struct plis
 	if (!nosync)
 		mutex_lock(&c->mlock);
 	spin_lock_irqsave(&c->lock, flags);
+
+	req->nosync = nosync;
 
 	prev_value = exynos_pm_qos_get_value(c);
 	if (value == EXYNOS_PM_QOS_DEFAULT_VALUE)
@@ -1414,6 +1431,9 @@ int exynos_pm_qos_update_target(struct exynos_pm_qos_constraints *c, struct plis
 	curr_value = exynos_pm_qos_get_value(c);
 	exynos_pm_qos_set_value(c, curr_value);
 
+	// Save PM QoS Log
+	exynos_pm_qos_update_log(c, req, action);
+
 	spin_unlock_irqrestore(&c->lock, flags);
 
 //	trace_pm_qos_update_target((enum pm_qos_req_action)action, prev_value, curr_value);
@@ -1426,9 +1446,6 @@ int exynos_pm_qos_update_target(struct exynos_pm_qos_constraints *c, struct plis
 	} else {
 		ret = 0;
 	}
-
-	// Save PM QoS Log
-	exynos_pm_qos_update_log(c, req, action);
 
 	if (!nosync)
 		mutex_unlock(&c->mlock);
@@ -1515,6 +1532,8 @@ void exynos_pm_qos_add_request_trace(char *func, unsigned int line,
 		WARN(1, KERN_ERR "exynos_pm_qos_add_request() called for already added request\n");
 		return;
 	}
+	strncpy(req->process_name, current->comm, PM_QOS_NAME_MAX);
+	req->process_name[PM_QOS_NAME_MAX - 1] = 0;
 	req->exynos_pm_qos_class = exynos_pm_qos_class;
 	req->func = func;
 	req->line = line;

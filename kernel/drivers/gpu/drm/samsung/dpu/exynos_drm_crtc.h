@@ -226,6 +226,7 @@ struct exynos_drm_crtc_state {
 	bool skip_frameupdate : 1;
 	bool skip_update : 1;
 	bool need_colormap : 1;
+	bool initial_commit_completed : 1;
 	struct drm_rect partial_region;
 	struct drm_property_blob *partial;
 	bool needs_reconfigure;

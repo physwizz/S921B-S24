@@ -182,12 +182,12 @@ struct twt_setup {
 	int avg_pkt_size;
 };
 
-enum slsi_twt_error_code {
-	SLSI_TWT_WIFI_ERROR_NOT_SUPPORTED = -3,
-	SLSI_TWT_WIFI_ERROR_NOT_AVAILABLE = -4,
-	SLSI_TWT_WIFI_ERROR_INVALID_ARGUMENT = -5,
-	SLSI_TWT_WIFI_ERROR_BUSY = -10,
-	SLSI_TWT_WIFI_ERROR_TEMPORAL = -99
+enum slsi_error_code {
+	SLSI_WIFI_ERROR_NOT_SUPPORTED = -3,
+	SLSI_WIFI_ERROR_NOT_AVAILABLE = -4,
+	SLSI_WIFI_ERROR_INVALID_ARGUMENT = -5,
+	SLSI_WIFI_ERROR_BUSY = -10,
+	SLSI_WIFI_ERROR_TEMPORAL = -99
 };
 
 struct slsi_scheduled_pm_setup {
@@ -251,6 +251,9 @@ struct ap_rps_params {
 #define SLSI_KEY_MGMT_FILS_SHA384 0x000fac0f
 #define SLSI_KEY_MGMT_FT_FILS_SHA256 0x000fac10
 #define SLSI_KEY_MGMT_FT_FILS_SHA384 0x000fac11
+#define SLSI_KEY_MGMT_OWE 0x000fac12
+#define SLSI_KEY_MGMT_802_1X_SUITE_B_192 0x000fac0c
+#define SLSI_KEY_MGMT_FT_802_1X_SHA384 0x000fac0d
 
 struct slsi_mlme_parameters {
 	u8 element_id;
@@ -373,7 +376,6 @@ int slsi_mlme_set_forward_beacon(struct slsi_dev *sdev, struct net_device *dev, 
 int slsi_mlme_set_channel(struct slsi_dev *sdev, struct net_device *dev, struct ieee80211_channel *chan, u16 duration, u16 interval, u16 count);
 int slsi_mlme_twt_setup(struct slsi_dev *sdev, struct net_device *dev, struct twt_setup *tsetup);
 int slsi_mlme_twt_teardown(struct slsi_dev *sdev, struct net_device *dev, u16 setup_id, u16 negotiation_type);
-int slsi_mlme_twt_suspend(struct slsi_dev *sdev, struct net_device *dev, u16 setup_id, u32 suspend_duration);
 int slsi_mlme_twt_status_query(struct slsi_dev *sdev, struct net_device *dev, char *command,
 			       int command_len, int *command_pos, u16 setup_id);
 int slsi_mlme_set_adps_state(struct slsi_dev *sdev, struct net_device *dev, int adps_state);
@@ -589,3 +591,5 @@ int slsi_mlme_set_scan_timing_req(struct slsi_dev *sdev, struct net_device *dev,
 				  u16 home_away_time, u16 home_time, u16 max_channel_passive_time);
 int slsi_mlme_set_low_latency_mode_req(struct slsi_dev *sdev, struct net_device *dev, u16 latency_mode,
 				       u16 soft_roaming_scans_allowed);
+int slsi_mlme_set_max_bw(struct slsi_dev *sdev, struct net_device *dev, u16 protection_scope,
+			 u16 announce_validate, u16 bandwidth);

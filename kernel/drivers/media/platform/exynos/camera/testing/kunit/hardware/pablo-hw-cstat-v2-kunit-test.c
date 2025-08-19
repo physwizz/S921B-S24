@@ -170,10 +170,15 @@ static void pablo_hw_cstat_shot_kunit_test(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, ret, 0);
 
 	set_bit(hw_ip->id, &hw_map);
+	hw_ip->region[instance] = &test_ctx.region;
+
+	set_bit(instance, &hw_ip->run_rsc_state);
+	ret = CALL_HWIP_OPS(hw_ip, enable, instance, hw_map);
+	KUNIT_EXPECT_EQ(test, ret, 0);
+
 	test_ctx.frame.shot = &test_ctx.shot;
 	test_ctx.frame.shot_ext = &test_ctx.shot_ext;
 	test_ctx.frame.parameter = &test_ctx.parameter;
-	hw_ip->region[instance] = &test_ctx.region;
 
 	set_bit(PARAM_CSTAT_OTF_INPUT, test_ctx.frame.pmap);
 	set_bit(PARAM_CSTAT_LME_DS0, test_ctx.frame.pmap);
@@ -201,6 +206,10 @@ static void pablo_hw_cstat_shot_kunit_test(struct kunit *test)
 	param_region->cstat[0].otf_input.bitwidth = OTF_INPUT_BIT_WIDTH_10BIT;
 
 	ret = CALL_HWIP_OPS(hw_ip, shot, &test_ctx.frame, hw_map);
+	KUNIT_EXPECT_EQ(test, ret, 0);
+
+	clear_bit(instance, &hw_ip->run_rsc_state);
+	ret = CALL_HWIP_OPS(hw_ip, disable, instance, hw_map);
 	KUNIT_EXPECT_EQ(test, ret, 0);
 
 	ret = CALL_HWIP_OPS(hw_ip, deinit, instance);

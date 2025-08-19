@@ -41,6 +41,8 @@ struct hci_bcsp {
 
 	struct timer_list               resend_timer;
 	struct timer_list               wakeup_timer;
+	atomic_t                        timer_running;
+
 	int                             resend_cnt;
 	int                             ack_mismatch;
 
@@ -1000,11 +1002,11 @@ static void bcsp_txwork_func(struct work_struct *work)
 
 static void bcsp_txwork_continue(struct hci_bcsp *bcsp)
 {
-	/* This function must be called in ciritical section that protected
-	 * area by bcsp->lock. Make sure get bcsp->lock before it call.
+	/* This function is recommaned to be called in ciritical section that
+	 * protected area by bcsp->lock.
 	 */
 	if (!mutex_is_locked(&bcsp->lock))
-		TR_WARNING("bcsp is not locked. packets can be pending\n");
+		TR_DBG("bcsp is not locked. packets can be pending\n");
 
 	if (sending_standby(bcsp) || bcsp->ack_req)
 		if (atomic_read(&bcsp->tx_running) == false)
@@ -1038,19 +1040,25 @@ static void bcsp_timeoutwork_func(struct work_struct *work)
 static void bcsp_send_timeout(struct timer_list *t)
 {
 	struct hci_bcsp *bcsp = from_timer(bcsp, t, resend_timer);
+
 	TR_WARNING("timeout: resend_timer is expired\n");
-	if (bcsp && bcsp->wq)
+	if (bcsp && bcsp->wq) {
+		atomic_inc(&bcsp->timer_running);
 		queue_work(bcsp->wq, &bcsp->work_timeout);
+		atomic_dec(&bcsp->timer_running);
+	}
 }
 
 static void bcsp_wakeup_timeout(struct timer_list *t)
 {
 	struct hci_bcsp *bcsp = from_timer(bcsp, t, wakeup_timer);
-	if (!bcsp || bcsp->peer_state != HCI_BCSP_LINK_LOW_POWER)
+
+	if (!bcsp || bcsp->peer_state != HCI_BCSP_LINK_LOW_POWER || !bcsp->htr)
 		return;
 
 	TR_WARNING("timeout: wakeup_timer has expired"
 		   " - peer has not responded\n");
+	atomic_inc(&bcsp->timer_running);
 
 	/* wakeup message will be resend in txwork. if txwork is still
 	 * working, wakeup timer start again to prevent missing retry.
@@ -1059,6 +1067,7 @@ static void bcsp_wakeup_timeout(struct timer_list *t)
 		mod_timer(&bcsp->wakeup_timer, HCI_BCSP_RESEND_WAKEUP_MS);
 	else
 		bcsp_txwork_continue(bcsp);
+	atomic_dec(&bcsp->timer_running);
 }
 
 static void bcsp_ack_handle(struct hci_bcsp *bcsp, unsigned char rack)
@@ -1382,6 +1391,7 @@ int hci_bcsp_init(struct hci_trans *htr)
 
 	timer_setup(&bcsp->resend_timer, bcsp_send_timeout, 0);
 	timer_setup(&bcsp->wakeup_timer, bcsp_wakeup_timeout, 0);
+	atomic_set(&bcsp->timer_running, 0);
 
 	/* Setup HCI transport for bcsp */
 	htr->send_skb = hci_bcsp_skb_send;
@@ -1400,14 +1410,49 @@ int hci_bcsp_init(struct hci_trans *htr)
 	return 0;
 }
 
-static void wait_for_txwork_terminate(struct hci_bcsp *bcsp)
+static void terminate_htr_and_timers(struct hci_bcsp *bcsp)
 {
 	int wait_cnt = 10;
 
+	/* Set htr to invalid and cancel timers */
+	del_timer(&bcsp->wakeup_timer);
+	del_timer(&bcsp->resend_timer);
+
+	mutex_lock(&bcsp->lock);
+	bcsp->htr = NULL;
+	mutex_unlock(&bcsp->lock);
+
+	/* wait for all timer handlers terminating */
+	while (atomic_read(&bcsp->timer_running) && --wait_cnt > 0)
+		udelay(30);
+	if (wait_cnt == 0)
+		BT_WARNING("A timer handler is still running.\n");
+
+	/* Confirm timers are deleted. */
+	if (timer_pending(&bcsp->resend_timer))
+		del_timer(&bcsp->resend_timer);
+	if (timer_pending(&bcsp->wakeup_timer))
+		del_timer(&bcsp->wakeup_timer);
+}
+
+static void terminate_workque_and_works(struct hci_bcsp *bcsp)
+{
+	int wait_cnt = 10;
+
+	flush_workqueue(bcsp->wq);
+#ifndef KUNIT_SLSI_BT_BCSP_EXCLUDE_DESTROY_WORKQUEUE
+	destroy_workqueue(bcsp->wq);
+#endif /* Ref. hci_bcsp_unittest.c for more information*/
+
+	bcsp->wq = NULL;
+	cancel_work_sync(&bcsp->work_tx);
+	cancel_work_sync(&bcsp->work_timeout);
+
+	/* wiat for txwork terminating */
 	while (atomic_read(&bcsp->tx_running) && --wait_cnt > 0)
 		udelay(30);
 	if (wait_cnt == 0)
-		BT_WARNING("txwork is still running.");
+		BT_WARNING("txwork is still running.\n");
 }
 
 void hci_bcsp_deinit(struct hci_trans *htr)
@@ -1416,32 +1461,10 @@ void hci_bcsp_deinit(struct hci_trans *htr)
 
 	TR_INFO("bcsp=%p\n", bcsp);
 	if (bcsp) {
-		/* Step 1. Set bcsp to invalid and cancel timers to prevent
-		 * request to tx work */
-		del_timer(&bcsp->wakeup_timer);
-		del_timer(&bcsp->resend_timer);
-		mutex_lock(&bcsp->lock);
-		bcsp->htr = NULL;
-		mutex_unlock(&bcsp->lock);
+		terminate_htr_and_timers(bcsp);
+		terminate_workque_and_works(bcsp);
 
-		/* Confirm timers are deleted. */
-		if (timer_pending(&bcsp->resend_timer))
-			del_timer(&bcsp->resend_timer);
-		if (timer_pending(&bcsp->wakeup_timer))
-			del_timer(&bcsp->wakeup_timer);
-		udelay(10);
-
-		/* Step 2. Terminate work queue */
-		flush_workqueue(bcsp->wq);
-#ifndef KUNIT_SLSI_BT_BCSP_EXCLUDE_DESTROY_WORKQUEUE
-		destroy_workqueue(bcsp->wq);
-#endif /* Ref. hci_bcsp_unittest.c for more information*/
-		bcsp->wq = NULL;
-		cancel_work_sync(&bcsp->work_tx);
-		cancel_work_sync(&bcsp->work_timeout);
-		wait_for_txwork_terminate(bcsp);
-
-		/* Step 3. free resources */
+		/* free resources */
 		mutex_lock(&bcsp->lock);
 		if (bcsp->collect_skb) {
 			kfree_skb(bcsp->collect_skb);

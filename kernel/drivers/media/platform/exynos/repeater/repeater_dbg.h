@@ -20,7 +20,16 @@ extern int g_repeater_log_level;
 #define RPT_EXT_INFO			1
 #define RPT_ERROR				0
 
-#define print_repeater_debug(level, fmt, args...)		\
+#define print_repeater(level, fmt, args...)		\
+	do {                                                    \
+		if (g_repeater_debug_level >= level || g_repeater_log_level >= level) \
+		{									\
+			pr_info("%s:%d: " fmt,			\
+				__func__, __LINE__, ##args);	\
+		}									\
+	} while (0)
+
+#define print_repeater_wfdlogger(level, fmt, args...)		\
 	do {                                                    \
 		if (g_repeater_debug_level >= level || g_repeater_log_level >= level) \
 		{									\

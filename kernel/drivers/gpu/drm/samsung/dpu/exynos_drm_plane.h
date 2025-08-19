@@ -127,6 +127,9 @@ struct exynos_drm_plane_state {
 	void *hdr_ctx;
 	bool hdr_en;
 	struct drm_property_blob *block;
+#if IS_ENABLED(CONFIG_EXYNOS_DRM_BUFFER_SANITY_CHECK)
+	char fence_info[256];
+#endif
 };
 
 static inline struct exynos_drm_plane_state *

@@ -1748,6 +1748,26 @@ void is_hw_check_iteration_state(struct is_frame *frame,
 	}
 }
 
+void is_hw_check_psm_state(struct is_frame *frame,
+	struct is_dvfs_ctrl *dvfs_ctrl, struct is_group *group)
+{
+	int vendor;
+	bool psm = false;
+	struct is_dvfs_psm_mode *psm_mode = &dvfs_ctrl->psm_mode;
+
+	vendor = (dvfs_ctrl->dvfs_scenario >> IS_DVFS_SCENARIO_VENDOR_SHIFT) &
+		 IS_DVFS_SCENARIO_VENDOR_MASK;
+
+	psm = (vendor == IS_DVFS_SCENARIO_VENDOR_PSM) ? true : false;
+	psm_mode->changed = 0;
+	if (psm_mode->psm != psm) {
+		mgrdbgs(1, "psm state changed(%d -> %d)\n", group, group, frame,
+			psm_mode->psm, psm);
+		psm_mode->psm = psm;
+		psm_mode->changed = 1;
+	}
+}
+
 #if IS_ENABLED(ENABLE_RECURSIVE_NR)
 void is_hw_restore_group_state_2nr(struct is_group *group)
 {

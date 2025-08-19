@@ -333,20 +333,21 @@ int sensor_ak737x_actuator_init(struct v4l2_subdev *subdev, u32 val)
 
 	struct device *dev;
 	struct device_node *dnode;
+	struct is_device_sensor *device;
 
-	WARN_ON(!subdev);
+	FIMC_BUG(!subdev);
 
 	actuator = (struct is_actuator *)v4l2_get_subdevdata(subdev);
-	WARN_ON(!actuator);
+	FIMC_BUG(!actuator);
 
 	client = actuator->client;
-	if (unlikely(!client)) {
-		err("client is NULL");
-		ret = -EINVAL;
-		goto p_err;
-	}
+	FIMC_BUG(!client);
+
+	device = v4l2_get_subdev_hostdata(subdev);
+	FIMC_BUG(!device);
 
 	module = actuator->sensor_peri->module;
+	FIMC_BUG(!module)
 
 	dev = &client->dev;
 	dnode = dev->of_node;
@@ -418,8 +419,9 @@ int sensor_ak737x_actuator_init(struct v4l2_subdev *subdev, u32 val)
 		goto p_err;
 	}
 
-	/* ToDo: Cal init data from FROM */
-	if (actuator->vendor_use_sleep_mode) {
+	/* secure camera doesn't use sleep mode */
+	if (actuator->vendor_use_sleep_mode
+		&& device->ex_scenario != IS_SCENARIO_SECURE) {
 		/* Go sleep mode */
 		actuator->state = ACTUATOR_STATE_SLEEP;
 		ret = actuator->ixc_ops->addr8_write8(client, AK737X_REG_CONT1, AK737X_MODE_SLEEP);
@@ -443,16 +445,16 @@ int sensor_ak737x_actuator_init(struct v4l2_subdev *subdev, u32 val)
 		}
 	}
 
-	/* ToDo */
-	/* Wait Settling(>20ms) */
-	/* SysSleep(30/MS_PER_TICK, NULL); */
-
 #ifdef DEBUG_ACTUATOR_TIME
 	pr_info("[%s] time %ldus", __func__, PABLO_KTIME_US_DELTA_NOW(st));
 #endif
 
 p_err:
 	IXC_MUTEX_UNLOCK(actuator->ixc_lock);
+
+	/* to prevent duplicated init */
+	actuator->actuator_data.actuator_init = false;
+
 	return ret;
 }
 
@@ -645,25 +647,30 @@ static int sensor_ak737x_actuator_set_active(struct v4l2_subdev *subdev, int ena
 	struct is_actuator *actuator;
 	struct i2c_client *client = NULL;
 	struct is_module_enum *module;
+	struct is_device_sensor *device;
 
-	WARN_ON(!subdev);
+	FIMC_BUG(!subdev);
 
 	actuator = (struct is_actuator *)v4l2_get_subdevdata(subdev);
-	WARN_ON(!actuator);
+	FIMC_BUG(!actuator);
 
-	if (!actuator->vendor_use_sleep_mode) {
-		warn("There is no 'use_af_sleep_mode' in DT");
+	client = actuator->client;
+	FIMC_BUG(!client);
+
+	device = v4l2_get_subdev_hostdata(subdev);
+	FIMC_BUG(!device);
+
+	module = actuator->sensor_peri->module;
+	FIMC_BUG(!module);
+
+	if (!actuator->vendor_use_sleep_mode ||
+		device->ex_scenario == IS_SCENARIO_SECURE) {
+		info("%s : skip sleep/active mode, sleep_mode[%d], ex_scenario[%d]",
+			__func__, actuator->vendor_use_sleep_mode, device->ex_scenario);
 		return 0;
 	}
 
-	module = actuator->sensor_peri->module;
 	pr_info("%s [%d]=%d\n", __func__, actuator->device, enable);
-
-	client = actuator->client;
-	if (unlikely(!client)) {
-		err("client is NULL");
-		return -EINVAL;
-	}
 
 	IXC_MUTEX_LOCK(actuator->ixc_lock);
 

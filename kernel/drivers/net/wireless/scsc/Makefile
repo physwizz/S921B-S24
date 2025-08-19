@@ -110,6 +110,10 @@ scsc_wlan-$(CONFIG_SCSC_WLAN) += tdls_manager.o
 scsc_wlan-$(CONFIG_SCSC_WLAN) += scsc_wlan_mmap.o
 scsc_wlan-$(CONFIG_SCSC_WLAN) += qsfs.o
 
+ifneq ($(filter $(CONFIG_SCSC_INDEPENDENT_SUBSYSTEM), y m),)
+ccflags-y += -DCONFIG_SCSC_INDEPENDENT_SUBSYSTEM
+endif
+
 ifeq ($(CONFIG_SCSC_WLAN_TRACEPOINT_DEBUG),y)
 scsc_wlan-$(CONFIG_SCSC_WLAN) += slsi_tracepoint_debug.o
 endif

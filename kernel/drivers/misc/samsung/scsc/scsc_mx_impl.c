@@ -284,6 +284,7 @@ struct mxman *scsc_mx_get_mxman(struct scsc_mx *mx)
 {
 	return &mx->mxman;
 }
+EXPORT_SYMBOL(scsc_mx_get_mxman);
 
 struct srvman *scsc_mx_get_srvman(struct scsc_mx *mx)
 {

@@ -8,8 +8,17 @@
 /*  Length domain */
 #define DSS_LOG_STRING_LEN		SZ_128
 
+#ifdef CONFIG_DEBUG_SNAPSHOT_FREQ_DOMAIN_NUM
 #define DSS_DOMAIN_NUM			CONFIG_DEBUG_SNAPSHOT_FREQ_DOMAIN_NUM
+#else
+#define DSS_DOMAIN_NUM			32
+#endif
+
+#ifdef CONFIG_DEBUG_SNAPSHOT_LOG_ITEM_SIZE
 #define DSS_LOG_MAX_NUM			CONFIG_DEBUG_SNAPSHOT_LOG_ITEM_SIZE
+#else
+#define DSS_LOG_MAX_NUM			1024
+#endif
 #define DSS_CALLSTACK_MAX_NUM		3
 #define TASK_COMM_LEN 			16
 
@@ -157,6 +166,16 @@ struct reg_log {
 	void *caller;
 };
 
+
+struct pmic_log {
+	unsigned long long time;
+	int cpu;
+	int irq;
+	int data1;
+	int data2;
+	char str[16];
+};
+
 struct dbg_snapshot_log {
 	struct task_log task[DSS_NR_CPUS][DSS_LOG_MAX_NUM];
 	struct work_log work[DSS_NR_CPUS][DSS_LOG_MAX_NUM];
@@ -172,6 +191,7 @@ struct dbg_snapshot_log {
 	struct regulator_log regulator[DSS_LOG_MAX_NUM];
 	struct thermal_log thermal[DSS_LOG_MAX_NUM];
 	struct acpm_log acpm[DSS_LOG_MAX_NUM];
+	struct pmic_log pmic[2];
 	struct print_log print[DSS_LOG_MAX_NUM];
 };
 
@@ -180,6 +200,7 @@ struct dbg_snapshot_log_minimized {
 	struct work_log work[DSS_NR_CPUS][256];
 	struct cpuidle_log cpuidle[DSS_NR_CPUS][16];
 	struct irq_log irq[DSS_NR_CPUS][1024];
+	struct pmic_log pmic[2];
 	struct freq_log freq[DSS_DOMAIN_NUM][128];
 };
 
@@ -213,5 +234,6 @@ struct dbg_snapshot_log_misc {
 	atomic_t thermal_log_idx;
 	atomic_t print_log_idx;
 	atomic_t acpm_log_idx;
+	atomic_t pmic_log_idx;
 };
 #endif

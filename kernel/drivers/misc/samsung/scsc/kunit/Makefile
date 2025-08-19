@@ -33,6 +33,7 @@ ifeq ($(CONFIG_SOC_S5E8535),y)
 endif
 ifeq ($(CONFIG_WLBT_REFACTORY),y)
 obj-$(CONFIG_WLBT_KUNIT)	+= kunit-test-platform_mif.o
+obj-$(CONFIG_WLBT_KUNIT)	+= kunit-test-s5e8845_legacy.o
 endif
 obj-$(CONFIG_WLBT_KUNIT)	+= kunit-test-scsc_lerna.o
 obj-$(CONFIG_WLBT_KUNIT)	+= kunit-test-scsc_log_collector.o

@@ -98,7 +98,6 @@ static int __mfc_core_get_new_ctx(struct mfc_core *core)
 	unsigned long wflags;
 	int new_ctx_index = 0;
 	int cnt = 0;
-	int i;
 
 	spin_lock_irqsave(&core->work_bits.lock, wflags);
 
@@ -109,18 +108,14 @@ static int __mfc_core_get_new_ctx(struct mfc_core *core)
 		new_ctx_index = core->preempt_core_ctx;
 		mfc_core_debug(2, "preempt_core_ctx is : %d\n", new_ctx_index);
 	} else {
-		for (i = 0; i < MFC_NUM_CONTEXTS; i++) {
-			if (test_bit(i, &dev->otf_inst_bits)) {
-				if (test_bit(i, &core->work_bits.bits)) {
-					spin_unlock_irqrestore(&core->work_bits.lock, wflags);
-					return i;
-				}
-				break;
-			}
+		if (dev->otf_inst_bits && (dev->otf_inst_bits & core->work_bits.bits)) {
+			new_ctx_index = __ffs(dev->otf_inst_bits);
+			spin_unlock_irqrestore(&core->work_bits.lock, wflags);
+			return new_ctx_index;
 		}
 
 		new_ctx_index = (core->curr_core_ctx + 1) % MFC_NUM_CONTEXTS;
-		while (!test_bit(new_ctx_index, &core->work_bits.bits)) {
+		while (!(core->work_bits.bits & (1UL << new_ctx_index))) {
 			new_ctx_index = (new_ctx_index + 1) % MFC_NUM_CONTEXTS;
 			cnt++;
 			if (cnt > MFC_NUM_CONTEXTS) {
@@ -154,7 +149,7 @@ static int __mfc_core_get_next_ctx(struct mfc_core *core)
 	mfc_core_debug(2, "Current context: %d (bits %08lx)\n",
 			core->curr_core_ctx, core->work_bits.bits);
 
-	while (!test_bit(next_ctx_index, &core->work_bits.bits)) {
+	while (!(core->work_bits.bits & (1UL << next_ctx_index))) {
 		next_ctx_index = (next_ctx_index + 1) % MFC_NUM_CONTEXTS;
 		if (next_ctx_index == curr_ctx_index) {
 			/* No other context to run */

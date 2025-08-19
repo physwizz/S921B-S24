@@ -322,6 +322,14 @@ bool is_gsc_task(struct task_struct *p)
 	return gsc.status != GSC_DEACTIVATED;
 }
 
+bool gsc_enabled(void)
+{
+	if (gsc.enabled)
+		return true;
+	else
+		return false;
+}
+
 /********************************************************************************/
 /* Cgroup Task List Handling							*/
 /********************************************************************************/

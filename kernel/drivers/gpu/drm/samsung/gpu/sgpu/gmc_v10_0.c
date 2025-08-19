@@ -204,6 +204,10 @@ static int gmc_v10_0_process_interrupt(struct amdgpu_device *adev,
 		}else{
 			DRM_ERROR("failed to find vm for pasid");
 		}
+
+#if IS_ENABLED(CONFIG_SEC_GPUINFO)
+		sgpu_hqm_log_event(adev, GPU_PAGE_FAULT);
+#endif
 	}
 
 	queue_delayed_work(system_wq, &adev->page_fault_work,

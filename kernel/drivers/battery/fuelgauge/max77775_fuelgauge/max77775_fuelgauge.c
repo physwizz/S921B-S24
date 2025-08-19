@@ -331,6 +331,28 @@ static int max77775_fg_check_battery_present(
 	return ret;
 }
 
+#if defined(CONFIG_WRL_MODE4_FG_SETTING)
+static void max77775_fg_wireless_mode4_wa(struct max77775_fuelgauge_data *fuelgauge, int wireless_mode4)
+{
+	struct wrl_mode4_wa *wrl_mode4_data = fuelgauge->wrl_mode4_data;
+
+	if (!wrl_mode4_data)
+		return;
+
+	if (wireless_mode4 == 1) {
+		max77775_write_word(fuelgauge->i2c, MAX77775_FG_REG_TEMPNOM, wrl_mode4_data->tempnom_wa);
+		max77775_write_word(fuelgauge->i2c, MAX77775_FG_REG_MISCCFG, wrl_mode4_data->misccfg_wa);
+		pr_info("%s: tempnom_wa = 0x%x, misccfg_wa = 0x%x\n",
+			__func__, wrl_mode4_data->tempnom_wa, wrl_mode4_data->misccfg_wa);
+	} else {
+		max77775_write_word(fuelgauge->i2c, MAX77775_FG_REG_TEMPNOM, wrl_mode4_data->tempnom);
+		max77775_write_word(fuelgauge->i2c, MAX77775_FG_REG_MISCCFG, wrl_mode4_data->misccfg);
+		pr_info("%s: tempnom = 0x%x, misccfg = 0x%x\n",
+			__func__, wrl_mode4_data->tempnom, wrl_mode4_data->misccfg);
+	}
+}
+#endif
+
 static void max77775_fg_set_vempty(struct max77775_fuelgauge_data *fuelgauge,
 				   int vempty_mode)
 {
@@ -1486,7 +1508,7 @@ static void max77775_fg_adjust_capacity_max(
 
 		if ((diff >= 1) && (fuelgauge->capacity_max < fuelgauge->g_capacity_max)) {
 			fuelgauge->capacity_max++;
-		} else if ((fuelgauge->capacity_max >= fuelgauge->g_capacity_max) || (curr_raw_soc == 100)) {
+		} else if ((fuelgauge->capacity_max >= fuelgauge->g_capacity_max) || (curr_raw_soc == 1000)) {
 			fuelgauge->g_capacity_max = 0;
 			fuelgauge->capacity_max_conv = false;
 		}
@@ -2494,6 +2516,11 @@ static int max77775_fg_set_property(struct power_supply *psy,
 			max77775_fuelgauge_parse_dt(fuelgauge);
 			break;
 #endif
+#if defined(CONFIG_WRL_MODE4_FG_SETTING)
+		case POWER_SUPPLY_EXT_PROP_WIRELESS_MODE_4:
+			max77775_fg_wireless_mode4_wa(fuelgauge, val->intval);
+			break;
+#endif
 		default:
 			return -EINVAL;
 		}
@@ -2883,6 +2910,25 @@ static int max77775_fuelgauge_parse_dt(struct max77775_fuelgauge_data *fuelgauge
 				__func__, fuelgauge->battery_data->V_empty,
 				fuelgauge->battery_data->V_empty_origin, fuelgauge->battery_data->Capacity);
 
+#if defined(CONFIG_WRL_MODE4_FG_SETTING)
+			snprintf(prop_name, PROPERTY_NAME_SIZE, "battery%d,%s",
+				battery_id, "wrl_mode4_data");
+			len = of_property_count_u32_elems(np, prop_name);
+			if (len != WRL_MODE4_DATA_COUNT) {
+				pr_err("%s wrl_mode4_data is %d < %d, need more data\n",
+						 __func__, len, WRL_MODE4_DATA_COUNT);
+				fuelgauge->wrl_mode4_data = NULL;
+			} else {
+				fuelgauge->wrl_mode4_data = kzalloc(sizeof(struct wrl_mode4_wa), GFP_KERNEL);
+				ret = of_property_read_u32_array(np, prop_name,
+							(u32 *) fuelgauge->wrl_mode4_data, WRL_MODE4_DATA_COUNT);
+				if (ret < 0) {
+					pr_err("%s: error reading wrl_mode4_data %d\n", __func__, ret);
+					kfree(fuelgauge->wrl_mode4_data);
+					fuelgauge->wrl_mode4_data = NULL;
+				}
+			}
+#endif
 			snprintf(prop_name, PROPERTY_NAME_SIZE, "battery%d,%s",
 				battery_id, "data_ver");
 			ret = of_property_read_u32(np, prop_name,
@@ -3041,6 +3087,10 @@ static int max77775_fuelgauge_probe(struct platform_device *pdev)
 		pr_err("%s not found fg dt! ret[%d]\n", __func__, ret);
 		goto err_data_free;
 	}
+#endif
+
+#if defined(CONFIG_WRL_MODE4_FG_SETTING)
+	max77775_fg_wireless_mode4_wa(fuelgauge, 0); /* Write default tempnom & misccfg */
 #endif
 
 	fuelgauge->capacity_max = fuelgauge->pdata->capacity_max;

@@ -48,7 +48,7 @@ ssize_t camera_hw_param_show(struct cam_hw_param *ec_param, struct is_vendor_rom
 		int hw_param_id, char *buf)
 {
 	int ret = 0;
-	char msg1[15], msg2[20], msg3[50], msg4[40], msg5[40], msg6[170], msg7[50];
+	char msg1[15], msg2[20], msg3[80], msg4[80], msg5[50], msg6[170], msg7[70];
 	char af_info[30] = { 0, };
 
 	sprintf(msg1, "\"CAMI%s_ID\":", hwparam_str[hw_param_id]);

@@ -127,11 +127,22 @@ static int hts_fops_mmap(struct file *filp, struct vm_area_struct *vma)
 
 	spin_lock_irqsave(&data->pmu->lock, flags);
 	if (atomic_read(&data->pmu->ref_count) <= 0) {
-		struct page *pages = __dev_alloc_pages(GFP_KERNEL | __GFP_ZERO,
+		struct page *pages;
+
+		spin_unlock_irqrestore(&data->pmu->lock, flags);
+
+		pages = __dev_alloc_pages(GFP_KERNEL | __GFP_ZERO,
 						PMU_BUFFER_PAGE_COUNT);
 		if (unlikely(!pages)) {
 			ret = -ENOMEM;
 			goto err_alloc;
+		}
+
+		spin_lock_irqsave(&data->pmu->lock, flags);
+		if (atomic_read(&data->pmu->ref_count) > 0) {
+			__free_pages(pages, PMU_BUFFER_PAGE_COUNT);
+			ret = -EINVAL;
+			goto err_using_check;
 		}
 
 		data->pmu->pmu_pages = pages;
@@ -336,6 +347,11 @@ static int hts_configure_event(struct hts_data *data, unsigned long arg)
 
 	if (signature != SIGNATURE_ARGUMENT_START) {
 		pr_err("HTS : Configuring event starting data is invalid!");
+		return -EINVAL;
+	}
+
+	if (dataCount <= 0) {
+		pr_err("HTS: Configuring event count is less or equal to zero");
 		return -EINVAL;
 	}
 

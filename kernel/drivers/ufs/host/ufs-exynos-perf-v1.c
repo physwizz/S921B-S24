@@ -13,6 +13,7 @@
  *	Kiwoong <kwmad.kim@samsung.com>
  */
 #include <linux/of.h>
+#include <linux/ems.h>
 #include "ufs-exynos-perf.h"
 #include "ufs-cal-if.h"
 #include "ufs-exynos.h"
@@ -26,8 +27,21 @@
 static int __ctrl_dvfs(struct ufs_perf *perf, ctrl_op op)
 {
 	int __maybe_unused i;
+	struct cpumask __maybe_unused mask;
 
 	trace_ufs_perf_lock("dvfs", op);
+
+#if defined(CONFIG_SOC_S5E9945)
+	if (op == CTRL_OP_UP)
+		cpulist_parse("0-8", &mask);
+	else if (op == CTRL_OP_DOWN)
+		cpulist_parse("", &mask);
+	else
+		return -1;
+
+	ecs_request("ufs_perf", &mask, ECS_MIN);
+#endif
+
 #if IS_ENABLED(CONFIG_EXYNOS_PM_QOS) || IS_ENABLED(CONFIG_EXYNOS_PM_QOS_MODULE)
 	if (op == CTRL_OP_UP) {
 		if (perf->val_pm_qos_int)
@@ -555,6 +569,9 @@ int ufs_perf_init_v1(struct ufs_perf *perf)
 	/* reset timer */
 	timer_setup(&stat->reset_timer, __reset_timer, 0);
 
+#if defined(CONFIG_SOC_S5E9945)
+	ecs_request_register("ufs_perf", NULL, ECS_MIN);
+#endif
 	return res;
 }
 
@@ -564,6 +581,10 @@ void ufs_perf_exit_v1(struct ufs_perf *perf)
 
 	/* sysfs */
 	__sysfs_exit(stat);
+
+#if defined(CONFIG_SOC_S5E9945)
+	ecs_request_unregister("ufs_perf", ECS_MIN);
+#endif
 }
 
 MODULE_DESCRIPTION("Exynos UFS performance booster");

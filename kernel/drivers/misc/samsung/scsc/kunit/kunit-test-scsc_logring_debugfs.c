@@ -1,7 +1,7 @@
 #include <kunit/test.h>
 
-#include "../scsc_logring_main.h"
-#include "../scsc_logring_debugfs.h"
+#include "../logs/scsc_logring_main.h"
+#include "../logs/scsc_logring_debugfs.h"
 
 extern int (*fp_debugfile_open)(struct inode *ino, struct file *filp);
 extern int (*fp_debugfile_release)(struct inode *ino, struct file *filp);

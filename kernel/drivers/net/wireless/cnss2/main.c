@@ -2014,6 +2014,9 @@ void cnss_recovery_handler(struct cnss_plat_data *plat_priv)
 	cnss_bus_dev_shutdown(plat_priv);
 	cnss_bus_dev_ramdump(plat_priv);
 
+	if (test_bit(CNSS_IN_SUSPEND_RESUME, &plat_priv->driver_state))
+		clear_bit(CNSS_IN_SUSPEND_RESUME, &plat_priv->driver_state);
+
 	/* If recovery is triggered before Host driver registration,
 	 * avoid device power up because eventually device will be
 	 * power up as part of driver registration.
@@ -2442,9 +2445,14 @@ static int cnss_cold_boot_cal_start_hdlr(struct cnss_plat_data *plat_priv)
 		return -EINVAL;
 	}
 
+	if (test_bit(CNSS_PROBE_FAILED, &plat_priv->driver_state))
+		goto out;
+
 	while (retry++ < CNSS_CAL_START_PROBE_WAIT_RETRY_MAX) {
 		if (test_bit(CNSS_PCI_PROBE_DONE, &plat_priv->driver_state))
 			break;
+		if (test_bit(CNSS_PROBE_FAILED, &plat_priv->driver_state))
+			goto out;
 		msleep(CNSS_CAL_START_PROBE_WAIT_MS);
 
 		if (retry == CNSS_CAL_START_PROBE_WAIT_RETRY_MAX) {
@@ -5542,6 +5550,7 @@ static int cnss_probe(struct platform_device *plat_dev)
 	struct cnss_plat_data *plat_priv;
 	const struct of_device_id *of_id;
 	const struct platform_device_id *device_id;
+	static bool prealloc_initialized;
 
 	if (cnss_get_plat_priv(plat_dev)) {
 		cnss_pr_err("Driver is already initialized!\n");
@@ -5585,7 +5594,10 @@ static int cnss_probe(struct platform_device *plat_dev)
 		goto reset_plat_dev;
 	}
 
-	cnss_initialize_mem_pool(plat_priv->device_id);
+	if (!prealloc_initialized) {
+		cnss_initialize_mem_pool(plat_priv->device_id);
+		prealloc_initialized = true;
+	}
 
 	ret = cnss_get_pld_bus_ops_name(plat_priv);
 	if (ret)
@@ -5632,13 +5644,9 @@ static int cnss_probe(struct platform_device *plat_dev)
 	if (ret)
 		goto unreg_bus_scale;
 
-	ret = cnss_event_work_init(plat_priv);
-	if (ret)
-		goto remove_sysfs;
-
 	ret = cnss_dms_init(plat_priv);
 	if (ret)
-		goto deinit_event_work;
+		goto remove_sysfs;
 
 	ret = cnss_debugfs_create(plat_priv);
 	if (ret)
@@ -5648,7 +5656,7 @@ static int cnss_probe(struct platform_device *plat_dev)
 	if (ret)
 		goto destroy_debugfs;
 
-	ret = cnss_wlan_hw_disable_check(plat_priv);
+	ret = cnss_event_work_init(plat_priv);
 	if (ret)
 		goto deinit_misc;
 
@@ -5656,13 +5664,17 @@ static int cnss_probe(struct platform_device *plat_dev)
     cnss_init_clk_req_gpio(plat_priv);
 #endif
 
+	ret = cnss_wlan_hw_disable_check(plat_priv);
+	if (ret)
+		goto deinit_event_work;
+
 	/* Make sure all platform related init are done before
 	 * device power on and bus init.
 	 */
 	if (!test_bit(CNSS_WLAN_HW_DISABLED, &plat_priv->driver_state)) {
 		ret = cnss_wlan_device_init(plat_priv);
 		if (ret)
-			goto deinit_misc;
+			goto deinit_event_work;
 	} else {
 		cnss_pr_info("WLAN HW Disabled. Defer PCI enumeration\n");
 	}
@@ -5679,14 +5691,16 @@ static int cnss_probe(struct platform_device *plat_dev)
 
 	return 0;
 
+
+deinit_event_work:
+	set_bit(CNSS_PROBE_FAILED, &plat_priv->driver_state);
+	cnss_event_work_deinit(plat_priv);
 deinit_misc:
 	cnss_misc_deinit(plat_priv);
 destroy_debugfs:
 	cnss_debugfs_destroy(plat_priv);
 deinit_dms:
 	cnss_dms_deinit(plat_priv);
-deinit_event_work:
-	cnss_event_work_deinit(plat_priv);
 remove_sysfs:
 	cnss_remove_sysfs(plat_priv);
 unreg_bus_scale:
@@ -5698,7 +5712,6 @@ free_res:
 reset_ctx:
 	cnss_aop_interface_deinit(plat_priv);
 	platform_set_drvdata(plat_dev, NULL);
-	cnss_deinitialize_mem_pool();
 reset_plat_dev:
 	cnss_clear_plat_priv(plat_priv);
 out:
@@ -5789,13 +5802,17 @@ static int __init cnss_initialize(void)
 	int ret = 0;
 
 	if (!cnss_is_valid_dt_node_found())
-		return -ENODEV;
+		return 0;
 
 	if (!cnss_check_compatible_node())
 		return ret;
 
 #ifdef CONFIG_SEC_FACTORY_INTERPOSER
 	cnss_pr_err("SEC_FACTORY_INTERPOSER is enabled. Just return");
+	return 0;
+#endif
+#ifdef CONFIG_DISABLE_QCOM_WIFI
+	cnss_pr_err("Disable QCOM WIFI. Just return");
 	return 0;
 #endif
 	cnss_debug_init();

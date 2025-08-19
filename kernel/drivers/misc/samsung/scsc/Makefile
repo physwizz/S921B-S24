@@ -26,10 +26,10 @@ ccflags-y += -DCONFIG_SCSC_INDEPENDENT_SUBSYSTEM
 endif
 
 obj-$(CONFIG_SCSC_LOG_COLLECTION) += scsc_log_collection.o
-scsc_log_collection-$(CONFIG_SCSC_LOG_COLLECTION) += scsc_log_collector.o scsc_log_collector_proc.o scsc_log_collector_mmap.o
+scsc_log_collection-$(CONFIG_SCSC_LOG_COLLECTION) += logs/scsc_log_collector.o logs/scsc_log_collector_proc.o logs/scsc_log_collector_mmap.o
 
 obj-$(CONFIG_SCSC_LOGRING) += scsc_logring.o
-scsc_logring-$(CONFIG_SCSC_LOGRING) += scsc_logring_main.o scsc_logring_ring.o scsc_logring_debugfs.o
+scsc_logring-$(CONFIG_SCSC_LOGRING) += logs/scsc_logring_main.o logs/scsc_logring_ring.o logs/scsc_logring_debugfs.o
 
 ##
 ## The following cumbersome ifeq/else is the only way to make
@@ -113,7 +113,7 @@ scsc_platform_mif-$(CONFIG_SCSC_PLATFORM) += \
 scsc_platform_mif-$(CONFIG_WLBT_PROPERTY_READ) += \
 	common/platform_mif_property_api.o
 
-scsc_platform_mif-$(CONFIG_WLBT_AUTOGEN_PMUCAL) += pmu_cal.o
+scsc_platform_mif-$(CONFIG_WLBT_AUTOGEN_PMUCAL) += ${SUB_API_PATH}/pmu_cal.o
 
 ifeq ($(CONFIG_SOC_S5E5515), y)
 	CHIP_PATH := s5e5515
@@ -130,27 +130,34 @@ endif
 ifeq ($(CONFIG_SOC_S5E8845), y)
 	CHIP_PATH := s5e8845
 endif
-ifeq ($(CONFIG_SOC_S5E9945), y)
+ifeq ($(CONFIG_SCSC_BB_PAEAN), y)
 	CHIP_PATH := s6165
+endif
+ifeq ($(CONFIG_SCSC_BB_REDWOOD), y)
+	CHIP_PATH := s6175
+endif
+ifeq ($(CONFIG_SOC_S5E5535), y)
+	CHIP_PATH := s5e5535
 endif
 
 scsc_platform_mif-$(CONFIG_WLBT_ITMON_NOTIFIER) += \
-	${CHIP_PATH}/platform_mif_itmon_api.o
+	${SUB_API_PATH}/${CHIP_PATH}/platform_mif_itmon_api.o
 
 ifeq ($(CONFIG_SCSC_PCIE_CHIP), y)
-scsc_platform_mif-$(CONFIG_SCSC_PLATFORM) += \
-	pcie_s6165.o \
-	pcie_proc.o
+scsc_platform_mif-y += \
+	${SUB_API_PATH}/pcie.o \
+	pcie_proc.o \
+	${SUB_API_PATH}/${CHIP_PATH}/pcie_remapper.o
 else
 scsc_platform_mif-$(CONFIG_SCSC_PLATFORM) += \
-	${CHIP_PATH}/platform_mif_legacy.o
+	${SUB_API_PATH}/${CHIP_PATH}/platform_mif_legacy.o
 endif
 
 scsc_platform_mif-$(CONFIG_SCSC_QOS) += \
-	${CHIP_PATH}/platform_mif_qos_api.o
+	${SUB_API_PATH}/${CHIP_PATH}/platform_mif_qos_api.o
 
 scsc_platform_mif-$(CONFIG_WLBT_AUTOGEN_PMUCAL) += \
-	${CHIP_PATH}/pmu_cal_data.o
+	${SUB_API_PATH}/${CHIP_PATH}/pmu_cal_data.o
 
 endif
 
@@ -229,7 +236,8 @@ scsc_mx-y += \
 	scsc_lerna.o \
 	mxsyserr.o \
 	mxfwconfig.o \
-	mx140_file.o
+	mx140_file.o \
+	wlbt_ramsd.o
 
 scsc_mx-$(CONFIG_SCSC_SMAPPER) += mifsmapper.o
 
@@ -288,9 +296,6 @@ endif
 ifneq ($(CONFIG_SCSC_FM), n)
 obj-$(CONFIG_SCSC_FM) += scsc_mx250_fm.o
 scsc_mx250_fm-y += mx250_fm.o
-ifneq ($(CONFIG_SCSC_FM_TEST), n)
-scsc_mx250_fm-y += mx250_fm_test.o
-endif
 endif
 
 obj-$(CONFIG_SCSC_DBG_SAMPLER) += scsc_dbg_sampler.o

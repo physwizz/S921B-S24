@@ -152,10 +152,6 @@ struct ufs_perf {
 	struct timer_list boost_timer;
 
 	struct ufs_boost_request gear_scale_rq;
-
-	/* value 1 whenever resuming, and then we can deal with
-	   UAC(Unit Attention Condition). */
-	u32 uac_state;
 };
 
 /* EXTERNAL FUNCTIONS */

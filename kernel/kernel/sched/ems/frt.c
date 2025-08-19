@@ -141,7 +141,6 @@ int frt_select_task_rq_rt(struct task_struct *p, int prev_cpu,
 	struct rq *rq, *cur_rq;
 	bool sync = !!(wake_flags & WF_SYNC);
 	int target_cpu = -1, cur_cpu;
-	bool wnp = false;
 	int cpu, ret;
 
 	/* For anything but wake ups, just return the task_cpu */
@@ -162,8 +161,6 @@ int frt_select_task_rq_rt(struct task_struct *p, int prev_cpu,
 	rcu_read_lock();
 	curr = READ_ONCE(rq->curr); /* unlocked access */
 
-	wnp = task_may_not_preempt(curr, prev_cpu);
-
 	lowest_mask = this_cpu_cpumask_var_ptr(frt_local_cpu_mask);
 	ret = cpupri_find_fitness(&task_rq(p)->rd->cpupri, p,
 				lowest_mask, frt_task_fits_capacity);
@@ -171,7 +168,7 @@ int frt_select_task_rq_rt(struct task_struct *p, int prev_cpu,
 	cpu = frt_find_lowest_rq(p, lowest_mask, ret);
 
 
-	if (likely(cpu >= 0) && (wnp || p->prio < cpu_rq(cpu)->rt.highest_prio.curr))
+	if (likely(cpu >= 0) && (p->prio < cpu_rq(cpu)->rt.highest_prio.curr))
 		target_cpu = cpu;
 	else
 		target_cpu = prev_cpu;

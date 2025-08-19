@@ -160,7 +160,7 @@ static int __set_phy_isolation(struct regmap *reg_pmu,
 		pr_err("%s failed to %s PHY isolation 0x%x\n",
 				__func__, on ? "set" : "clear", offset);
 
-	if (pg_offset > 0)
+	if (reg_pmu && pg_offset > 0)
 		__set_phy_power_gating(reg_pmu, pg_offset, on);
 
 	pr_debug("%s off=0x%x, pg_off=0x%x, val=0x%x\n", __func__, offset, pg_offset, val);

@@ -39,7 +39,7 @@
 #endif
 
 /* TopApp main / render or Important task's prio */
-#define TA_BOOST_PRIO 110
+#define TA_BOOST_PRIO	110
 
 enum ems_level {
 	EMS_LEVEL_NORMAL = 0,
@@ -360,7 +360,7 @@ enum {
 	NOT_TEX,
 };
 
-#define TEX_WINDOW			(4000000)
+#define TEX_WINDOW		(4000000)
 #define TEX_WINDOW_COUNT	(3)
 #define TEX_FULL_WINDOWS	(TEX_WINDOW * TEX_WINDOW_COUNT)
 
@@ -1095,6 +1095,7 @@ extern void gsc_init_new_task(struct task_struct *p);
 extern void gsc_cpu_cgroup_attach(struct cgroup_taskset *tset);
 extern void gsc_flush_task(struct task_struct *p);
 extern int gsc_manage_task_group(struct task_struct *p, bool attach, bool flush);
+extern bool gsc_enabled(void);
 
 extern int sysbusy_init(struct kobject *ems_kobj);
 extern void monitor_sysbusy(void);

@@ -53,15 +53,19 @@ defex-y += catch_engine/defex_ht.o
 defex-y += defex_rules.o
 defex-$(CONFIG_COMPAT) += catch_engine/defex_catch_list_compat.o
 
-ifeq ($(SEC_BUILD_CONF_VENDOR_BUILD_OS), 14)
-    ifeq ($(filter a25x% m53x% m55xq%, $(TARGET_PRODUCT)),)
-        DEFEX_DEFINES := -DDEFEX_PERMISSIVE_IM
-        DEFEX_DEFINES += -DDEFEX_PERMISSIVE_INT
-    endif
-else
+ifeq ($(filter b6s% b6q% q6aq% q6q%, $(TARGET_PRODUCT)),)
     DEFEX_DEFINES := -DDEFEX_PERMISSIVE_IM
-    DEFEX_DEFINES += -DDEFEX_PERMISSIVE_INT
 endif
+
+ifeq ($(CONFIG_SECURITY_DEFEX_SINGLE_FILE),y)
+    $(warning [DEFEX] Single rule file MODE.)
+    DEFEX_DEFINES += -DDEFEX_SINGLE_RULES_FILE
+else
+    $(warning [DEFEX] Multiple rule file MODE.)
+endif
+
+# Integrity Feature is applied with permissive mode first.
+DEFEX_DEFINES += -DDEFEX_PERMISSIVE_INT
 
 ifeq ($(CONFIG_DEFEX_KERNEL_ONLY), y)
     DEFEX_DEFINES += -DDEFEX_KERNEL_ONLY

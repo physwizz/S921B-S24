@@ -32,6 +32,7 @@ int sgpu_tt_swapin(struct ttm_tt *ttm);
 void sgpu_swap_init_bo(struct amdgpu_bo *bo);
 void sgpu_swap_add_bo(struct amdgpu_fpriv *fpriv, struct amdgpu_bo *bo);
 void sgpu_swap_remove_bo(struct amdgpu_fpriv *fpriv, struct amdgpu_bo *bo);
+void sgpu_tt_destroy_notify(struct ttm_tt *ttm);
 
 extern struct kobj_attribute attr_gpu_swap_ctrl;
 
@@ -58,6 +59,7 @@ static int sgpu_tt_swapin(struct ttm_tt *ttm)
 #define sgpu_swap_init_bo(bo) do { } while (0)
 #define sgpu_swap_add_bo(fpriv, bo) do { } while (0)
 #define sgpu_swap_remove_bo(fpriv, bo) do { } while (0)
+#define sgpu_tt_destroy_notify(ttm) do { } while (0)
 #define sgpu_swap_lock(fpriv) do { } while (0)
 #define sgpu_swap_unlock(fpriv) do { } while (0)
 #endif

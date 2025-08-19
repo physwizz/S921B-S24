@@ -602,10 +602,8 @@ retry:
 	f2fs_up_read(&nm_i->nat_tree_lock);
 
 	page = f2fs_get_meta_page(sbi, index);
-	if (IS_ERR(page)) {
-		ST_LOG("[atomic_write] %s:%d error %ld for getting NAT page %lu for nid %u", __func__, __LINE__, PTR_ERR(page), index, nid);
+	if (IS_ERR(page))
 		return PTR_ERR(page);
-	}
 
 	nat_blk = (struct f2fs_nat_block *)page_address(page);
 	ne = nat_blk->entries[nid - start_nid];
@@ -614,10 +612,8 @@ retry:
 cache:
 	blkaddr = le32_to_cpu(ne.block_addr);
 	if (__is_valid_data_blkaddr(blkaddr) &&
-		!f2fs_is_valid_blkaddr(sbi, blkaddr, DATA_GENERIC_ENHANCE)) { 
-		ST_LOG("[atomic_write] %s:%d invalid blkaddr %u for nid %u", __func__, __LINE__, blkaddr, nid);
+		!f2fs_is_valid_blkaddr(sbi, blkaddr, DATA_GENERIC_ENHANCE))
 		return -EFAULT;
-	}
 
 	/* cache nat entry */
 	cache_nat_entry(sbi, nid, &ne);
@@ -638,7 +634,7 @@ static void f2fs_ra_node_pages(struct page *parent, int start, int n)
 
 	/* Then, try readahead for siblings of the desired node */
 	end = start + n;
-	end = min(end, NIDS_PER_BLOCK);
+	end = min(end, (int)NIDS_PER_BLOCK);
 	for (i = start; i < end; i++) {
 		nid = get_nid(parent, i, false);
 		f2fs_ra_node_page(sbi, nid);
@@ -857,21 +853,29 @@ int f2fs_get_dnode_of_data(struct dnode_of_data *dn, pgoff_t index, int mode)
 
 	if (is_inode_flag_set(dn->inode, FI_COMPRESSED_FILE) &&
 					f2fs_sb_has_readonly(sbi)) {
-		unsigned int c_len = f2fs_cluster_blocks_are_contiguous(dn);
+		unsigned int cluster_size = F2FS_I(dn->inode)->i_cluster_size;
+		unsigned int ofs_in_node = dn->ofs_in_node;
+		pgoff_t fofs = index;
+		unsigned int c_len;
 		block_t blkaddr;
 
+		/* should align fofs and ofs_in_node to cluster_size */
+		if (fofs % cluster_size) {
+			fofs = round_down(fofs, cluster_size);
+			ofs_in_node = round_down(ofs_in_node, cluster_size);
+		}
+
+		c_len = f2fs_cluster_blocks_are_contiguous(dn, ofs_in_node);
 		if (!c_len)
 			goto out;
 
-		blkaddr = f2fs_data_blkaddr(dn);
+		blkaddr = data_blkaddr(dn->inode, dn->node_page, ofs_in_node);
 		if (blkaddr == COMPRESS_ADDR)
 			blkaddr = data_blkaddr(dn->inode, dn->node_page,
-						dn->ofs_in_node + 1);
+						ofs_in_node + 1);
 
 		f2fs_update_read_extent_tree_range_compressed(dn->inode,
-					index, blkaddr,
-					F2FS_I(dn->inode)->i_cluster_size,
-					c_len);
+					fofs, blkaddr, cluster_size, c_len);
 	}
 out:
 	return 0;
@@ -1306,6 +1310,7 @@ struct page *f2fs_new_node_page(struct dnode_of_data *dn, unsigned int ofs)
 	}
 	if (unlikely(new_ni.blk_addr != NULL_ADDR)) {
 		err = -EFSCORRUPTED;
+		dec_valid_node_count(sbi, dn->inode, !ofs);
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
 		f2fs_handle_error(sbi, ERROR_INVALID_BLKADDR);
 		goto fail;
@@ -1337,7 +1342,6 @@ struct page *f2fs_new_node_page(struct dnode_of_data *dn, unsigned int ofs)
 	if (ofs == 0)
 		inc_valid_inode_count(sbi);
 	return page;
-
 fail:
 	clear_node_page_dirty(page);
 	f2fs_put_page(page, 1);
@@ -1507,7 +1511,8 @@ page_hit:
 			  ofs_of_node(page), cpver_of_node(page),
 			  next_blkaddr_of_node(page));
 	set_sbi_flag(sbi, SBI_NEED_FSCK);
-	err = -EINVAL;
+	f2fs_handle_error(sbi, ERROR_INCONSISTENT_FOOTER);
+	err = -EFSCORRUPTED;
 out_err:
 	if (PageUptodate(page)) {
 		print_block_data(sbi->sb, nid, page_address(page), 0, F2FS_BLKSIZE);
@@ -1673,10 +1678,8 @@ static int __write_node_page(struct page *page, bool atomic, bool *submitted,
 	nid = nid_of_node(page);
 	f2fs_bug_on(sbi, page->index != nid);
 
-	if (f2fs_get_node_info(sbi, nid, &ni, !do_balance)) {
-		ST_LOG("[atomic_write] %s:%d error for getting inode info for nid %u", __func__, __LINE__, nid);
+	if (f2fs_get_node_info(sbi, nid, &ni, !do_balance))
 		goto redirty_out;
-	}
 
 	if (wbc->for_reclaim) {
 		if (!f2fs_down_read_trylock(&sbi->node_write))
@@ -1697,7 +1700,6 @@ static int __write_node_page(struct page *page, bool atomic, bool *submitted,
 	if (__is_valid_data_blkaddr(ni.blk_addr) &&
 		!f2fs_is_valid_blkaddr(sbi, ni.blk_addr,
 					DATA_GENERIC_ENHANCE)) {
-		ST_LOG("[atomic_write] %s:%d invalid blkaddr for for nid %u blkaddr %u", __func__, __LINE__, nid, ni.blk_addr);
 		f2fs_up_read(&sbi->node_write);
 		goto redirty_out;
 	}
@@ -1803,11 +1805,8 @@ int f2fs_fsync_node_pages(struct f2fs_sb_info *sbi, struct inode *inode,
 
 	if (atomic) {
 		last_page = last_fsync_dnode(sbi, ino);
-		if (IS_ERR_OR_NULL(last_page)) {
-			ST_LOG("[atomic_write] %s:%d error %ld for getting last_page for inode %u", 
-								__func__, __LINE__, PTR_ERR_OR_ZERO(last_page), ino);
+		if (IS_ERR_OR_NULL(last_page))
 			return PTR_ERR_OR_ZERO(last_page);
-		}
 	}
 retry:
 	pagevec_init(&pvec);
@@ -1878,8 +1877,6 @@ continue_unlock:
 			if (ret) {
 				unlock_page(page);
 				f2fs_put_page(last_page, 0);
-				if (atomic)
-					ST_LOG("[atomic_write] %s:%d ret %d for inode %u", __func__, __LINE__, ret, ino);
 				break;
 			} else if (submitted) {
 				nwritten++;
@@ -2086,11 +2083,8 @@ write_node:
 
 			ret = __write_node_page(page, false, &submitted,
 						wbc, do_balance, io_type, NULL);
-			if (ret) {
-				ST_LOG("[atomic_write] %s:%d error for writing node page while checkpointing for ino %u",
-								__func__, __LINE__, ino_of_node(page));
+			if (ret)
 				unlock_page(page);
-			}
 			else if (submitted)
 				nwritten++;
 
@@ -2838,11 +2832,11 @@ recover_xnid:
 	f2fs_update_inode_page(inode);
 
 	/* 3: update and set xattr node page dirty */
-	if (page)
+	if (page) {
 		memcpy(F2FS_NODE(xpage), F2FS_NODE(page),
 				VALID_XATTR_BLOCK_SIZE);
-
-	set_page_dirty(xpage);
+		set_page_dirty(xpage);
+	}
 	f2fs_put_page(xpage, 1);
 
 	return 0;

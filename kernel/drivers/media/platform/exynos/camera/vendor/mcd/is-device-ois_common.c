@@ -380,6 +380,30 @@ bool is_ois_gyronoise_test(struct is_core *core, long *raw_data_x, long *raw_dat
 	return result;
 }
 
+#if defined(OIS_MGLESS)
+void is_ois_mgless(struct is_core *core)
+{
+	struct is_ois *ois_device = NULL;
+
+	ois_device = is_ois_get_device(core);
+	CALL_OISOPS(ois_device, ois_mgless, core);
+}
+
+bool is_ois_auto_test(struct is_core *core,
+				int threshold, bool *x_result, bool *y_result, int *sin_x, int *sin_y,
+				bool *xy2_result, int *sin_xy2)
+{
+	bool result = false;
+	struct is_ois *ois_device = NULL;
+
+	ois_device = is_ois_get_device(core);
+
+	result = CALL_OISOPS(ois_device, ois_auto_test, core,
+			threshold, x_result, y_result, sin_x, sin_y, xy2_result, sin_xy2);
+
+	return result;
+}
+#else
 bool is_ois_auto_test(struct is_core *core,
 				int threshold, bool *x_result, bool *y_result, int *sin_x, int *sin_y,
 				bool *x_result_2nd, bool *y_result_2nd, int *sin_x_2nd, int *sin_y_2nd,
@@ -397,7 +421,7 @@ bool is_ois_auto_test(struct is_core *core,
 
 	return result;
 }
-
+#endif
 #ifdef CAMERA_2ND_OIS
 bool is_ois_auto_test_rear2(struct is_core *core,
 				int threshold, bool *x_result, bool *y_result, int *sin_x, int *sin_y,

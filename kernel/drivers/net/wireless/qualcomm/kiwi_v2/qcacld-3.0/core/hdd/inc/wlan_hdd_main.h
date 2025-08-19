@@ -1292,6 +1292,7 @@ struct wlan_hdd_tx_power {
  * @link_info: Data structure to hold link specific information
  * @tx_power: Structure to hold connection tx Power info
  * @tx_latency_cfg: configuration for per-link transmit latency statistics
+ * @keep_alive_interval: user configured STA keep alive interval
  */
 struct hdd_adapter {
 	uint32_t magic;
@@ -1486,6 +1487,7 @@ struct hdd_adapter {
 #ifdef WLAN_FEATURE_TX_LATENCY_STATS
 	struct cdp_tx_latency_config tx_latency_cfg;
 #endif
+	uint16_t keep_alive_interval;
 };
 
 #define WLAN_HDD_GET_STATION_CTX_PTR(link_info) (&(link_info)->session.station)
@@ -5522,4 +5524,28 @@ hdd_lpc_is_work_scheduled(struct hdd_context *hdd_ctx)
 }
 #endif
 
+#ifdef WLAN_FEATURE_11BE_MLO_ADV_FEATURE
+/**
+ * wlan_hdd_is_link_switch_in_progress() - Function to check if there is any
+ * link switch in progress
+ * @link_info: Link info pointer in HDD adapter
+ *
+ * Return: true if link switch in progress, false otherwise
+ */
+bool wlan_hdd_is_link_switch_in_progress(struct wlan_hdd_link_info *link_info);
+#else
+static inline bool
+wlan_hdd_is_link_switch_in_progress(struct wlan_hdd_link_info *link_info)
+{
+	return false;
+}
+#endif
+
+/**
+ * wlan_hdd_is_mlo_connection() - Check if connection is legacy or mlo
+ * @link_info: Link info pointer in HDD adapter
+ *
+ * Return: True if MLO connection, else False
+ */
+bool wlan_hdd_is_mlo_connection(struct wlan_hdd_link_info *link_info);
 #endif /* end #if !defined(WLAN_HDD_MAIN_H) */

@@ -479,7 +479,9 @@ struct dp_cal_res {
 
 /* Debug for External DEVICE */
 int dp_hsi0_domain_power_check(void);
+void dp_print_hsi0_domain_power(void);
 void dp_hsi0_clk_check(void);
+void dp_print_hsi0_clk(void);
 
 /* DP APB and CR interface */
 void dp_reg_cr_write_mask(u16 addr, u16 data, u16 mask);

@@ -5900,28 +5900,28 @@ static u32 slsi_uc_add_ap_channels(struct wiphy *wiphy, enum nl80211_band band,
 		}
 		center_freq = chan_data->channels[i].center_freq;
 		if (chan_data->channels[i].flags & chan_flags) {
-			SLSI_INFO_NODEV("ap invalid freq %d , chan_flags:%x\n", center_freq,
+			SLSI_DBG1_NODEV(SLSI_CFG80211, "ap invalid freq %d , chan_flags:%x\n", center_freq,
 					chan_data->channels[i].flags);
 			continue;
 		}
 
 		channel = ieee80211_get_channel(wiphy, center_freq);
 		if (!channel) {
-			SLSI_INFO_NODEV("Invalid frequency %d used to start AP. Channel not found\n",
-					center_freq);
+			SLSI_ERR_NODEV("Invalid frequency %d used to start AP. Channel not found\n",
+				       center_freq);
 			continue;
 		}
 #ifdef CONFIG_SCSC_WLAN_SUPPORT_6G
 		if (band == NL80211_BAND_6GHZ &&
 		    !cfg80211_channel_is_psc(channel)) {
-			SLSI_INFO_NODEV("Invalid non-PSC freq %d\n", center_freq);
+			SLSI_DBG1_NODEV(SLSI_CFG80211, "Invalid non-PSC freq %d\n", center_freq);
 			continue;
 		}
 #endif
 		buf[cnt].freq = center_freq;
 		buf[cnt].width = SLSI_LLS_CHAN_WIDTH_20;
 		buf[cnt++].iface_mode_mask = SLSI_UC_ITERFACE_SOFTAP;
-		SLSI_INFO_NODEV("ap valid [%d] freq %d , chan_flags:%x\n", cnt - 1,
+		SLSI_DBG1_NODEV(SLSI_CFG80211, "ap valid [%d] freq %d , chan_flags:%x\n", cnt - 1,
 				center_freq, chan_data->channels[i].flags);
 	}
 	return cnt;
@@ -6042,9 +6042,6 @@ exit_with_chan_list:
 exit:
 	return ret;
 }
-
-/*TODO: define will be removed when autogen to be done*/
-#define SLSI_PSID_UNIFI_DTIM_MULTIPLIER 3002 /* unifiDTIMMultiplier */
 
 static int slsi_set_dtim_config(struct wiphy *wiphy, struct wireless_dev *wdev, const void *data, int len)
 {
@@ -6209,6 +6206,59 @@ void slsi_vendor_delay_wakeup_event(struct slsi_dev *sdev, struct net_device *de
 	cfg80211_vendor_event(skb, GFP_KERNEL);
 }
 
+void slsi_vendor_change_sr_parameter_event(struct slsi_dev *sdev, struct net_device *dev,
+					   struct slsi_spatial_reuse_params spatial_reuse_ind)
+{
+	struct sk_buff *skb = NULL;
+	u8 err = 0;
+	int event_id = SLSI_NL80211_VENDOR_SPATIAL_REUSE_PARAM_CHANGE_EVENT;
+	struct netdev_vif *ndev_vif = netdev_priv(dev);
+	u8 hesiga_spatial_reuse_value15_disallowed = 1;
+	u8 non_srg_obss_pd_sr_disallowed = 1;
+
+#if (KERNEL_VERSION(4, 1, 0) <= LINUX_VERSION_CODE)
+	skb = cfg80211_vendor_event_alloc(sdev->wiphy, &ndev_vif->wdev, NLMSG_DEFAULT_SIZE,
+					  event_id, GFP_KERNEL);
+#else
+	skb = cfg80211_vendor_event_alloc(sdev->wiphy, NLMSG_DEFAULT_SIZE,
+					  event_id, GFP_KERNEL);
+#endif
+	if (!skb) {
+		SLSI_ERR_NODEV("Failed to allocate skb for spatial reuse param change ind\n");
+		return;
+	}
+
+	/* Inverse below values due to host requirements */
+	hesiga_spatial_reuse_value15_disallowed = !spatial_reuse_ind.hesiga_sr_value15allowed;
+	non_srg_obss_pd_sr_disallowed = !spatial_reuse_ind.non_srg_obss_pd_sr_allowed;
+
+	err |= nla_put_u8(skb, SLSI_VENDOR_ATTR_SRG_OBSS_PD_MIN_OFFSET,
+			  spatial_reuse_ind.srg_obss_pd_min_offset);
+	err |= nla_put_u8(skb, SLSI_VENDOR_ATTR_SRG_OBSS_PD_MAX_OFFSET,
+			  spatial_reuse_ind.srg_obss_pd_max_offset);
+	err |= nla_put_u8(skb, SLSI_VENDOR_ATTR_NON_SRG_OBSS_PD_MAX_OFFSET,
+			  spatial_reuse_ind.non_srg_obss_pd_max_offset);
+	err |= nla_put_u8(skb, SLSI_VENDOR_ATTR_HESIGA_SPATIAL_REUSE_VAL15_DISALLOWED,
+			  hesiga_spatial_reuse_value15_disallowed);
+	err |= nla_put_u8(skb, SLSI_VENDOR_ATTR_NON_SRG_OBSS_PD_SR_DISALLOWED,
+			  non_srg_obss_pd_sr_disallowed);
+
+	if (err) {
+		SLSI_ERR_NODEV("Failed nla_put err=%d\n", err);
+		kfree_skb(skb);
+		return;
+	}
+
+	SLSI_DBG1(sdev, SLSI_CFG80211, "Event: SLSI_NL80211_VENDOR_SPATIAL_REUSE_PARAM_CHANGE_EVENT %d %d %d %d %d\n",
+		  spatial_reuse_ind.srg_obss_pd_min_offset,
+		  spatial_reuse_ind.srg_obss_pd_max_offset,
+		  spatial_reuse_ind.non_srg_obss_pd_max_offset,
+		  hesiga_spatial_reuse_value15_disallowed,
+		  non_srg_obss_pd_sr_disallowed
+	);
+	cfg80211_vendor_event(skb, GFP_KERNEL);
+}
+
 static const struct  nl80211_vendor_cmd_info slsi_vendor_events[] = {
 	/**********Deprecated now due to fapi updates.Do not remove*/
 	{ OUI_GOOGLE, SLSI_NL80211_SIGNIFICANT_CHANGE_EVENT },
@@ -6255,7 +6305,8 @@ static const struct  nl80211_vendor_cmd_info slsi_vendor_events[] = {
 	{ OUI_SAMSUNG, SLSI_NL80211_VENDOR_SCHED_PM_LEAKY_AP_DETECT_EVENT},
 	{ OUI_SAMSUNG, SLSI_NL80211_NAN_INTERFACE_CREATED_EVENT},
 	{ OUI_SAMSUNG, SLSI_NL80211_NAN_INTERFACE_DELETED_EVENT},
-	{ OUI_SAMSUNG, SLSI_NL80211_VENDOR_DELAY_WAKEUP_EVENT}
+	{ OUI_SAMSUNG, SLSI_NL80211_VENDOR_DELAY_WAKEUP_EVENT},
+	{ OUI_SAMSUNG, SLSI_NL80211_VENDOR_SPATIAL_REUSE_PARAM_CHANGE_EVENT}
 };
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0))
@@ -7449,6 +7500,7 @@ enum slsi_tas_cmd {
 	SLSI_TAS_CMD_SHORT_WIN_NUM_REQ,
 	SLSI_TAS_CMD_GET_CONFIG,
 	SLSI_TAS_CMD_UPDATE_SAR_LIMIT_UPPER,
+	SLSI_TAS_CMD_REQUEST_NOTIFICATION,
 	SLSI_TAS_CMD_MAX,
 };
 
@@ -7463,10 +7515,12 @@ enum slsi_tas_attr {
 	SLSI_TAS_ATTR_SAR_LIMIT_UPPER,
 	SLSI_TAS_ATTR_IF_STATUS_ENTRIES,
 	SLSI_TAS_ATTR_SAR_COMPLIANCE,
+	SLSI_TAS_ATTR_RF_TEST_MODE,
 	SLSI_TAS_ATTR_MAX,
 };
 
 static struct genl_family slsi_tas_fam;
+static bool is_req_noti;
 
 static int slsi_tas_tx_sar_limit_req(struct sk_buff *skb, struct genl_info *info)
 {
@@ -7545,7 +7599,8 @@ static int slsi_tas_fill_config(struct sk_buff *msg, struct genl_info *info)
 	}
 
 	if (nla_put_u16(msg, SLSI_TAS_ATTR_SAR_LIMIT_UPPER, tas_info->sar_limit_upper) ||
-		nla_put_u16(msg, SLSI_TAS_ATTR_SAR_COMPLIANCE, tas_info->sar_compliance))
+		nla_put_u16(msg, SLSI_TAS_ATTR_SAR_COMPLIANCE, tas_info->sar_compliance) ||
+		nla_put_u8(msg, SLSI_TAS_ATTR_RF_TEST_MODE, slsi_is_rf_test_mode_enabled()))
 		goto nla_put_failure;
 
 	attr = nla_nest_start(msg, SLSI_TAS_ATTR_IF_STATUS_ENTRIES);
@@ -7588,6 +7643,12 @@ static int slsi_tas_config_req(struct sk_buff *skb, struct genl_info *info)
 	return genlmsg_reply(msg, info);
 }
 
+static int slsi_tas_notification_req(struct sk_buff *skb, struct genl_info *info)
+{
+	is_req_noti = true;
+	return 0;
+}
+
 static const struct genl_small_ops slsi_tas_ops[] = {
 	{
 		.cmd = SLSI_TAS_CMD_SAR_REQ,
@@ -7603,6 +7664,11 @@ static const struct genl_small_ops slsi_tas_ops[] = {
 		.cmd = SLSI_TAS_CMD_GET_CONFIG,
 		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.doit = slsi_tas_config_req,
+	},
+	{
+		.cmd = SLSI_TAS_CMD_REQUEST_NOTIFICATION,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
+		.doit = slsi_tas_notification_req,
 	},
 };
 
@@ -7660,6 +7726,12 @@ static int slsi_tas_fill_sar_ind(struct sk_buff *msg, u16 win_num, u16 sar)
 	return 0;
 }
 
+static bool is_support_notification(void)
+{
+	/* Need to block notification when tasd is disabled */
+	return is_req_noti;
+}
+
 #define SLSI_TAS_WAKELOCK_TIME_OUT_IN_MS   (100)
 int slsi_tas_notify_sar_ind(struct slsi_dev *sdev, struct net_device *dev, struct sk_buff *skb)
 {
@@ -7667,6 +7739,9 @@ int slsi_tas_notify_sar_ind(struct slsi_dev *sdev, struct net_device *dev, struc
 	struct sk_buff *msg = NULL;
 	u16 win_num = 0, sar = 0;
 	int ret = 0;
+
+	if (!is_support_notification())
+		return ret;
 
 	win_num = fapi_get_u16(skb, u.mlme_sar_ind.short_window_number);
 	sar = fapi_get_u16(skb, u.mlme_sar_ind.sar);
@@ -7715,7 +7790,8 @@ static int slsi_tas_fill_if_status(struct sk_buff *msg, enum slsi_tas_if_type ty
 
 	if (type == SLSI_TAS_IF_TYPE_WIFI && enabled) {
 		if (nla_put_u16(msg, SLSI_TAS_ATTR_SAR_LIMIT_UPPER, tas_info->sar_limit_upper) ||
-		    nla_put_u16(msg, SLSI_TAS_ATTR_SAR_COMPLIANCE, tas_info->sar_compliance)) {
+		    nla_put_u16(msg, SLSI_TAS_ATTR_SAR_COMPLIANCE, tas_info->sar_compliance) ||
+		    nla_put_u8(msg, SLSI_TAS_ATTR_RF_TEST_MODE, slsi_is_rf_test_mode_enabled())) {
 			genlmsg_cancel(msg, hdr);
 			return -EMSGSIZE;
 		}
@@ -7731,6 +7807,9 @@ static void slsi_tas_notify_if_status(enum slsi_tas_if_type type, bool enabled)
 	struct slsi_tas_info *tas_info = &sdev->tas_info;
 	struct sk_buff *msg = NULL;
 	int ret = 0;
+
+	if (!is_support_notification())
+		return;
 
 	if (!(type > SLSI_TAS_IF_TYPE_NONE && type < SLSI_TAS_IF_TYPE_MAX)) {
 		SLSI_ERR_NODEV("Invalid type : [%d]\n", type);
@@ -7792,6 +7871,9 @@ int slsi_tas_notify_sar_limit_upper(struct slsi_dev *sdev, struct net_device *de
 	struct sk_buff *msg = NULL;
 	int ret = 0;
 
+	if (!is_support_notification())
+		return ret;
+
 	msg = genlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
 	if (!msg) {
 		SLSI_ERR_NODEV("No memory\n");
@@ -7828,6 +7910,7 @@ void slsi_tas_nl_init(void)
 	int err;
 
 	SLSI_INFO_NODEV("TAS nl init\n");
+	is_req_noti = false;
 	err = genl_register_family(&slsi_tas_fam);
 	if (err)
 		SLSI_ERR_NODEV("genl_register_family failed : [%d]\n", err);

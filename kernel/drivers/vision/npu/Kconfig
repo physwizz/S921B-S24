@@ -307,6 +307,12 @@ config NPU_CLOCK
 	help
 		device driver use specifi clock source form dtsi
 
+config NPU_PM_SLEEP_WAKEUP
+	bool "NPU can enter ap sleep when no job"
+	default n
+	help
+		NPU can enter ap sleep when no job
+
 menuconfig NPU_UNITTEST
 	bool "Build unittest for Vision"
 	depends on VISION_SUPPORT

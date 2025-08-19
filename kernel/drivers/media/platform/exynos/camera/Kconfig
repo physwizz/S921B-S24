@@ -58,7 +58,7 @@ config PABLO_KUNIT_TEST
 config PABLO_UNIT_TEST
 	tristate "PUNIT Test for Pablo"
 	depends on VIDEO_EXYNOS_PABLO_ISP
-	default y
+	default n
 	help
 	  Enable punit test for Pablo.
 

@@ -30,7 +30,7 @@
 /**
  * FENCE_FMT - printf string for &struct dma_fence
  */
-#define FENCE_FMT "name:%-15s timeline:%-20s ctx:%-5llu seqno:%-5u flags:%#x"
+#define FENCE_FMT "name:%-15s timeline:%-20s ctx:%-5llu seqno:%-5llu flags:%#lx"
 /**
  * FENCE_ARG - printf arguments for &struct dma_fence
  * @f: dma_fence struct
@@ -143,7 +143,7 @@ struct dpu_debug {
 #if IS_ENABLED(CONFIG_EXYNOS_DRM_BUFFER_SANITY_CHECK)
 void
 exynos_atomic_commit_prepare_buf_sanity(struct drm_atomic_state *old_state);
-void exynos_atomic_commit_check_buf_sanity(struct drm_atomic_state *old_state);
+bool exynos_atomic_commit_check_buf_sanity(struct drm_atomic_state *old_state);
 #else
 static inline void
 exynos_atomic_commit_prepare_buf_sanity(struct drm_atomic_state *old_state) { }

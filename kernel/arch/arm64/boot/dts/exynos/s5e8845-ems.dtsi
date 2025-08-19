@@ -53,6 +53,12 @@
 			};
 		};
 
+		gsc {
+			enabled = <1>;
+			update_ms = <100>;
+			retain_ms = <250>;
+		};
+
 		ego {
 			thread-run-on = "0-3";
 
@@ -204,6 +210,22 @@
 					set = <&set4_2>;
 				};
 			};
+			mode5 {
+				desc = "camera";
+
+				level0 {
+					base = <&set5>;
+					set = <&set5>;
+				};
+				level1 {
+					base = <&set5>;
+					set = <&set5_1>;
+				};
+				level2 {
+					base = <&set5>;
+					set = <&set5_2>;
+				};
+			};
 		};
 
 		pago {
@@ -293,6 +315,29 @@
 						  2112000 2535000
 						  2304000 3172000 >;
 				};
+			};
+		};
+
+		sysbusy {
+			state0 {
+				state = < 0 >;
+				monitor-interval = < 1 >;
+				boost-duration = < 0 >;
+			};
+			state1 {
+				state = < 1 >;
+				monitor-interval = < 1 >;
+				boost-duration = < 1 >;
+			};
+			state2 {
+				state = < 2 >;
+				monitor-interval = < 1 >;
+				boost-duration = < 0 >;
+			};
+			state3 {
+				state = < 3 >;
+				monitor-interval = < 1 >;
+				boost-duration = < 250 >;
 			};
 		};
 	};

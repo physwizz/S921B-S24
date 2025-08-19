@@ -303,9 +303,6 @@ exynos_panel_connector_set_property(struct exynos_drm_connector *exynos_conn,
 {
 	const struct exynos_drm_properties *p =
 		dev_get_exynos_props(exynos_conn->base.dev);
-#if IS_ENABLED(CONFIG_USDM_PANEL_MASK_LAYER)
-	const struct exynos_drm_properties *p = dev_get_exynos_props(exynos_conn->base.dev);
-#endif
 
 	if (property == p->backlight_level) {
 		exynos_conn_state->request_brightness = true;
@@ -1032,6 +1029,16 @@ static void exynos_panel_bridge_post_disable(struct exynos_drm_bridge *exynos_br
 	}
 }
 
+static void exynos_panel_bridge_lastclose(struct exynos_drm_bridge *exynos_bridge)
+{
+	struct exynos_panel *ctx = exynos_bridge_to_exynos_panel(exynos_bridge);
+
+	mutex_lock(&ctx->mode_lock);
+	call_mcd_panel_func(ctx->mcd_panel_dev, display_off);
+	ctx->lastclosed = true;
+	mutex_unlock(&ctx->mode_lock);
+}
+
 static void exynos_panel_bridge_mode_set(struct exynos_drm_bridge *exynos_bridge,
 				  const struct drm_display_mode *mode,
 				  const struct drm_display_mode *adjusted_mode)
@@ -1057,6 +1064,11 @@ static void exynos_panel_bridge_mode_set(struct exynos_drm_bridge *exynos_bridge
 		struct exynos_drm_connector_state *exynos_state =
 			to_exynos_connector_state(conn->state);
 		bool panel_lp_mode;
+
+		if (ctx->lastclosed) {
+			call_mcd_panel_func(ctx->mcd_panel_dev, display_on);
+			ctx->lastclosed = false;
+		}
 
 		panel_lp_mode = mcd_drm_panel_is_panel_lp_mode(ctx, pmode);
 		if (panel_lp_mode && funcs->set_lp_mode)
@@ -1233,6 +1245,7 @@ static const struct exynos_drm_bridge_funcs exynos_panel_bridge_funcs = {
 	.reset = exynos_panel_bridge_reset,
 	.psr_stop = exynos_panel_bridge_psr_stop,
 	.psr_start = exynos_panel_bridge_psr_start,
+	.lastclose = exynos_panel_bridge_lastclose,
 };
 
 static void exynos_panel_parse_vendor_pps(struct device *dev, struct exynos_panel *ctx)

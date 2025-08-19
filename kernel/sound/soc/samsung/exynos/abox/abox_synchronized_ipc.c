@@ -35,10 +35,10 @@
 #define REALTIME_GEAR_ID    0x7007
 #define VENDORID_TFADSP_ID	0x778
 
-//#define SMEM_READ           0x818FC000
-//#define SMEM_WRITE          0x818FE000
-#define SMEM_READ           0xA0780000
-#define SMEM_WRITE          0xA0782000
+#define SMEM_READ           0x7002C000
+#define SMEM_WRITE          0x7002E000
+//#define SMEM_READ           0xA0780000
+//#define SMEM_WRITE          0xA0782000
 
 
 #define TIMEOUT_MS 100
@@ -77,7 +77,7 @@ int tfadsp_read(void *tfa, int length, unsigned char *buf)
 
 	ipc_dbg("length = %d", length);
 
-	abox_request_power(data->dev_abox, REALTIME_GEAR_ID, "TFA9874");
+	abox_request_power(data->dev_abox, REALTIME_GEAR_ID, "TFA9878");
 
 	tfadrv_read_buf = (char *)buf;
 
@@ -98,7 +98,7 @@ int tfadsp_read(void *tfa, int length, unsigned char *buf)
 	ret = wait_event_timeout(wq_read,
 			abox_ipc_read_avail, msecs_to_jiffies(TIMEOUT_MS));
 
-	abox_release_power(data->dev_abox, REALTIME_GEAR_ID, "TFA9874");
+	abox_release_power(data->dev_abox, REALTIME_GEAR_ID, "TFA9878");
 
 	if (!ret) {
 		ipc_err("wait_event timeout");
@@ -121,7 +121,7 @@ int tfadsp_write(void *tfa, int length, const char *buf)
 
 	ipc_dbg("length = %d", length);
 
-	abox_request_power(data->dev_abox, REALTIME_GEAR_ID, "TFA9874");
+	abox_request_power(data->dev_abox, REALTIME_GEAR_ID, "TFA9878");
 
 	tfadrv_write_buf = (char *)buf;
 	smem_write_buf = (char *)abox_iova_to_virt(data->dev_abox, SMEM_WRITE);
@@ -146,7 +146,7 @@ int tfadsp_write(void *tfa, int length, const char *buf)
 	ret = wait_event_timeout(wq_write,
 		abox_ipc_write_avail, msecs_to_jiffies(TIMEOUT_MS));
 
-	abox_release_power(data->dev_abox, REALTIME_GEAR_ID, "TFA9874");
+	abox_release_power(data->dev_abox, REALTIME_GEAR_ID, "TFA9878");
 
 	if (!ret) {
 		ipc_err("wait_event timeout");

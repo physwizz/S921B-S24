@@ -567,7 +567,7 @@ static int pablo_icpu_adt_send_msg_start(struct pablo_icpu_adt *icpu_adt, u32 in
 
 	/* prepare data */
 	CALL_SS_ADT_OPS(adt->sensor_adt[instance], update_actuator_info, true);
-	ret = CALL_SS_ADT_OPS(adt->sensor_adt[instance], get_sensor_info, pcsi_buf->kva);
+	ret = CALL_SS_ADT_OPS(adt->sensor_adt[instance], get_sensor_info, pcsi_buf->kva, 0);
 	if (ret)
 		merr_adt("failed to sensor_adt get_sensor_info", instance);
 
@@ -655,7 +655,7 @@ static int pablo_icpu_adt_send_msg_cstat_frame_start(struct pablo_icpu_adt *icpu
 	adt = icpu_adt->priv;
 
 	/* prepare data */
-	ret = CALL_SS_ADT_OPS(adt->sensor_adt[instance], get_sensor_info, pcsi_buf->kva);
+	ret = CALL_SS_ADT_OPS(adt->sensor_adt[instance], get_sensor_info, pcsi_buf->kva, fcount);
 	if (ret)
 		merr_adt("failed to sensor_adt get_sensor_info", instance);
 

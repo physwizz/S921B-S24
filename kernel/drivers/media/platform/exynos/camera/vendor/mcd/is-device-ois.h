@@ -45,6 +45,9 @@ struct is_ois_info {
 	u8 checksum;
 	u8 caldata;
 	bool reset_check;
+#if defined(OIS_MGLESS)
+	int mgless[6];
+#endif
 };
 
 #ifdef USE_OIS_SLEEP_MODE
@@ -72,10 +75,17 @@ int is_ois_get_phone_version(struct is_ois_info **minfo);
 int is_ois_get_user_version(struct is_ois_info **uinfo);
 int is_ois_get_exif_data(struct is_ois_exif **exif_info);
 bool is_ois_check_fw(struct is_core *core);
+#if defined(OIS_MGLESS)
+void is_ois_mgless(struct is_core *core);
+bool is_ois_auto_test(struct is_core *core,
+				int threshold, bool *x_result, bool *y_result, int *sin_x, int *sin_y,
+				bool *xy2_result, int *sin_xy2);
+#else
 bool is_ois_auto_test(struct is_core *core,
 				int threshold, bool *x_result, bool *y_result, int *sin_x, int *sin_y,
 				bool *x_result_2nd, bool *y_result_2nd, int *sin_x_2nd, int *sin_y_2nd,
 				bool *x_result_3rd, bool *y_result_3rd, int *sin_x_3rd, int *sin_y_3rd);
+#endif
 #ifdef CAMERA_2ND_OIS
 bool is_ois_auto_test_rear2(struct is_core *core,
 				int threshold, bool *x_result, bool *y_result, int *sin_x, int *sin_y,

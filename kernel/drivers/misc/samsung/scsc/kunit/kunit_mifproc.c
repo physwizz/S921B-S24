@@ -1,5 +1,5 @@
-#define simple_read_from_buffer(param...)	(0)
-#define copy_from_user(param...)			(0)
+#define simple_read_from_buffer(args...)	(0)
+#define copy_from_user(args...)			(0)
 static int mifprocfs_open_file_generic(struct inode *inode, struct file *file);
 int (*fp_mifprocfs_open_file_generic)(struct inode *inode, struct file *file) = &mifprocfs_open_file_generic;
 

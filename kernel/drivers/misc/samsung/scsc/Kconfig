@@ -10,7 +10,7 @@ config SCSC_CORE_CM
 config SCSC_INDEPENDENT_SUBSYSTEM
 	tristate "Samsung SCSC independent subsystems arch"
 	depends on SCSC_CORE
-	depends on (SOC_S5E5515 || SOC_S5E8825 || SOC_S5E9925 || SOC_S5E9935 || SOC_S5E9945 || SCSC_PCIE || SOC_S5E8535 || SOC_S5E8835 || SOC_S5E8845)
+	depends on (SOC_S5E5515 || SOC_S5E8825 || SOC_S5E9925 || SOC_S5E9935 || SOC_S5E9945 || SCSC_PCIE || SOC_S5E8535 || SOC_S5E8835 || SOC_S5E8845 || SOC_S5E5535)
 	default y
 
 config SCSC_WLBT_CONFIG_GENERIC
@@ -105,10 +105,6 @@ config SCSC_CLK20MHZ_TEST
 config SCSC_FM
 	tristate "Samsung SCSC MX250 enables LDOs used for FM"
 	depends on SCSC_CORE
-
-config SCSC_FM_TEST
-	tristate "Samsung SCSC MX250 Test for enabling LDOs used for FM"
-	depends on SCSC_FM
 
 config SCSC_MMAP
 	tristate "Samsung SCSC MMAP/GDB User space interface"
@@ -210,7 +206,7 @@ config SCSC_MEMLOG
 	tristate "Enable WLBT logging with memlog API"
 	depends on EXYNOS_MEMORY_LOGGER
 	depends on SCSC_CORE
-	depends on (SOC_S5E9815 || SOC_S5E5515 || SOC_S5E8825 || SOC_S5E8535 || SOC_S5E8835 || SOC_S5E8845)
+	depends on (SOC_S5E9815 || SOC_S5E5515 || SOC_S5E8825 || SOC_S5E8535 || SOC_S5E8835 || SOC_S5E8845 || SOC_S5E5535)
 	default y
 	help
 	  Enable memlog feature. So mxlogger doesn't allocated in reserved memory, dynamically by memlog API.
@@ -218,7 +214,7 @@ config SCSC_MEMLOG
 config WLBT_AUTOGEN_PMUCAL
 	bool "Enable to use auto gen pmu cal"
 	depends on SCSC_CORE
-	depends on (SOC_S5E5515 || SOC_S5E8825 || SOC_S5E8535 || SOC_S5E8835 || SOC_S5E8845)
+	depends on (SOC_S5E5515 || SOC_S5E8825 || SOC_S5E8535 || SOC_S5E8835 || SOC_S5E8845 || SOC_S5E5535)
 	default y
 	help
 	  Enable auto gen pmu cal
@@ -282,8 +278,8 @@ config WLBT_PMU2AP_MBOX
 	bool "Enable PMU2AP Mailbox"
 	default y
 	depends on SCSC_CORE
-	depends on (SOC_S5E8835 || SOC_S5E8845)
-	help 
+	depends on (SOC_S5E8835 || SOC_S5E8845 || SOC_S5E5535)
+	help
 		Enable PMU2AP Mailbox
 
 config SCSC_PCIE_CHIP
@@ -306,7 +302,7 @@ config WLBT_ITMON_NOTIFIER
 	default y
 	depends on SCSC_CORE
 	depends on (EXYNOS_ITMON || EXYNOS_ITMON_V2)
-	depends on (SOC_S5E5515 || SOC_S5E8535 || SOC_S5E8835 || SOC_S5E8845)
+	depends on (SOC_S5E5515 || SOC_S5E8535 || SOC_S5E8835 || SOC_S5E8845 || SOC_S5E5535)
 	help
 		check whether wlbt set itmon notifier
 
@@ -329,7 +325,7 @@ config WLBT_QOS_CPUFREQ_POLICY
 	bool "check whether qos use cpufreq_policy struct"
 	default y
 	depends on SCSC_CORE
-	depends on (SOC_S5E8535 || SOC_S5E8835 || SOC_S5E8845)
+	depends on (SOC_S5E8535 || SOC_S5E8835 || SOC_S5E8845 || SOC_S5E5535)
 	help
 		check whether qos use cpufreq_policy struct
 
@@ -344,7 +340,7 @@ config SCSC_64KB_ALLIGNED_MEMLOG
 	bool "Enable this if memlog need to be 64KB address alligned."
 	default n
 	depends on SCSC_CORE
-	depends on (SOC_S5E8845)
+	depends on (SOC_S5E5535 || SOC_S5E8845)
 	help
 		Enable this if memlog need to be 64KB address alligned
 
@@ -377,5 +373,42 @@ config SCSC_BB_PAEAN
 	help
 	This option suggests the platform has PAEAN Slim Modem WLBT solution
 
-endif
+config WLBT_SPLIT_RECOVERY
+	bool "Enable Split recovery based on warm reset"
+	default n
+	depends on SCSC_INDEPENDENT_SUBSYSTEM
+	help
+		This option supports to enable the operation of split recovery based on warm reset for WLBT solution.
 
+config SCSC_XO_CDAC_CON
+	bool "Driver have to send to fw RFIC's DCXO"
+	default n
+	depends on SCSC_CORE
+	depends on SCSC_BB_REDWOOD
+	help
+	This option checks fw will use RFIC's DCXO
+
+config BT_FWSNOOP_LOGGING
+	bool "Enable fwsnoop logging for Bluetooth"
+	default y
+	depends on SCSC_MXLOGGER
+	help
+		This option supports to enable fwsnoop logging for Bluetooth.
+
+config HDM_WLBT_SUPPORT
+	bool "Enable HDM block/unblock wlbt"
+	default n
+	depends on SCSC_CORE
+	depends on SCSC_BB_REDWOOD
+	help
+		This option supports to enable hdm blocks wlan/bt.
+
+config WLBT_EXYNOS_S2MPU
+	bool "check whther wlbt use exynos-s2pmu interface"
+	default y
+	depends on SCSC_CORE
+	depends on EXYNOS_S2MPU
+	depends on (SOC_S5E8845 || SOC_S5E5535)
+	help
+		bool check whther wlbt use exynos-s2pmu interface.
+endif

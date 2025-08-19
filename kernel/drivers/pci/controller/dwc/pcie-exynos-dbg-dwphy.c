@@ -652,6 +652,8 @@ static ssize_t exynos_pcie_rc_show(struct device *dev,
 int exynos_pcie_rc_lane_change(int ch_num, int req_lane);
 int exynos_pcie_rc_speed_change(int ch_num, int req_speed);
 int exynos_pcie_rc_poweron_speed(int ch_num, int spd);
+int exynos_pcie_rc_lane_check(int ch_num);
+int exynos_pcie_rc_speed_check(int ch_num);
 void exynos_pcie_rc_print_msi_register(int ch_num);
 
 static ssize_t exynos_pcie_rc_store(struct device *dev,
@@ -852,7 +854,28 @@ static ssize_t exynos_pcie_rc_store(struct device *dev,
 		exynos_pcie_dbg_print_link_history(exynos_pcie);
 		break;
 	case 25:
-		exynos_pcie_rc_print_msi_register(exynos_pcie->ch_num);
+		pcie_info("## Checking PCIe Speed & Lane  ##\n");
+		pm_runtime_get_sync(dev);
+		val = exynos_ssc_read(exynos_pcie, PCIE_SSC_LINK_DBG_2) &
+			                      SSC_LINK_DBG_2_LTSSM_STATE;
+		if (val < S_RCVRY_LOCK || val > S_L1_IDLE) {
+			pcie_err("is NOT link-up state(0x%x)\n", ret);
+		} else {
+			ret = exynos_pcie_rc_lane_check(exynos_pcie->ch_num);
+			if (ret < 0) {
+				pcie_err("PCIe lane check failed(%d)\n", ret);
+			} else {
+				pcie_info("Current PCIe Lane is %d\n", ret);
+			}
+
+			ret = exynos_pcie_rc_speed_check(exynos_pcie->ch_num);
+			if (ret < 0) {
+				pcie_err("PCIe Speed check failed(%d)\n", ret);
+			} else {
+				pcie_info("Current PCIe Speed is GEN %d\n", ret);
+			}
+		}
+		pm_runtime_put_sync(dev);
 		break;
 	}
 

@@ -108,6 +108,7 @@ struct is_frame {
 	void			*group;
 	void			*subdev; /* is_subdev */
 	u32			hw_slot_id[HW_SLOT_MAX];
+	u32			ldr_hw_slot_id;
 
 	/* group leader use */
 	struct camera2_shot_ext	*shot_ext;

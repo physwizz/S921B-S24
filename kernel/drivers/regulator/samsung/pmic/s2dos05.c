@@ -29,13 +29,14 @@
 #include <linux/regmap.h>
 #include <linux/i2c.h>
 #include <linux/of_gpio.h>
+#include <linux/of_device.h>
 #include <linux/irq.h>
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
-#include <linux/samsung/pmic/s2dos05.h>
 #include <linux/regulator/of_regulator.h>
+#include <linux/samsung/pmic/s2dos05.h>
 #include <linux/samsung/pmic/pmic_class.h>
 
 struct s2dos05_data {
@@ -361,9 +362,51 @@ static irqreturn_t s2dos05_irq_thread(int irq, void *irq_data)
 	u8 val = 0;
 
 	s2dos05_read_reg(s2dos05->iodev->i2c, S2DOS05_REG_IRQ, &val);
-	pr_info("%s:irq(%d) S2DOS05_REG_IRQ : 0x%02hhx\n", __func__, irq, val);
-
+	dev_info(s2dos05->iodev->dev, "%s: irq(%d) 0x%02hhx\n", __func__, irq, val);
 	return IRQ_HANDLED;
+}
+
+static int s2dos05_init_irq(struct s2dos05_data *s2dos05, struct s2dos05_platform_data *pdata)
+{
+	int ret = 0;
+	struct s2dos05_dev *iodev = s2dos05->iodev;
+	int device_type = iodev->device_type;
+
+	if (pdata->dp_pmic_irq <= 0)
+		goto out;
+
+	iodev->dp_pmic_irq = gpio_to_irq(pdata->dp_pmic_irq);
+	dev_info(iodev->dev, "%s : dp_pmic_irq = %d\n", __func__, iodev->dp_pmic_irq);
+	if (iodev->dp_pmic_irq > 0) {
+		snprintf(iodev->dp_irq_name, sizeof(iodev->dp_irq_name) - 1,
+				"dp%d_pmic_irq", device_type + 1);
+		ret = request_threaded_irq(iodev->dp_pmic_irq,
+				NULL, s2dos05_irq_thread,
+				IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+				iodev->dp_irq_name, s2dos05);
+		if (ret) {
+			dev_err(iodev->dev,
+					"%s: Failed to Request IRQ\n", __func__);
+			return ret;
+		}
+
+		if (pdata->wakeup) {
+			ret = enable_irq_wake(iodev->dp_pmic_irq);
+			if (ret < 0)
+				dev_err(iodev->dev, "%s: Failed to Enable Wakeup Source(%d)\n",
+							__func__, ret);
+				ret = device_init_wakeup(iodev->dev, pdata->wakeup);
+			if (ret < 0)
+				dev_err(iodev->dev, "%s: Fail to device init wakeup fail(%d)\n",
+					__func__, ret);
+			}
+	} else {
+		dev_err(iodev->dev, "%s: Failed gpio_to_irq(%d)\n",
+				__func__, iodev->dp_pmic_irq);
+		return -EINVAL;
+	}
+out:
+	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)
@@ -465,19 +508,19 @@ static ssize_t s2dos05_read_store(struct device *dev,
 	u8 val, reg_addr;
 
 	if (buf == NULL) {
-		pr_info("%s: empty buffer\n", __func__);
+		dev_info(dev, "%s: empty buffer\n", __func__);
 		return -1;
 	}
 
 	ret = kstrtou8(buf, 0, &reg_addr);
 	if (ret < 0)
-		pr_info("%s: fail to transform i2c address\n", __func__);
+		dev_info(dev, "%s: fail to transform i2c address\n", __func__);
 
 	ret = s2dos05_read_reg(s2dos05->iodev->i2c, reg_addr, &val);
 	if (ret < 0)
-		pr_info("%s: fail to read i2c address\n", __func__);
+		dev_info(dev, "%s: fail to read i2c address\n", __func__);
 
-	pr_info("%s: reg(0x%02hhx) data(0x%02hhx)\n", __func__, reg_addr, val);
+	dev_info(dev, "%s: reg(0x%02hhx) data(0x%02hhx)\n", __func__, reg_addr, val);
 	s2dos05->read_addr = reg_addr;
 	s2dos05->read_val = val;
 
@@ -502,21 +545,21 @@ static ssize_t s2dos05_write_store(struct device *dev,
 	u8 reg = 0, data = 0;
 
 	if (buf == NULL) {
-		pr_info("%s: empty buffer\n", __func__);
+		dev_info(dev, "%s: empty buffer\n", __func__);
 		return size;
 	}
 
 	ret = sscanf(buf, "0x%02hhx 0x%02hhx", &reg, &data);
 	if (ret != 2) {
-		pr_info("%s: input error\n", __func__);
+		dev_info(dev, "%s: input error\n", __func__);
 		return size;
 	}
 
-	pr_info("%s: reg(0x%02hhx) data(0x%02hhx)\n", __func__, reg, data);
+	dev_info(dev, "%s: reg(0x%02hhx) data(0x%02hhx)\n", __func__, reg, data);
 
 	ret = s2dos05_write_reg(s2dos05->iodev->i2c, reg, data);
 	if (ret < 0)
-		pr_info("%s: fail to write i2c addr/data\n", __func__);
+		dev_info(dev, "%s: fail to write i2c addr/data\n", __func__);
 
 	return size;
 }
@@ -538,16 +581,17 @@ static int s2dos05_create_sysfs(struct s2dos05_data *s2dos05)
 {
 	struct device *s2dos05_pmic = s2dos05->dev;
 	struct device *dev = s2dos05->iodev->dev;
+	int device_type = s2dos05->iodev->device_type;
 	char device_name[32] = {0, };
 	int err = -ENODEV, i = 0;
 
-	pr_info("%s()\n", __func__);
+	dev_info(dev, "%s\n", __func__);
 	s2dos05->read_addr = 0;
 	s2dos05->read_val = 0;
 
 	/* Dynamic allocation for device name */
-	snprintf(device_name, sizeof(device_name) - 1, "%s@%s",
-		 dev_driver_string(dev), dev_name(dev));
+	snprintf(device_name, sizeof(device_name) - 1, "%s-%d@%s",
+		 dev_driver_string(dev), device_type + 1, dev_name(dev));
 
 	s2dos05_pmic = pmic_device_create(s2dos05, device_name);
 	s2dos05->dev = s2dos05_pmic;
@@ -576,11 +620,12 @@ static int s2dos05_pmic_probe(struct i2c_client *i2c,
 	struct s2dos05_platform_data *pdata = i2c->dev.platform_data;
 	struct regulator_config config = { };
 	struct s2dos05_data *s2dos05;
+	const int device_type = (enum s2dos05_types)of_device_get_match_data(&i2c->dev);
 	size_t i;
 	int ret = 0;
 	u8 val = 0, mask = 0;
 
-	pr_info("%s:%s\n", MFD_DEV_NAME, __func__);
+	dev_info(&i2c->dev, "[DISPLAY PMIC] %s: start",  __func__);
 
 	iodev = devm_kzalloc(&i2c->dev, sizeof(struct s2dos05_dev), GFP_KERNEL);
 	if (!iodev) {
@@ -610,6 +655,7 @@ static int s2dos05_pmic_probe(struct i2c_client *i2c,
 
 	iodev->dev = &i2c->dev;
 	iodev->i2c = i2c;
+	iodev->device_type = device_type;
 
 	if (pdata) {
 		iodev->pdata = pdata;
@@ -622,11 +668,8 @@ static int s2dos05_pmic_probe(struct i2c_client *i2c,
 
 	s2dos05 = devm_kzalloc(&i2c->dev, sizeof(struct s2dos05_data),
 				GFP_KERNEL);
-	if (!s2dos05) {
-		pr_info("[%s:%d] if (!s2dos05)\n", __FILE__, __LINE__);
-		ret = -ENOMEM;
+	if (!s2dos05)
 		goto err_s2dos05_data;
-	}
 
 	i2c_set_clientdata(i2c, s2dos05);
 	s2dos05->iodev = iodev;
@@ -664,35 +707,16 @@ static int s2dos05_pmic_probe(struct i2c_client *i2c,
 		return ret;
 	}
 
-	if (pdata->dp_pmic_irq > 0) {
-		iodev->dp_pmic_irq = gpio_to_irq(pdata->dp_pmic_irq);
-		pr_info("%s : dp_pmic_irq = %d\n", __func__, iodev->dp_pmic_irq);
-		if (iodev->dp_pmic_irq > 0) {
-			ret = request_threaded_irq(iodev->dp_pmic_irq,
-					NULL, s2dos05_irq_thread,
-					IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
-					"dp-pmic-irq", s2dos05);
-			if (ret) {
-				dev_err(&i2c->dev,
-						"%s: Failed to Request IRQ\n", __func__);
-				goto err_s2dos05_data;
-			}
-
-			ret = enable_irq_wake(iodev->dp_pmic_irq);
-			if (ret < 0)
-				dev_err(&i2c->dev,
-						"%s: Failed to Enable Wakeup Source(%d)\n",
-						__func__, ret);
-		} else {
-			dev_err(&i2c->dev, "%s: Failed gpio_to_irq(%d)\n",
-					__func__, iodev->dp_pmic_irq);
-			goto err_s2dos05_data;
-		}
+	ret = s2dos05_init_irq(s2dos05, pdata);
+	if (ret < 0) {
+		dev_err(&i2c->dev, "Failed to init irq\n");
+		goto err_s2dos05_data;
 	}
+
 #if IS_ENABLED(CONFIG_DRV_SAMSUNG_PMIC)
 	ret = s2dos05_create_sysfs(s2dos05);
 	if (ret < 0) {
-		pr_err("%s: s2dos05_create_sysfs fail\n", __func__);
+		dev_err(&i2c->dev,"%s: s2dos05_create_sysfs fail\n", __func__);
 		goto err_s2dos05_data;
 	}
 #endif
@@ -706,9 +730,11 @@ err_pdata:
 
 #if IS_ENABLED(CONFIG_OF)
 static struct of_device_id s2dos05_i2c_dt_ids[] = {
-	{ .compatible = "samsung,s2dos05pmic" },
+	{ .compatible = "samsung,s2dos05pmic", .data = (void *)TYPE_S2DOS05_1 },
+	{ .compatible = "samsung,s2dos05pmic_2", .data = (void *)TYPE_S2DOS05_2 },
 	{ },
 };
+MODULE_DEVICE_TABLE(of, s2dos05_i2c_dt_ids);
 #endif /* CONFIG_OF */
 
 static void s2dos05_pmic_remove(struct i2c_client *i2c)
@@ -775,26 +801,18 @@ static const struct dev_pm_ops s2dos05_pmic_pm = {
 	.resume = s2dos05_pmic_resume,
 };
 
-#if IS_ENABLED(CONFIG_OF)
-static const struct i2c_device_id s2dos05_pmic_id[] = {
-	{"s2dos05-regulator", 0},
-	{},
-};
-#endif
-
 static struct i2c_driver s2dos05_i2c_driver = {
 	.driver = {
 		.name = "s2dos05-regulator",
 		.owner = THIS_MODULE,
 		.pm = &s2dos05_pmic_pm,
 #if IS_ENABLED(CONFIG_OF)
-		.of_match_table	= s2dos05_i2c_dt_ids,
+		.of_match_table	= of_match_ptr(s2dos05_i2c_dt_ids),
 #endif /* CONFIG_OF */
 		.suppress_bind_attrs = true,
 	},
 	.probe = s2dos05_pmic_probe,
 	.remove = s2dos05_pmic_remove,
-	.id_table = s2dos05_pmic_id,
 };
 
 static int __init s2dos05_i2c_init(void)

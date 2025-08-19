@@ -47,6 +47,7 @@
 #include <linux/sched.h>
 #include <linux/i2c.h>
 #include <linux/ktime.h>
+#include <linux/pinctrl/consumer.h>
 
 #include "nfc_wakelock.h"
 #include "sec_nfc.h"
@@ -1300,10 +1301,15 @@ exit:
 
 	return size;
 }
-
+#if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
+static ssize_t test_show(const struct class *class,
+				const struct class_attribute *attr,
+					char *buf)
+#else
 static ssize_t test_show(struct class *class,
 					struct class_attribute *attr,
 					char *buf)
+#endif
 {
 	return sec_nfc_test_run(buf);
 }
@@ -1311,8 +1317,13 @@ static ssize_t test_show(struct class *class,
 static CLASS_ATTR_RO(test);
 #endif
 
+#if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
+static ssize_t pvdd_store(const struct class *class,
+	const struct class_attribute *attr, const char *buf, size_t size)
+#else
 static ssize_t pvdd_store(struct class *class,
 	struct class_attribute *attr, const char *buf, size_t size)
+#endif
 {
 	if (!g_nfc_info) {
 		NFC_LOG_ERR("%s nfc drv is NULL!", __func__);
@@ -1328,8 +1339,13 @@ static ssize_t pvdd_store(struct class *class,
 }
 static CLASS_ATTR_WO(pvdd);
 
+#if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
+static ssize_t nfc_support_show(const struct class *class,
+		const struct class_attribute *attr, char *buf)
+#else
 static ssize_t nfc_support_show(struct class *class,
 		struct class_attribute *attr, char *buf)
+#endif
 {
 	NFC_LOG_INFO("\n");
 	return 0;
@@ -1341,7 +1357,11 @@ int sec_nfc_create_sysfs_node(void)
 	struct class *nfc_class;
 	int ret = 0;
 
+#if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
+	nfc_class = class_create("nfc_sec");
+#else
 	nfc_class = class_create(THIS_MODULE, "nfc_sec");
+#endif
 	if (IS_ERR(&nfc_class))
 		NFC_LOG_ERR("NFC: failed to create nfc class\n");
 	else {
@@ -1555,8 +1575,12 @@ static int __sec_nfc_remove(struct device *dev)
 #define SEC_NFC_INIT(driver)	i2c_add_driver(driver)
 #define SEC_NFC_EXIT(driver)	i2c_del_driver(driver)
 
+#if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
+static int sec_nfc_probe(struct i2c_client *client)
+#else
 static int sec_nfc_probe(struct i2c_client *client,
 		const struct i2c_device_id *id)
+#endif
 {
 	int ret = 0;
 

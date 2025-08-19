@@ -452,7 +452,10 @@ static void __dpp_enable(struct dpp_device *dpp)
 	dpp_reg_init(dpp->id, dpp->attr);
 
 	dpp->state = DPP_STATE_ON;
-	enable_irq(dpp->dma_irq);
+
+	if (!test_bit(DPP_ATTR_RCD, &dpp->attr))
+		enable_irq(dpp->dma_irq);
+
 	if ((dpp->dpp_irq >= 0) && test_bit(DPP_ATTR_DPP, &dpp->attr))
 		enable_irq(dpp->dpp_irq);
 
@@ -600,7 +603,7 @@ static int dpp_check_size(const struct dpp_device *dpp,
 	const struct dpu_fmt *fmt_info;
 	const struct dpp_restrict *res;
 	u32 mul = 1; /* factor to multiply alignment */
-	u32 src_w_max, src_h_max;
+	u32 src_w_max, src_h_max, src_w_min, src_h_min, src_rot_min;
 
 	fmt_info = dpu_find_fmt_info(config->format);
 
@@ -612,11 +615,17 @@ static int dpp_check_size(const struct dpp_device *dpp,
 	dst = &config->dst;
 
 	if (config->rot & DPP_ROT) {
+		src_rot_min = max(res->src_w.min, res->src_h.min);
 		src_w_max = res->src_w_rot_max;
 		src_h_max = res->src_h_rot_max;
+		src_w_min = src_rot_min;
+		src_h_min = src_rot_min;
+
 	} else {
 		src_w_max = res->src_w.max;
 		src_h_max = res->src_h.max;
+		src_w_min = res->src_w.min;
+		src_h_min = res->src_h.min;
 	}
 
 	/* check alignment */
@@ -641,8 +650,8 @@ static int dpp_check_size(const struct dpp_device *dpp,
 	}
 
 	/* check range */
-	if (!IN_RANGE(src->w, res->src_w.min * mul, src_w_max) ||
-			!IN_RANGE(src->h, res->src_h.min * mul, src_h_max) ||
+	if (!IN_RANGE(src->w, src_w_min * mul, src_w_max) ||
+			!IN_RANGE(src->h, src_h_min * mul, src_h_max) ||
 			!IN_RANGE(src->f_w, res->src_f_w.min * mul,
 						res->src_f_w.max) ||
 			!IN_RANGE(src->f_h, res->src_f_h.min,
@@ -1131,7 +1140,10 @@ static irqreturn_t dma_irq_handler(int irq, void *priv)
 		DPU_EVENT_LOG("DMA_ERR", decon->crtc, EVENT_FLAG_ERROR,	NULL);
 		dpp_err(dpp, "error irq occur(0x%x)\n", irqs);
 		__dpp_common_dump(fid, &dpp_f->regs);
-		__dpp_dump(dpp->id, &dpp->regs);
+		if (test_bit(DPP_ATTR_RCD, &dpp->attr))
+			rcd_dump(dpp);
+		else
+			__dpp_dump(dpp->id, &dpp->regs);
 		goto irq_end;
 	}
 
@@ -1238,15 +1250,17 @@ static int dpp_register_irqs(struct dpp_device *dpp)
 
 	pdev = to_platform_device(dev);
 
-	dpp->dma_irq = of_irq_get_byname(np, "dma");
-	dpp_debug(dpp, "dma irq no = %d\n", dpp->dma_irq);
-	ret = devm_request_irq(dev, dpp->dma_irq, dma_irq_handler, 0,
-			pdev->name, dpp);
-	if (ret) {
-		dpp_err(dpp, "failed to install DPU DMA irq\n");
-		return ret;
+	if (!test_bit(DPP_ATTR_RCD, &dpp->attr)) {
+		dpp->dma_irq = of_irq_get_byname(np, "dma");
+		dpp_debug(dpp, "dma irq no = %d\n", dpp->dma_irq);
+		ret = devm_request_irq(dev, dpp->dma_irq, dma_irq_handler, 0,
+				pdev->name, dpp);
+		if (ret) {
+			dpp_err(dpp, "failed to install DPU DMA irq\n");
+			return ret;
+		}
+		disable_irq(dpp->dma_irq);
 	}
-	disable_irq(dpp->dma_irq);
 
 	if (test_bit(DPP_ATTR_DPP, &dpp->attr)) {
 		dpp->dpp_irq = of_irq_get_byname(np, "dpp");

@@ -2540,7 +2540,7 @@ static void test_ioctl_slsi_twt_setup(struct kunit *test)
 	ndev_vif->iftype = NL80211_IFTYPE_STATION;
 	ndev_vif->sta.vif_status = SLSI_VIF_STATUS_CONNECTING;
 	KUNIT_EXPECT_EQ(test,
-			SLSI_TWT_WIFI_ERROR_NOT_AVAILABLE,
+			SLSI_WIFI_ERROR_NOT_AVAILABLE,
 			slsi_twt_setup(dev, cbuf("TWT_SETUP 0 0 0 0 0 0 0 0 0 0 0 0 0"), cbuf_size()));
 
 	ndev_vif->iftype = NL80211_IFTYPE_STATION;
@@ -2584,7 +2584,7 @@ static void test_ioctl_slsi_twt_setup(struct kunit *test)
 
 	ndev_vif->sta.twt_allowed = 0;
 	KUNIT_EXPECT_EQ(test,
-			SLSI_TWT_WIFI_ERROR_NOT_SUPPORTED,
+			SLSI_WIFI_ERROR_NOT_SUPPORTED,
 			slsi_twt_setup(dev,
 				       cbuf("TWT_SETUP 3 1 1 1 5000 9000 1 1 9001 1 5001 1 1"),
 				       cbuf_size()));
@@ -2616,7 +2616,7 @@ static void test_ioctl_slsi_twt_teardown(struct kunit *test)
 
 	ndev_vif->sta.twt_allowed = 0;
 	KUNIT_EXPECT_EQ(test,
-			SLSI_TWT_WIFI_ERROR_NOT_SUPPORTED,
+			SLSI_WIFI_ERROR_NOT_SUPPORTED,
 			slsi_twt_teardown(dev, cbuf("TWT_TEARDOWN 1 1"), cbuf_size()));
 
 	ndev_vif->sta.twt_allowed = 1;
@@ -2633,7 +2633,13 @@ static void test_ioctl_slsi_twt_get_status(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, -EIO, slsi_twt_get_status(dev, cbuf("GET_TWT_STATUS "), cbuf_size()));
 	KUNIT_EXPECT_EQ(test, -EIO, slsi_twt_get_status(dev, cbuf("GET_TWT_STATUS -"), cbuf_size()));
 	KUNIT_EXPECT_EQ(test,
-			SLSI_TWT_WIFI_ERROR_NOT_SUPPORTED,
+			SLSI_WIFI_ERROR_INVALID_ARGUMENT,
+			slsi_twt_get_status(dev, cbuf("GET_TWT_STATUS "), cbuf_size()));
+	KUNIT_EXPECT_EQ(test,
+			SLSI_WIFI_ERROR_INVALID_ARGUMENT,
+			slsi_twt_get_status(dev, cbuf("GET_TWT_STATUS -"), cbuf_size()));
+	KUNIT_EXPECT_LE(test,
+			8,
 			slsi_twt_get_status(dev, cbuf("GET_TWT_STATUS 1"), cbuf_size()));
 
 	ndev_vif->sta.twt_allowed = 0;
@@ -2702,16 +2708,16 @@ static void test_ioctl_slsi_sched_pm_setup(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 0, slsi_sched_pm_setup(dev, cbuf("SCHED_PM_SETUP 9000 17000 1 - - - -"), cbuf_size()));
 	KUNIT_EXPECT_EQ(test, 0, slsi_sched_pm_setup(dev, cbuf("SCHED_PM_SETUP 9000 17000 1 -1 -1 -1 1"), cbuf_size()));
 	KUNIT_EXPECT_EQ(test,
-			SLSI_SCHED_PM_INVALID_ARGUMENT,
+			SLSI_WIFI_ERROR_INVALID_ARGUMENT,
 			slsi_sched_pm_setup(dev, cbuf("SCHED_PM_SETUP 9000 17000 1 -1 2 2 2"), cbuf_size()));
 	KUNIT_EXPECT_EQ(test,
-			SLSI_SCHED_PM_INVALID_ARGUMENT,
+			SLSI_WIFI_ERROR_INVALID_ARGUMENT,
 			slsi_sched_pm_setup(dev, cbuf("SCHED_PM_SETUP 9000 17000 1 -1 3 3 3"), cbuf_size()));
 	KUNIT_EXPECT_EQ(test,
-			SLSI_SCHED_PM_NOT_SUPPORTED_REQUEST,
+			SLSI_WIFI_ERROR_NOT_SUPPORTED,
 			slsi_sched_pm_setup(dev, cbuf("SCHED_PM_SETUP 9000 17000 1 -1 4 4 4"), cbuf_size()));
 	KUNIT_EXPECT_EQ(test,
-			SLSI_SCHED_PM_TEMPORARILY_BUSY,
+			SLSI_WIFI_ERROR_BUSY,
 			slsi_sched_pm_setup(dev, cbuf("SCHED_PM_SETUP 9000 17000 1 -1 5 5 5"), cbuf_size()));
 }
 

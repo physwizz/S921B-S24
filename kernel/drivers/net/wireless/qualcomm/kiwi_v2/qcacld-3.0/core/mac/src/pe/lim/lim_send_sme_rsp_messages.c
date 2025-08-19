@@ -59,6 +59,8 @@
 #include <../../core/src/wlan_cm_vdev_api.h>
 #include <wlan_mlo_mgr_sta.h>
 #include <spatial_reuse_api.h>
+#include <wlan_mlo_mgr_cmn.h>
+#include "wlan_mlme_public_struct.h"
 
 void lim_send_sme_rsp(struct mac_context *mac_ctx, uint16_t msg_type,
 		      tSirResultCodes result_code, uint8_t vdev_id)
@@ -465,6 +467,7 @@ lim_cm_fill_join_rsp_from_connect_req(struct cm_vdev_join_req *req,
 	connect_rsp->ssid = req->entry->ssid;
 	connect_rsp->is_wps_connection = req->is_wps_connection;
 	connect_rsp->is_osen_connection = req->is_osen_connection;
+	connect_rsp->status_code = req->req_fail_status_code;
 	wlan_cm_connect_resp_fill_mld_addr_from_vdev_id(rsp->psoc, req->vdev_id,
 							req->entry,
 							connect_rsp);
@@ -1912,6 +1915,12 @@ static void update_csa_link_info(struct wlan_objmgr_vdev *vdev,
 		 vdev_id, link_id);
 }
 
+static bool
+lim_mlo_is_csa_allow(struct wlan_objmgr_vdev *vdev, uint16_t csa_freq)
+{
+	return wlan_mlo_is_csa_allow(vdev, csa_freq);
+}
+
 #else
 static void lim_set_csa_chan_param_11be(struct pe_session *session,
 					struct csa_offload_params *csa_param,
@@ -1940,6 +1949,11 @@ static void update_csa_link_info(struct wlan_objmgr_vdev *vdev,
 {
 }
 
+static bool
+lim_mlo_is_csa_allow(struct wlan_objmgr_vdev *vdev, uint16_t csa_freq)
+{
+	return true;
+}
 #endif
 
 /**
@@ -1965,8 +1979,78 @@ static bool lim_sta_follow_csa(struct pe_session *session_entry,
 	return true;
 }
 
+/**
+ * lim_get_max_channel_width_from_dot11mode()- This API will get maximum
+ * channel width allowed for given dot11mode.
+ * @dot11mode: dot11 mode
+ *
+ * Return: channel width
+ */
+static enum phy_ch_width
+lim_get_max_channel_width_from_dot11mode(enum mlme_dot11_mode dot11mode)
+{
+	switch (dot11mode) {
+	case MLME_DOT11_MODE_ABG:
+	case MLME_DOT11_MODE_11A:
+	case MLME_DOT11_MODE_11B:
+	case MLME_DOT11_MODE_11G:
+	case MLME_DOT11_MODE_11G_ONLY:
+		return CH_WIDTH_20MHZ;
+	case MLME_DOT11_MODE_11N:
+	case MLME_DOT11_MODE_11N_ONLY:
+		return CH_WIDTH_40MHZ;
+	case MLME_DOT11_MODE_11AC:
+	case MLME_DOT11_MODE_11AC_ONLY:
+	case MLME_DOT11_MODE_11AX:
+	case MLME_DOT11_MODE_11AX_ONLY:
+		return CH_WIDTH_160MHZ;
+	case MLME_DOT11_MODE_11BE:
+	case MLME_DOT11_MODE_11BE_ONLY:
+	case MLME_DOT11_MODE_ALL:
+		return CH_WIDTH_320MHZ;
+	default:
+		pe_err("Invalid dot11mode %d", dot11mode);
+		break;
+	}
+
+	return CH_WIDTH_INVALID;
+}
+
+/**
+ * lim_csa_update_channel_width_for_dot11mode()- This API will get maximum
+ * channel width allowed for given dot11mode and update CSA channel width.
+ * @session_entry: Session pointer
+ * @csa_params: Pointer to CSA params
+ *
+ * Return: None
+ */
+static void lim_csa_update_channel_width_for_dot11mode(
+					struct pe_session *session_entry,
+					struct csa_offload_params *csa_params)
+{
+	enum phy_ch_width max_ch_width;
+
+	max_ch_width = lim_get_max_channel_width_from_dot11mode(
+						session_entry->dot11mode);
+
+	/* If AP wants to set in 80 + 80 BW, do not change to 160 MHz */
+	if (csa_params->new_ch_width == CH_WIDTH_80P80MHZ &&
+	    max_ch_width == CH_WIDTH_160MHZ)
+		return;
+
+	if (csa_params->new_ch_width != CH_WIDTH_5MHZ &&
+	    csa_params->new_ch_width != CH_WIDTH_10MHZ &&
+	    csa_params->new_ch_width > max_ch_width) {
+		pe_debug("Downgrade bw from %d to max supported bw %d for dot11mode %d ",
+			 csa_params->new_ch_width, max_ch_width,
+			 session_entry->dot11mode);
+		csa_params->new_ch_width = max_ch_width;
+	}
+}
+
 void lim_handle_sta_csa_param(struct mac_context *mac_ctx,
-			      struct csa_offload_params *csa_params)
+			      struct csa_offload_params *csa_params,
+			      bool send_status)
 {
 	struct pe_session *session_entry;
 	struct mlme_legacy_priv *mlme_priv;
@@ -1992,22 +2076,24 @@ void lim_handle_sta_csa_param(struct mac_context *mac_ctx,
 	if (!session_entry) {
 		pe_err("Session does not exists for "QDF_MAC_ADDR_FMT,
 		       QDF_MAC_ADDR_REF(csa_params->bssid.bytes));
-		goto err;
+		goto free;
 	}
 	sta_ds = dph_lookup_hash_entry(mac_ctx, session_entry->bssId, &aid,
 		&session_entry->dph.dphHashTable);
 
 	if (!sta_ds) {
 		pe_err("sta_ds does not exist");
-		goto err;
+		goto send_event;
 	}
 
 	if (!LIM_IS_STA_ROLE(session_entry)) {
 		pe_debug("Invalid role to handle CSA");
-		goto err;
+		goto send_event;
 	}
 
 	lim_ch_switch = &session_entry->gLimChannelSwitch;
+
+	lim_csa_update_channel_width_for_dot11mode(session_entry, csa_params);
 	ch_params.ch_width = csa_params->new_ch_width;
 
 	if (IS_DOT11_MODE_EHT(session_entry->dot11mode))
@@ -2023,7 +2109,7 @@ void lim_handle_sta_csa_param(struct mac_context *mac_ctx,
 
 	if (!lim_sta_follow_csa(session_entry, csa_params,
 				lim_ch_switch, ch_params))
-		goto err;
+		goto send_event;
 	else
 		qdf_mem_zero(&ch_params, sizeof(struct ch_params));
 
@@ -2031,7 +2117,13 @@ void lim_handle_sta_csa_param(struct mac_context *mac_ctx,
 					session_entry->curr_op_freq,
 					csa_params)) {
 		pe_debug("Channel switch is not allowed");
-		goto err;
+		goto send_event;
+	}
+
+	if (!lim_mlo_is_csa_allow(session_entry->vdev,
+				  csa_params->csa_chan_freq)) {
+		pe_debug("Channel switch for MLO vdev is not allowed");
+		goto send_event;
 	}
 	/*
 	 * on receiving channel switch announcement from AP, delete all
@@ -2281,7 +2373,7 @@ void lim_handle_sta_csa_param(struct mac_context *mac_ctx,
 
 	if (!lim_sta_follow_csa(session_entry, csa_params,
 				lim_ch_switch, ch_params))
-		goto err;
+		goto send_event;
 
 	if (wlan_vdev_mlme_is_mlo_vdev(session_entry->vdev)) {
 		link_id = wlan_vdev_get_link_id(session_entry->vdev);
@@ -2311,7 +2403,7 @@ void lim_handle_sta_csa_param(struct mac_context *mac_ctx,
 
 	if (mlo_is_any_link_disconnecting(session_entry->vdev)) {
 		pe_info_rl("Ignore CSA, vdev is in not in conncted state");
-		goto err;
+		goto send_event;
 	}
 
 	lim_prepare_for11h_channel_switch(mac_ctx, session_entry);
@@ -2323,8 +2415,12 @@ void lim_handle_sta_csa_param(struct mac_context *mac_ctx,
 			WLAN_PE_DIAG_SWITCH_CHL_IND_EVENT, session_entry,
 			QDF_STATUS_SUCCESS, QDF_STATUS_SUCCESS);
 #endif
-
-err:
+free:
+	qdf_mem_free(csa_params);
+	return;
+send_event:
+	if (send_status)
+		wlan_mlme_send_csa_event_status_ind(session_entry->vdev, 0);
 	qdf_mem_free(csa_params);
 }
 
@@ -2356,7 +2452,7 @@ void lim_handle_csa_offload_msg(struct mac_context *mac_ctx,
 		qdf_mem_free(csa_params);
 		return;
 	}
-	lim_handle_sta_csa_param(mac_ctx, csa_params);
+	lim_handle_sta_csa_param(mac_ctx, csa_params, true);
 }
 
 #ifdef WLAN_FEATURE_11BE_MLO
@@ -2380,7 +2476,7 @@ void lim_handle_mlo_sta_csa_param(struct wlan_objmgr_vdev *vdev,
 
 	qdf_mem_copy(tmp_csa_params, csa_params, sizeof(*tmp_csa_params));
 
-	lim_handle_sta_csa_param(mac, tmp_csa_params);
+	lim_handle_sta_csa_param(mac, tmp_csa_params, false);
 }
 #endif
 

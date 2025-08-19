@@ -37,6 +37,8 @@ obj-$(CONFIG_CAMERA_CIS_2L4_OBJ) += is-cis-2l4.o
 obj-$(CONFIG_CAMERA_CIS_2LA_OBJ) += is-cis-2la.o
 obj-$(CONFIG_CAMERA_CIS_2LD_OBJ) += is-cis-2ld.o
 obj-$(CONFIG_CAMERA_CIS_GN3_OBJ) += is-cis-gn3.o
+obj-$(CONFIG_CAMERA_CIS_GN3_FLIP_OBJ) += is-cis-gn3-flip.o
+obj-$(CONFIG_CAMERA_CIS_OV08A10_OBJ) += is-cis-ov08a10.o
 obj-$(CONFIG_CAMERA_CIS_HM1_OBJ) += is-cis-hm1.o
 obj-$(CONFIG_CAMERA_CIS_HM3_OBJ) += is-cis-hm3.o
 obj-$(CONFIG_CAMERA_CIS_HP2_OBJ) += is-cis-hp2.o
@@ -74,6 +76,7 @@ obj-$(CONFIG_CAMERA_CIS_3M5_FOLD_OBJ) += is-cis-3m5-fold.o
 obj-$(CONFIG_CAMERA_CIS_JN1_OBJ) += is-cis-jn1.o
 obj-$(CONFIG_CAMERA_CIS_GD2_OBJ) += is-cis-gd2.o
 obj-$(CONFIG_CAMERA_CIS_3LU_OBJ) += is-cis-3lu.o
+obj-$(CONFIG_CAMERA_CIS_3LU_DPHY_OBJ) += is-cis-3lu-dphy.o
 obj-$(CONFIG_CAMERA_CIS_IMX564_OBJ) += is-cis-imx564.o
 obj-$(CONFIG_CAMERA_CIS_IMX766_OBJ) += is-cis-imx766.o
 

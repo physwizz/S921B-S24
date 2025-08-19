@@ -6,14 +6,31 @@
 #include <scsc/scsc_logring.h>
 #include <scsc/scsc_log_collector.h>
 
+#define scsc_log_collector_write(args...)	(0)
+
 extern int pmu_init_result;
 extern int fw_init_result;
 extern int allocator_init_result;
 extern int res_reset_result;
 extern int res_init_result;
 extern int wait_for_result;
+extern (*fp_mxman_minimoredump_collect_wpan)(struct scsc_log_collector_client *collect_client, size_t size);
+extern (*fp_sysfs_show_memdump)(struct kobject *kobj, struct kobj_attribute *attr, char *buf);
+extern (*fp_sysfs_store_memdump)(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count);
 
 u32 whdr_get_fw_rt_len(struct fwhdr_if *interface);
+
+static u32 kunit_get_fw_len(struct fwhdr_if *interface)
+{
+	(void*)interface;
+	return 0;
+}
+
+static u32 kunit_get_fw_offset(struct fwhdr_if *interface)
+{
+	(void*)interface;
+	return 0;
+}
 
 static void test_chip_version(struct kunit *test)
 {
@@ -184,7 +201,7 @@ static void test_mxman_open(struct kunit *test)
 	fw_if = test_alloc_fwif(test);
 	mx->fw_wlan = fw_if;
 
-	// mxman_open(mx, sub, data, data_sz);
+	mxman_open(mx, sub, data, data_sz);
 
 	// mxman_stop(mx, sub);
 
@@ -282,9 +299,15 @@ static void test_mxman_logs(struct kunit *test)
 	fw_if = test_alloc_fwif(test);
 	mx->fw_wlan = fw_if;
 	fw_if->get_fw_rt_len = whdr_get_fw_rt_len;
+	fw_if->get_fw_len = kunit_get_fw_len;
+	fw_if->get_fw_offset = kunit_get_fw_offset;
 	collect_client.prv = mx;
 
 	kunit_mxman_minimoredump_collect(&collect_client, 0);
+	fp_mxman_minimoredump_collect_wpan(&collect_client, 0);
+	mx->fw_wpan = fw_if;
+
+	fp_mxman_minimoredump_collect_wpan(&collect_client, 0);
 
 	KUNIT_EXPECT_EQ(test, 1, 1);
 }
@@ -371,6 +394,57 @@ static void test_mxman_fail_level8(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 1, 1);
 }
 
+static void test_mxman_memdump(struct kunit *test)
+{
+	struct mxman *mx;
+	struct kobject *kobj;
+	struct kobj_attribute *attr;
+	char * buf = kzalloc(10, GFP_KERNEL);
+	char * buf2 = "AAAAA";
+	size_t count = 0;
+	mx = test_alloc_mxman(test);
+
+	fp_sysfs_store_memdump(kobj, attr, buf2, count);
+
+	fp_sysfs_show_memdump(kobj, attr, buf);
+
+	// mxman_create_sysfs_memdump();
+	// mxman_destroy_sysfs_memdump();
+
+	mxman_wifi_kobject_ref_get();
+	mxman_wifi_kobject_ref_put();
+
+	KUNIT_EXPECT_EQ(test, 1, 1);
+}
+
+static void test_mxman_status(struct kunit *test)
+{
+	struct mxman *mx;
+	const char *val = "12345";
+	const char *val2 = "18";
+	const char *val3 = "17";
+	const struct kernel_param *kp;
+
+	mx = test_alloc_mxman(test);
+
+	mxman_is_failed();
+	mxman_is_frozen();
+	kunit_mxman_set_reset_failed();
+	kunit_fw_runtime_flags_setter(val, kp);
+	kunit_fw_runtime_flags_setter_wpan(val, kp);
+	kunit_syserr_setter(val, kp);
+	kunit_syserr_setter(val2, kp);
+	kunit_syserr_setter(val3, kp);
+	kunit_mxman_in_started_state_subsystem(mx, SCSC_SUBSYSTEM_WLAN);
+	kunit_mxman_in_started_state_subsystem(mx, SCSC_SUBSYSTEM_WPAN);
+
+	mx->mxman_state = MXMAN_STATE_STARTED_WLAN_WPAN;
+	mxman_subsys_active(mx, SCSC_SUBSYSTEM_WLAN_WPAN);
+	mxman_users_active(mx);
+
+	KUNIT_EXPECT_EQ(test, 1, 1);
+}
+
 static int test_init(struct kunit *test)
 {
 	return 0;
@@ -391,12 +465,13 @@ static struct kunit_case test_cases[] = {
 	KUNIT_CASE(test_mxman_open),
 	KUNIT_CASE(test_mxman_close),
 	KUNIT_CASE(test_mxman_failure_work),
-
 	KUNIT_CASE(test_mxman_logs),
 	KUNIT_CASE(test_failure_wq_init),
 	KUNIT_CASE(test_syserr_recovery_wq_init),
 	KUNIT_CASE(test_mxman_fail),
 	KUNIT_CASE(test_mxman_fail_level8),
+	KUNIT_CASE(test_mxman_memdump),
+	KUNIT_CASE(test_mxman_status),
 	{}
 };
 

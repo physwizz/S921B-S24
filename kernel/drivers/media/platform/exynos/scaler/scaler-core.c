@@ -3882,7 +3882,7 @@ static int sc_release(struct file *file)
 
 	destroy_intermediate_frame_all(ctx);
 
-	if (ctx->pm_qos_lv != -1)
+	if (work_busy(&ctx->qos_work.work))
 		flush_delayed_work(&ctx->qos_work);
 
 	if (!IS_ERR(sc->aclk))

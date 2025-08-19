@@ -703,10 +703,11 @@ void amdgpu_fence_driver_fini(struct amdgpu_device *adev)
  * @adev: amdgpu device pointer
  *
  * Suspend the fence driver for all possible rings (all asics).
+ * Returns 0 if the all fences have passed, error for all other cases.
  */
-void amdgpu_fence_driver_suspend(struct amdgpu_device *adev)
+int amdgpu_fence_driver_suspend(struct amdgpu_device *adev)
 {
-	int i, r;
+	int i, r = 0;
 
 	for (i = 0; i < AMDGPU_MAX_RINGS; i++) {
 		struct amdgpu_ring *ring = adev->rings[i];
@@ -715,16 +716,26 @@ void amdgpu_fence_driver_suspend(struct amdgpu_device *adev)
 
 		/* wait for gpu to finish processing current batch */
 		r = amdgpu_fence_wait_empty(ring);
-		if (r) {
-			/* delay GPU reset to resume */
-			amdgpu_fence_driver_force_completion(ring);
-		}
+		if (r)
+			break;
+	}
+
+	for (i = 0; i < AMDGPU_MAX_RINGS; i++) {
+		struct amdgpu_ring *ring = adev->rings[i];
+		if (!ring || !ring->fence_drv.initialized)
+			continue;
 
 		/* disable the interrupt */
 		if (ring->fence_drv.irq_src)
 			amdgpu_irq_put(adev, ring->fence_drv.irq_src,
 				       ring->fence_drv.irq_type);
+
+		/* delay GPU reset to resume */
+		if (r)
+			amdgpu_fence_driver_force_completion(ring);
 	}
+
+	return r;
 }
 
 /**

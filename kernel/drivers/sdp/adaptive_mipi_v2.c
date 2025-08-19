@@ -182,8 +182,18 @@ static int sdp_adaptive_mipi_v2_ril_notifier_callback(struct notifier_block *nb,
 	}
 
 	cp_msg = (struct cp_info *)ril_msg->data;
+
+	if (ril_msg->data_len < sizeof(cp_msg->cell_count)) {
+		return NOTIFY_BAD;
+	}
+
 	if (cp_msg->cell_count > MAX_BAND || cp_msg->cell_count <= 0) {
 		sdp_err(info->ctx, "invalid cell_count (%d)\n", cp_msg->cell_count);
+		return NOTIFY_BAD;
+	}
+
+	if (ril_msg->data_len < sizeof(cp_msg->cell_count) + cp_msg->cell_count * sizeof(*cp_msg->infos)) {
+		sdp_err(info->ctx, "invalid data_len (%d) - cell_count(%d)\n", ril_msg->data_len, cp_msg->cell_count);
 		return NOTIFY_BAD;
 	}
 

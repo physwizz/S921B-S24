@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Copyright (c) 2013-2022 TRUSTONIC LIMITED
+ * Copyright (c) 2013-2023 TRUSTONIC LIMITED
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -95,8 +95,6 @@ enum cmd_id {
 	MC_MCP_CMD_UNMAP		= 0x05,
 	/** Get MobiCore version information */
 	MC_MCP_CMD_GET_MOBICORE_VERSION	= 0x09,
-	/** Close MCP and unmap MCI */
-	MC_MCP_CMD_CLOSE_MCP		= 0x0A,
 	/** Load token for device attestation */
 	MC_MCP_CMD_LOAD_TOKEN		= 0x0B
 };

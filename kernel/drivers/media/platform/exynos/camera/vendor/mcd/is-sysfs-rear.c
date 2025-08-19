@@ -371,6 +371,26 @@ static ssize_t rear2_dualcal_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(rear2_dualcal);
 
+static ssize_t rear2_dualcal_size_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	int copy_size = 0;
+
+	copy_size = is_sysfs_get_dualcal_param(dev, &buf, SENSOR_POSITION_REAR3);
+
+	return sprintf(buf, "%d", copy_size);
+}
+static DEVICE_ATTR_RO(rear2_dualcal_size);
+
+static ssize_t rear2_fullsize_cal_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	int fullsize_cal = 1;
+
+	return sprintf(buf, "%d", fullsize_cal);
+}
+static DEVICE_ATTR_RO(rear2_fullsize_cal);
+
 static ssize_t rear2_eeprom_retry_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -1400,6 +1420,22 @@ static ssize_t supported_cameraIds_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(supported_cameraIds);
 
+#if defined(USE_CAMERA_MEMBERS_SELFTEST)
+static ssize_t supported_cameraIds_ext_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	char *end = "\n";
+	struct is_core *core = is_get_is_core();
+	struct is_vendor_private *vendor_priv = core->vendor.private_data;
+
+	strncat(buf, vendor_priv->supported_camera_ids_ext, strlen(vendor_priv->supported_camera_ids_ext));
+	strncat(buf, end, strlen(end));
+
+	return strlen(buf);
+}
+static DEVICE_ATTR_RO(supported_cameraIds_ext);
+#endif
+
 static struct attribute *is_sysfs_attr_entries_rear[] = {
 	&dev_attr_rear_af_hall.attr,
 	&dev_attr_rear_afcal.attr,
@@ -1420,6 +1456,9 @@ static struct attribute *is_sysfs_attr_entries_rear[] = {
 	&dev_attr_rear_sensorid_exif.attr,
 	&dev_attr_ssrm_camera_info.attr,
 	&dev_attr_supported_cameraIds.attr,
+#if defined(USE_CAMERA_MEMBERS_SELFTEST)
+	&dev_attr_supported_cameraIds_ext.attr,
+#endif
 	NULL,
 };
 
@@ -1513,7 +1552,7 @@ int is_create_rear_sysfs(struct class *camera_class)
 	if (IS_ERR(camera_rear_dev))
 		pr_err("failed to create rear device!\n");
 
-	ret = devm_device_add_group(camera_rear_dev, &is_sysfs_attr_group_rear);
+	ret = sysfs_create_group(&camera_rear_dev->kobj, &is_sysfs_attr_group_rear);
 	if (ret < 0) {
 		pr_err("failed to add device group %s\n", is_sysfs_attr_group_rear.name);
 		return ret;
@@ -1536,7 +1575,7 @@ int is_create_rear_sysfs(struct class *camera_class)
 #endif
 
 	if (sysfs_config->rear2) {
-		ret = devm_device_add_group(camera_rear_dev, &is_sysfs_attr_group_rear2);
+		ret = sysfs_create_group(&camera_rear_dev->kobj, &is_sysfs_attr_group_rear2);
 		if (ret < 0) {
 			pr_err("failed to add device group %s\n", is_sysfs_attr_group_rear2.name);
 			return ret;
@@ -1550,6 +1589,12 @@ int is_create_rear_sysfs(struct class *camera_class)
 			ret = device_create_file(camera_rear_dev, &dev_attr_rear2_dualcal);
 			if (ret != 0)
 				pr_err("failed to create device file %s\n", dev_attr_rear2_dualcal.attr.name);
+			ret = device_create_file(camera_rear_dev, &dev_attr_rear2_dualcal_size);
+			if (ret != 0)
+				pr_err("failed to create device file %s\n", dev_attr_rear2_dualcal_size.attr.name);
+			ret = device_create_file(camera_rear_dev, &dev_attr_rear2_fullsize_cal);
+			if (ret != 0)
+				pr_err("failed to create device file %s\n", dev_attr_rear2_fullsize_cal.attr.name);
 		}
 
 		ret = device_create_file(camera_rear_dev, &dev_attr_rear2_eeprom_retry);
@@ -1576,7 +1621,7 @@ int is_create_rear_sysfs(struct class *camera_class)
 	}
 
 	if (sysfs_config->rear3) {
-		ret = devm_device_add_group(camera_rear_dev, &is_sysfs_attr_group_rear3);
+		ret = sysfs_create_group(&camera_rear_dev->kobj, &is_sysfs_attr_group_rear3);
 		if (ret < 0) {
 			pr_err("failed to add device group %s\n", is_sysfs_attr_group_rear3.name);
 			return ret;
@@ -1631,7 +1676,7 @@ int is_create_rear_sysfs(struct class *camera_class)
 	}
 
 	if (sysfs_config->rear4) {
-		ret = devm_device_add_group(camera_rear_dev, &is_sysfs_attr_group_rear4);
+		ret = sysfs_create_group(&camera_rear_dev->kobj, &is_sysfs_attr_group_rear4);
 		if (ret < 0) {
 			pr_err("failed to add device group %s\n", is_sysfs_attr_group_rear4.name);
 			return ret;
@@ -1667,7 +1712,7 @@ int is_create_rear_sysfs(struct class *camera_class)
 	}
 
 	if (sysfs_config->rear_tof) {
-		ret = devm_device_add_group(camera_rear_dev, &is_sysfs_attr_group_rear_tof);
+		ret = sysfs_create_group(&camera_rear_dev->kobj, &is_sysfs_attr_group_rear_tof);
 		if (ret < 0) {
 			pr_err("failed to add device group %s\n", is_sysfs_attr_group_rear_tof.name);
 			return ret;
@@ -1743,15 +1788,15 @@ void is_destroy_rear_sysfs(struct class *camera_class)
 {
 	struct is_sysfs_config *sysfs_config = is_vendor_get_sysfs_config();
 
-	devm_device_remove_group(camera_rear_dev, &is_sysfs_attr_group_rear);
+	sysfs_remove_group(&camera_rear_dev->kobj, &is_sysfs_attr_group_rear);
 	if (sysfs_config->rear2)
-		devm_device_remove_group(camera_rear_dev, &is_sysfs_attr_group_rear2);
+		sysfs_remove_group(&camera_rear_dev->kobj, &is_sysfs_attr_group_rear2);
 	if (sysfs_config->rear3)
-		devm_device_remove_group(camera_rear_dev, &is_sysfs_attr_group_rear3);
+		sysfs_remove_group(&camera_rear_dev->kobj, &is_sysfs_attr_group_rear3);
 	if (sysfs_config->rear4)
-		devm_device_remove_group(camera_rear_dev, &is_sysfs_attr_group_rear4);
+		sysfs_remove_group(&camera_rear_dev->kobj, &is_sysfs_attr_group_rear4);
 	if (sysfs_config->rear_tof)
-		devm_device_remove_group(camera_rear_dev, &is_sysfs_attr_group_rear_tof);
+		sysfs_remove_group(&camera_rear_dev->kobj, &is_sysfs_attr_group_rear_tof);
 
 	if (camera_class && camera_rear_dev)
 		device_destroy(camera_class, camera_rear_dev->devt);

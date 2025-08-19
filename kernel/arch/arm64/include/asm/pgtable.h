@@ -826,6 +826,12 @@ static inline pte_t pte_modify(pte_t pte, pgprot_t newprot)
 	if (pte_hw_dirty(pte))
 		pte = pte_mkdirty(pte);
 	pte_val(pte) = (pte_val(pte) & ~mask) | (pgprot_val(newprot) & mask);
+	/*
+	 * If we end up clearing hw dirtiness for a sw-dirty PTE, set hardware
+	 * dirtiness again.
+	 */
+	if (pte_sw_dirty(pte))
+		pte = pte_mkdirty(pte);
 	return pte;
 }
 
@@ -940,12 +946,12 @@ static inline pte_t ptep_get_and_clear(struct mm_struct *mm,
 	pte_t pte;
 
 	arm64_update_cacheable_aliases(ptep, __pte(0));
+	READ_ONCE(*ptep);
 	pte = __pte(xchg_relaxed(&pte_val(*ptep), 0));
 
 	page_table_check_pte_clear(mm, address, pte);
 
 	return pte;
-
 }
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE

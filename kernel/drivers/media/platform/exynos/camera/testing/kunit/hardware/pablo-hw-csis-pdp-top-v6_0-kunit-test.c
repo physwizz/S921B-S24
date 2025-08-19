@@ -178,14 +178,20 @@ static void pablo_hw_csi_pdp_top_set_ibuf_kunit_test(struct kunit *test)
 	}
 
 	/* potf and user_emb set test */
-	sensor_cfg.input[0].type = VC_EMBEDDED;
-	sensor_cfg.input[0].extformat = HW_FORMAT_RAW10_POTF;
+	sensor_cfg.input[0].data = DATA_EMB;
+	sensor_cfg.input[0].extformat = HW_FORMAT_EMBEDDED_8BIT_POTF;
+	sensor_cfg.input[0].hwformat = HW_FORMAT_EMBEDDED_8BIT;
 	csis_pdp_top_set_ibuf(test_addr, &otf_info, 0, &sensor_cfg, 0);
 
 	ret = is_hw_get_field(test_addr,
 		&csis_top_regs[CSIS_R_IBUF0_INPUT_CONFIG_VC0_1],
 		&csis_top_fields[CSIS_F_IBUF_USER_EMB_VC0]);
 	KUNIT_EXPECT_EQ(test, 1, ret);
+
+	ret = is_hw_get_field(test_addr,
+		&csis_top_regs[CSIS_R_IBUF0_INPUT_CONFIG_VC0_1],
+		&csis_top_fields[CSIS_F_IBUF_BITMODE_VC0]);
+	KUNIT_EXPECT_EQ(test, 0, ret);
 
 	ret = is_hw_get_field(test_addr,
 		&csis_top_regs[CSIS_R_IBUF0_INPUT_CONFIG_VC0_1],

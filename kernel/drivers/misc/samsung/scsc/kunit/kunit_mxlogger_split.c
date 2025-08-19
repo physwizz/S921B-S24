@@ -3,6 +3,7 @@
 #define miframman_alloc(ram, nbytes, align, tag)	kunit_miframman_alloc(ram, nbytes, align, tag)
 #define mxmgmt_transport_send(args...)			((void *)0)
 
+#define MEM_LAYOUT_CHECK() (0)
 #define SCALE_DOWN			0.1
 #define MX_DRAM_SIZE_SECTION_LOG	(8 * 1024 * 1024) * SCALE_DOWN
 #define MX_DRAM_SIZE_SECTION_WLAN	(6 * 1024 * 1024) * SCALE_DOWN

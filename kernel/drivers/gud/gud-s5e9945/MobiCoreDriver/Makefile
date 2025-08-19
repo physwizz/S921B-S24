@@ -14,7 +14,7 @@
 # Makefile for the Kinibi core driver
 #
 
-GUD_ROOT_FOLDER := drivers/gud/gud-s5e9945
+GUD_ROOT_FOLDER := ${ROOT_DIR}/$(EXYNOS_SOC_DIR)/drivers/gud/gud-s5e9945
 
 # add our modules to kernel.
 obj-$(CONFIG_TRUSTONIC_TEE) += mcDrvModule.o

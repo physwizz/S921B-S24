@@ -296,10 +296,14 @@ static int __mfc_dec_ctx_ready_set_bit(struct mfc_core_ctx *core_ctx,
 		(ctx->wait_state == WAIT_NONE && dst_buf_cnt))
 		is_ready = 1;
 
-	/* Resolution change */
+	/* Resolution change
+	 * In the case of 2core DRC, state could be SWITCH_TO_SINGLE.
+	 * After subcore deinit, state will be changed to SINGLE.
+	 */
 	else if ((core_ctx->state == MFCINST_RES_CHANGE_INIT ||
-		core_ctx->state == MFCINST_RES_CHANGE_FLUSH) && dst_buf_cnt &&
-		IS_SINGLE_MODE(ctx))
+		core_ctx->state == MFCINST_RES_CHANGE_FLUSH ||
+		core_ctx->state == MFCINST_RES_CHANGE_FLUSH_FINISHED) && dst_buf_cnt &&
+		(IS_SINGLE_MODE(ctx) || ctx->op_mode == MFC_OP_SWITCH_TO_SINGLE))
 		is_ready = 1;
 
 	else if (core_ctx->state == MFCINST_RES_CHANGE_END && src_buf_cnt)
@@ -396,6 +400,12 @@ int mfc_ctx_ready_set_bit_raw(struct mfc_core_ctx *core_ctx, unsigned long *bits
 	else if (ctx->type == MFCINST_ENCODER)
 		is_ready = __mfc_enc_ctx_ready_set_bit(core_ctx, src_buf_queue_greater_than_0,
 				dst_buf_queue_greater_than_0);
+ 
+
+	if (core->id == MFC_CORE_SUB && ctx->op_mode == MFC_OP_TWO_MODE1) {
+		is_ready = 0;
+		mfc_ctx_err("MFC-1 can't be used as a main core of MODE1\n");
+	}
 
 	if ((is_ready == 1) && (set == true)) {
 		/* if the ctx is ready and request set_bit, set the work_bit */

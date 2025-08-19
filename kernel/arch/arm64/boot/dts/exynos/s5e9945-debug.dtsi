@@ -24,7 +24,8 @@
 				"CHUB", "VTS", "HSI0", "G3D", "MFC", "MFD", "UFD", "ICPU";
 		memory-region = <&header>, <&log_kernel>, <&log_s2d>,
 				<&log_first>, <&log_arrdumprst>, <&log_platform>,
-				<&log_kevents>, <&log_backtrace>, <&log_kevents_small>;
+				<&log_kevents>, <&log_backtrace>, <&log_kevents_small>,
+				<&wdtmsg>;
 		built-in-wdt {
 			compatible = "samsung,s3c2410-dss-builtin-wdt";
 			wdt_base = <0x10040000>;
@@ -107,7 +108,7 @@
 		samsung,mem-to-file-allow = <1>;
 	};
 
-	exynos-ecc-handler {
+	ecc_handler: exynos-ecc-handler {
 		compatible = "samsung,exynos-ecc-handler";
 		interrupts = <GIC_SPI INTREQ__CPUCL0_CLUSTERERRIRQ IRQ_TYPE_LEVEL_HIGH>,
 			<GIC_SPI INTREQ__CPUCL0_COMPLEXERRIRQ_0 IRQ_TYPE_LEVEL_HIGH>,
@@ -170,7 +171,7 @@
 				<0x1>, <0x2>, <0x4>, <0x8>,
 				<0x10>, <0x20>, <0x40>, <0x80>, <0x100>, <0x200>,
 				<0x3ff>;
-		skip-panic = <0x0>, <0x0>, <0x0>,
+		policy = <0x0>, <0x0>, <0x0>,
 				<0x0>, <0x0>, <0x0>, <0x0>,
 				<0x0>, <0x0>, <0x0>, <0x0>, <0x0>, <0x0>,
 				<0x1>, <0x0>, <0x0>,

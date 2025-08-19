@@ -34,6 +34,7 @@
 #define MXLOG_DEFSTR	"<<%s OFFSET OUT OF RANGE. Check log-strings.bin>>"
 #define MXLOG_STR_SANE(x, base, size, cast) \
 	(((x) < (size)) ? (typeof(cast))((base) + (x)) : (typeof(cast))(MXLOG_DEFSTR))
+#define MXLOG_BINARY_FID		(0xFFFFFFF3)
 
 #if defined (__aarch64__) || defined(__x86_64__)
 /**

@@ -191,7 +191,7 @@ static int s2mpb02_i2c_probe(struct i2c_client *i2c,
 	if (pdata) {
 		s2mpb02->pdata = pdata;
 
-		pdata->irq_base = devm_irq_alloc_descs(s2mpb02->dev, -1, 600, S2MPB02_IRQ_NR, 0);
+		pdata->irq_base = devm_irq_alloc_descs_from(s2mpb02->dev, 0, S2MPB02_IRQ_NR, -1);
 		if (pdata->irq_base < 0) {
 			pr_err("%s:%s devm_irq_alloc_descs Fail! ret(%d)\n",
 				MFD_DEV_NAME, __func__, pdata->irq_base);

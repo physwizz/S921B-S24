@@ -62,5 +62,4 @@ void (*fp_srv_message_handler)(const void *message, void *data) = &srv_message_h
 
 void kunit_test_handler(int irq, void *data)
 {
-	return 0;
 }

@@ -420,7 +420,7 @@ static int hyp_unmap_walker(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
 
 		kvm_clear_pte(ptep);
 		dsb(ishst);
-		__tlbi_level(vae2is, __TLBI_VADDR(addr, 0), level);
+		__tlbi_level(vae2is, __TLBI_VADDR(addr, 0), 0);
 	} else {
 		if (end - addr < granule)
 			return -EINVAL;
@@ -661,10 +661,15 @@ static bool stage2_pte_needs_update(struct kvm_pgtable *pgt,
 static void stage2_clear_pte(kvm_pte_t *ptep, struct kvm_s2_mmu *mmu, u64 addr,
 			     u32 level)
 {
-	if (!kvm_pte_valid(*ptep))
+	kvm_pte_t pte = *ptep;
+
+	if (!kvm_pte_valid(pte))
 		return;
 
 	kvm_clear_pte(ptep);
+
+	if (kvm_pte_table(pte, level))
+		level = 0;
 	kvm_call_hyp(__kvm_tlb_flush_vmid_ipa, mmu, addr, level);
 }
 
@@ -720,10 +725,13 @@ static int stage2_map_walker_try_leaf(u64 addr, u64 end, u32 level,
 		new = data->annotation;
 
 	/*
-	 * Skip updating the PTE if we are trying to recreate the exact
-	 * same mapping or only change the access permissions. Instead,
-	 * the vCPU will exit one more time from guest if still needed
-	 * and then go through the path of relaxing permissions.
+	 * Skip updating a guest PTE if we are trying to recreate the exact
+	 * same mapping or change only the access permissions. Instead,
+	 * the vCPU will exit one more time from the guest if still needed
+	 * and then go through the path of relaxing permissions. This applies
+	 * only to guest PTEs; Host PTEs are unconditionally updated. The
+	 * host cannot livelock because the abort handler has done prior
+	 * checks before calling here.
 	 */
 	if (!stage2_pte_needs_update(pgt, old, new))
 		return -EAGAIN;
@@ -858,33 +866,70 @@ static int stage2_map_walk_leaf(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
 	return 0;
 }
 
+static void debug_check_table_before_coalescing(
+	u32 level,
+	struct stage2_map_data *data,
+	kvm_pte_t *ptep, u64 pa)
+{
+#ifdef CONFIG_NVHE_EL2_DEBUG
+	u64 granule = kvm_granule_size(level + 1);
+	int i;
+
+	for (i = 0; i < PTRS_PER_PTE; i++, ptep++, pa += granule) {
+		kvm_pte_t pte = kvm_init_valid_leaf_pte(
+			pa, data->attr, level + 1);
+		WARN_ON(pte != *ptep);
+	}
+#endif
+}
+
 static void stage2_coalesce_walk_table_post(u64 addr, u64 end, u32 level,
 					    kvm_pte_t *ptep,
 					    struct stage2_map_data *data)
 {
 	struct kvm_pgtable_mm_ops *mm_ops = data->mm_ops;
-	kvm_pte_t *childp = kvm_pte_follow(*ptep, mm_ops);
+	kvm_pte_t new, *childp = kvm_pte_follow(*ptep, mm_ops);
+	u64 size;
 
 	/*
-	 * Decrement the refcount only on the set ownership path to avoid a
-	 * loop situation when the following happens:
-	 *  1. We take a host stage2 fault and we create a small mapping which
-	 *  has default attributes (is not refcounted).
-	 *  2. On the way back we execute the post handler and we zap the
-	 *  table that holds our mapping.
+	 * We don't want to coalesce during pkvm initialisation, before the
+	 * overall structure of the host S2 table is created.
 	 */
-	if (kvm_phys_is_valid(data->phys) ||
-	    !kvm_level_supports_block_mapping(level))
+	if (!static_branch_likely(&kvm_protected_mode_initialized))
 		return;
 
 	/*
-	 * Free a page that is not referenced anymore and drop the reference
-	 * of the page table page.
+	 * If we installed a non-refcounted valid mapping, and the table has no
+	 * other raised references, then we can immediately collapse to a block
+	 * mapping.
 	 */
-	if (mm_ops->page_count(childp) == 1) {
-		stage2_put_pte(ptep, data->mmu, addr, level, mm_ops);
-		mm_ops->put_page(childp);
-	}
+	if (!kvm_phys_is_valid(data->phys) ||
+	    !kvm_level_supports_block_mapping(level) ||
+	    (mm_ops->page_count(childp) != 1))
+		return;
+
+	/*
+	 * This should apply only to the host S2, which does not refcount its
+	 * default memory and mmio mappings.
+	 */
+	WARN_ON(!(data->mmu->pgt->flags & KVM_PGTABLE_S2_IDMAP));
+
+	size = kvm_granule_size(level);
+	addr = ALIGN_DOWN(addr, size);
+
+	debug_check_table_before_coalescing(level, data, childp, addr);
+
+	new = kvm_init_valid_leaf_pte(addr, data->attr, level);
+
+	stage2_put_pte(ptep, data->mmu, addr, level, mm_ops);
+
+	/* Host doesn't require CMOs. */
+	WARN_ON(mm_ops->dcache_clean_inval_poc || mm_ops->icache_inval_pou);
+
+	smp_store_release(ptep, new);
+
+	/* Finally, free the unlinked table. */
+	mm_ops->put_page(childp);
 }
 
 static int stage2_map_walk_table_post(u64 addr, u64 end, u32 level,
@@ -1076,7 +1121,25 @@ int kvm_pgtable_stage2_unmap(struct kvm_pgtable *pgt, u64 addr, u64 size)
 static int stage2_reclaim_leaf_walker(u64 addr, u64 end, u32 level, kvm_pte_t *ptep,
 				      enum kvm_pgtable_walk_flags flag, void * const arg)
 {
-	stage2_coalesce_walk_table_post(addr, end, level, ptep, arg);
+	struct stage2_map_data *data = arg;
+	struct kvm_pgtable_mm_ops *mm_ops = data->mm_ops;
+	kvm_pte_t *childp = kvm_pte_follow(*ptep, mm_ops);
+
+	/*
+	 * If this table's refcount is not raised, we can safely discard it.
+	 * Any mappings that it contains can be re-created on demand.
+	 */
+	if (!kvm_level_supports_block_mapping(level) ||
+	    (mm_ops->page_count(childp) != 1))
+		return 0;
+
+	/* Unlink the table and flush TLBs. */
+	kvm_clear_pte(ptep);
+	kvm_call_hyp(__kvm_tlb_flush_vmid, data->mmu);
+
+	/* Free the unlinked table, and drop its reference in the parent. */
+	mm_ops->put_page(ptep);
+	mm_ops->put_page(childp);
 
 	return 0;
 }

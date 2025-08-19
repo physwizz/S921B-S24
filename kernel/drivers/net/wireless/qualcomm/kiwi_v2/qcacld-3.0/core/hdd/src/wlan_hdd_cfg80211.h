@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2012-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -510,7 +510,7 @@ int wlan_hdd_send_avoid_freq_event(struct hdd_context *hdd_ctx,
  * Return: 0 on success or failure reason
  */
 int wlan_hdd_send_hang_reason_event(struct hdd_context *hdd_ctx,
-				    uint32_t reason, uint8_t *data,
+				    enum qdf_hang_reason reason, uint8_t *data,
 				    size_t data_len);
 
 int wlan_hdd_send_avoid_freq_for_dnbs(struct hdd_context *hdd_ctx,
@@ -1165,4 +1165,35 @@ wlan_hdd_ml_sap_get_peer(struct wlan_objmgr_vdev *vdev,
 	return NULL;
 }
 #endif /* WLAN_FEATURE_11BE_MLO && CFG80211_SINGLE_NETDEV_MULTI_LINK_SUPPORT */
+
+/**
+ * hdd_convert_phy_bw_to_nl_bw - Convert phy bandwidth to nl bandwidth
+ * @bw: phy bandwidth
+ *
+ * Return: nl bandwidth
+ */
+enum nl80211_chan_width
+hdd_convert_phy_bw_to_nl_bw(enum phy_ch_width bw);
+
+/**
+ * hdd_vdev_send_sta_keep_alive_interval - Send sta keep alive interval to fw
+ * @link_info: Link info pointer.
+ * @hdd_ctx: HDD context pointer
+ * @keep_alive_interval: STA keep alive interval
+ *
+ * Return: 0 on success, negative on failure
+ */
+int hdd_vdev_send_sta_keep_alive_interval(struct wlan_hdd_link_info *link_info,
+					  struct hdd_context *hdd_ctx,
+					  uint16_t keep_alive_interval);
+
+/**
+ * wlan_hdd_save_sta_keep_alive_interval() - Save STA keep alive interval
+ * @adapter: HDD adapter pointer
+ * @sta_alive_interval: STA keep alive interval
+ *
+ * Return: None.
+ */
+void wlan_hdd_save_sta_keep_alive_interval(struct hdd_adapter *adapter,
+					   uint16_t sta_alive_interval);
 #endif

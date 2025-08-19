@@ -25,6 +25,7 @@
 #include <linux/platform_device.h>
 #include <linux/of.h>
 #include <linux/panic_notifier.h>
+#include <linux/console.h>
 
 #include <asm/cputype.h>
 #include <asm/stacktrace.h>
@@ -42,6 +43,7 @@
 #endif
 
 #define BACKTRACE_CPU_INVALID	(-1)
+#define WDT_CPU_INVALID	(-1)
 
 static struct cpumask cpu_dss_context_saved_mask;
 
@@ -49,13 +51,18 @@ static struct cpumask cpu_dss_context_saved_mask;
 #define SUMMARY_BUF_MAX		64
 #endif
 
-static char *ecc_sel_str[] = {
+static char *ecc_sel_str_v8[] = {
+	"L1", "DSU", "ETC", NULL,
+};
+
+static char *ecc_sel_str_v9[] = {
 	"DSU", "L1", "L2", NULL,
 };
 
 /*  Panic core's backtrace logging  */
 static struct dbg_snapshot_backtrace_data *dss_backtrace;
 atomic_t backtrace_cpu = ATOMIC_INIT(BACKTRACE_CPU_INVALID);
+atomic_t wdt_cpu = ATOMIC_INIT(WDT_CPU_INVALID);
 
 static unsigned long smc_pre_reading_ecc_sysreg[4];
 
@@ -344,6 +351,34 @@ static void dbg_snapshot_set_wdt_caller(unsigned long addr)
 		__raw_writeq(addr, header + DSS_OFFSET_WDT_CALLER);
 }
 
+static void dbg_snapshot_set_wdt_msg(unsigned long addr, struct va_format *vaf)
+{
+	struct dbg_snapshot_item *item = (struct dbg_snapshot_item *)
+		dbg_snapshot_get_item_by_index(DSS_ITEM_WDTMSG_ID);
+	struct wdt_info *wdt_info = NULL;
+	u64 ts_nsec = local_clock();
+	int cpu = raw_smp_processor_id();
+
+	if (item) {
+		wdt_info = (struct wdt_info *)item->entry.vaddr;
+		if (wdt_info && !(*wdt_info->caller)) {
+			wdt_info->time = ts_nsec;
+			wdt_info->cpu = cpu;
+			snprintf(wdt_info->caller, sizeof(wdt_info->caller), "%pS", (void *)addr);
+			if (vaf && vaf->fmt)
+				snprintf(wdt_info->msg, sizeof(wdt_info->msg), "%pV", vaf);
+		}
+	}
+}
+
+static void dbg_snapshot_set_wdt_info(void *caller, struct va_format *vaf)
+{
+	unsigned long addr = (unsigned long)caller;
+
+	dbg_snapshot_set_wdt_caller(addr);
+	dbg_snapshot_set_wdt_msg(addr, vaf);
+}
+
 int dbg_snapshot_start_watchdog(int sec)
 {
 	if (dss_soc_ops.start_watchdog)
@@ -353,17 +388,33 @@ int dbg_snapshot_start_watchdog(int sec)
 }
 EXPORT_SYMBOL_GPL(dbg_snapshot_start_watchdog);
 
-static int dbg_snapshot_expire_watchdog_with_caller(void *caller)
+static int dbg_snapshot_expire_watchdog_with_caller(void *caller, struct va_format *vaf)
 {
 	unsigned long addr = (unsigned long)caller;
+	int old_cpu, cpu;
 
 	if (!dss_soc_ops.expire_watchdog) {
 		dev_emerg(dss_desc.dev, "There is no wdt functions!\n");
 		return -ENODEV;
 	}
 
-	dbg_snapshot_set_wdt_caller(addr);
-	dev_emerg(dss_desc.dev, "Caller: %pS, WDTRESET right now!\n", (void *)addr);
+	cpu = raw_smp_processor_id();
+	old_cpu = atomic_cmpxchg(&wdt_cpu, WDT_CPU_INVALID, cpu);
+
+	if (old_cpu == WDT_CPU_INVALID) {
+		dbg_snapshot_set_wdt_info(caller, vaf);
+
+		if (vaf)
+			dev_emerg(dss_desc.dev, "Caller: %pS msg:%pV, WDTRESET right now!\n",
+					(void *)addr, vaf);
+		else
+			dev_emerg(dss_desc.dev, "Caller: %pS msg:none, WDTRESET right now!\n",
+					(void *)addr);
+	} else {
+		dev_emerg(dss_desc.dev, "Caller: %pS, multiple WDTRESET triggered\n",
+				(void *)addr);
+	}
+
 	if (dss_soc_ops.expire_watchdog(3, 0))
 		return -ENODEV;
 	dbg_snapshot_spin_func();
@@ -371,9 +422,26 @@ static int dbg_snapshot_expire_watchdog_with_caller(void *caller)
 	return -ENODEV;
 }
 
+int dbg_snapshot_expire_watchdog_with_msg(const char *fmt, ...)
+{
+	struct va_format vaf;
+	va_list args;
+	int ret;
+
+	va_start(args, fmt);
+
+	vaf.fmt = fmt;
+	vaf.va = &args;
+	ret = dbg_snapshot_expire_watchdog_with_caller(return_address(0), &vaf);
+	va_end(args);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(dbg_snapshot_expire_watchdog_with_msg);
+
 int dbg_snapshot_expire_watchdog(void)
 {
-	return dbg_snapshot_expire_watchdog_with_caller(return_address(0));
+	return dbg_snapshot_expire_watchdog_with_caller(return_address(0), NULL);
 }
 EXPORT_SYMBOL_GPL(dbg_snapshot_expire_watchdog);
 
@@ -384,23 +452,33 @@ int dbg_snapshot_expire_watchdog_safely(void)
 	else
 		dss_soc_ops.set_safe_mode();
 
-	return dbg_snapshot_expire_watchdog_with_caller(return_address(0));
+	return dbg_snapshot_expire_watchdog_with_caller(return_address(0), NULL);
 }
 EXPORT_SYMBOL_GPL(dbg_snapshot_expire_watchdog_safely);
 
 int dbg_snapshot_expire_watchdog_timeout(int tick)
 {
 	unsigned long addr;
+	int old_cpu, cpu;
 
 	if (!dss_soc_ops.expire_watchdog) {
 		dev_emerg(dss_desc.dev, "There is no wdt functions!\n");
 		return -ENODEV;
 	}
 
+	cpu = raw_smp_processor_id();
+	old_cpu = atomic_cmpxchg(&wdt_cpu, WDT_CPU_INVALID, cpu);
 	addr = (unsigned long)return_address(0);
 
-	dbg_snapshot_set_wdt_caller(addr);
-	dev_emerg(dss_desc.dev, "Caller: %pS, WDTRESET right now!\n", (void *)addr);
+	if (old_cpu == WDT_CPU_INVALID) {
+		dbg_snapshot_set_wdt_info(return_address(0), NULL);
+		dev_emerg(dss_desc.dev, "Caller: %pS msg:none, WDTRESET right now!\n",
+				(void *)addr);
+	} else {
+		dev_emerg(dss_desc.dev, "Caller: %pS, multiple WDTRESET triggered\n",
+				(void *)addr);
+	}
+
 	if (dss_soc_ops.expire_watchdog(tick, 0))
 		return -ENODEV;
 
@@ -411,21 +489,30 @@ EXPORT_SYMBOL_GPL(dbg_snapshot_expire_watchdog_timeout);
 int dbg_snapshot_expire_watchdog_timeout_safely(int tick)
 {
 	unsigned long addr;
+	int old_cpu, cpu;
 
 	if (!dss_soc_ops.expire_watchdog) {
 		dev_emerg(dss_desc.dev, "There is no wdt functions!\n");
 		return -ENODEV;
 	}
 
+	cpu = raw_smp_processor_id();
+	old_cpu = atomic_cmpxchg(&wdt_cpu, WDT_CPU_INVALID, cpu);
+	addr = (unsigned long)return_address(0);
+
 	if (!dss_soc_ops.set_safe_mode)
 		dev_emerg(dss_desc.dev, "There is no safe mode function!\n");
 	else
 		dss_soc_ops.set_safe_mode();
 
-	addr = (unsigned long)return_address(0);
+	if (old_cpu == WDT_CPU_INVALID) {
+		dbg_snapshot_set_wdt_info(return_address(0), NULL);
+		dev_emerg(dss_desc.dev, "Caller: %pS msg:none, WDTRESET right now!\n", (void *)addr);
+	} else {
+		dev_emerg(dss_desc.dev, "Caller: %pS, multiple WDTRESET triggered\n",
+				(void *)addr);
+	}
 
-	dbg_snapshot_set_wdt_caller(addr);
-	dev_emerg(dss_desc.dev, "Caller: %pS, WDTRESET right now!\n", (void *)addr);
 	if (dss_soc_ops.expire_watchdog(tick, 0))
 		return -ENODEV;
 
@@ -640,22 +727,28 @@ static void do_wa_pre_reading_ecc_sysreg(void)
 		   smc_pre_reading_ecc_sysreg[2], smc_pre_reading_ecc_sysreg[3]);
 }
 
-static void _dbg_snapshot_ecc_dump(bool call_panic)
+static void _dbg_snapshot_ecc_dump(int policy, bool is_armv9)
 {
 	ERRSELR_EL1_t errselr_el1;
 	ERRIDR_EL1_t erridr_el1;
 	ERXSTATUS_EL1_t erxstatus_el1;
 	char *msg;
+	char **ecc_sel_str_arch;
 	bool is_capable_identifing_err = false;
 	int i;
 
 	do_wa_pre_reading_ecc_sysreg();
 	asm volatile ("HINT #16");
 	erridr_el1.reg = read_ERRIDR_EL1();
+	if (is_armv9)
+		ecc_sel_str_arch = ecc_sel_str_v9;
+	else
+		ecc_sel_str_arch = ecc_sel_str_v8;
 
 	for (i = 0; i < (int)erridr_el1.field.NUM; i++) {
 		char errbuf[SZ_512] = {0, };
 		int n = 0;
+		bool UE = false;
 #if IS_ENABLED(CONFIG_SEC_DEBUG_AUTO_COMMENT)
 		const char *msg_overflow = "";
 		const char *msg_er = "";
@@ -680,11 +773,11 @@ static void _dbg_snapshot_ecc_dump(bool call_panic)
 
 		n = scnprintf(errbuf + n, sizeof(errbuf) - n,
 			"%3s: %8s: [NUM:%d][ERXSTATUS_EL1:%#016llx]\n",
-			ecc_sel_str[i] ? ecc_sel_str[i] : "", msg, i, erxstatus_el1.reg);
+			ecc_sel_str_arch[i] ? ecc_sel_str_arch[i] : "", msg, i, erxstatus_el1.reg);
 #if IS_ENABLED(CONFIG_SEC_DEBUG_AUTO_COMMENT)
 		scnprintf(msg_selstatus, sizeof(msg_selstatus),
 			"%3s status:0x%016llx",
-			ecc_sel_str[i] ? ecc_sel_str[i] : "",
+			ecc_sel_str_arch[i] ? ecc_sel_str_arch[i] : "",
 			erxstatus_el1.reg);
 #endif
 
@@ -718,8 +811,7 @@ static void _dbg_snapshot_ecc_dump(bool call_panic)
 		if (erxstatus_el1.field.UE) {
 			n += scnprintf(errbuf + n, sizeof(errbuf) - n,
 				"\t [ UE ] Detected(Uncorrected Error): Not deferred\n");
-
-			call_panic = true;
+			UE = true;
 #if IS_ENABLED(CONFIG_SEC_DEBUG_AUTO_COMMENT)
 			msg_uncorrected = "[Uncorrected]";
 #endif
@@ -768,6 +860,9 @@ static void _dbg_snapshot_ecc_dump(bool call_panic)
 			clear_external_ecc_err(erxstatus_el1);
 		}
 		is_capable_identifing_err = true;
+
+		if (policy == ECC_SKIP_PANIC && is_capable_identifing_err && UE)
+			policy = ECC_GO_PANIC;
 output_cont:
 		pr_emerg("%s", errbuf);
 #if IS_ENABLED(CONFIG_SEC_DEBUG_AUTO_COMMENT)
@@ -786,11 +881,13 @@ output_cont:
 #endif
 	}
 
-	if (call_panic && is_capable_identifing_err)
+	if (policy == ECC_GO_PANIC && is_capable_identifing_err)
 		panic("RAS(ECC) error occured");
+	else if (policy == ECC_DUMP_WDT)
+		dbg_snapshot_expire_watchdog();
 }
 
-void dbg_snapshot_ecc_dump(bool call_panic)
+void dbg_snapshot_ecc_dump(int policy)
 {
 	switch (read_cpuid_part_number()) {
 	case ARM_CPU_PART_CORTEX_A55:
@@ -798,6 +895,8 @@ void dbg_snapshot_ecc_dump(bool call_panic)
 	case ARM_CPU_PART_CORTEX_A77:
 	case ARM_CPU_PART_CORTEX_A78:
 	case ARM_CPU_PART_CORTEX_X1:
+		_dbg_snapshot_ecc_dump(policy, false);
+		break;
 	case ARM_CPU_PART_KLEIN:
 	case ARM_CPU_PART_MATTERHORN:
 	case ARM_CPU_PART_MATTERHORN_ELP:
@@ -806,7 +905,7 @@ void dbg_snapshot_ecc_dump(bool call_panic)
 	case ARM_CPU_PART_HAYES:
 	case ARM_CPU_PART_HUNTER:
 	case ARM_CPU_PART_HUNTER_ELP:
-		_dbg_snapshot_ecc_dump(call_panic);
+		_dbg_snapshot_ecc_dump(policy, true);
 		break;
 	default:
 		break;
@@ -870,7 +969,7 @@ static void dbg_snapshot_save_context(struct pt_regs *regs, bool stack_dump)
 		dbg_snapshot_set_core_panic_stat(DSS_SIGN_PANIC, cpu);
 		dbg_snapshot_save_system(NULL);
 		dbg_snapshot_save_core(regs);
-		dbg_snapshot_ecc_dump(false);
+		dbg_snapshot_ecc_dump(ECC_SKIP_PANIC);
 		dev_emerg(dss_desc.dev, "context saved(CPU:%d)\n", cpu);
 		set_bit(cpu, cpumask_bits(&cpu_dss_context_saved_mask));
 	} else
@@ -897,6 +996,14 @@ static int dbg_snapshot_pre_panic_handler(struct notifier_block *nb,
 {
 	static int in_panic;
 	static int cpu = PANIC_CPU_INVALID;
+
+	if (!console_loglevel) {
+		console_loglevel = CONSOLE_LOGLEVEL_MOTORMOUTH;
+		dev_err(dss_desc.dev, "console_loglevel was 0\n");
+	}
+
+	if (is_console_locked())
+		console_unlock();
 
 	dbg_snapshot_report_reason(DSS_SIGN_PANIC);
 
@@ -1074,6 +1181,11 @@ static int dbg_snapshot_pre_die_handler(struct notifier_block *nb,
 	struct die_args *args = (struct die_args *)buf;
 	struct pt_regs *regs = args->regs;
 
+	if (!console_loglevel) {
+		console_loglevel = CONSOLE_LOGLEVEL_MOTORMOUTH;
+		dev_err(dss_desc.dev, "console_loglevel was 0\n");
+	}
+
 	if (user_mode(regs))
 		return NOTIFY_DONE;
 
@@ -1159,7 +1271,7 @@ void dbg_snapshot_do_dpm_policy(unsigned int policy)
 		break;
 	case GO_WATCHDOG_ID:
 	case GO_S2D_ID:
-		if (dbg_snapshot_expire_watchdog_with_caller(return_address(0)))
+		if (dbg_snapshot_expire_watchdog_with_caller(return_address(0), NULL))
 			panic("WDT rst fail for s2d, wdt device not probed");
 		dbg_snapshot_spin_func();
 		break;
@@ -1217,7 +1329,7 @@ void dbg_snapshot_register_debug_ops(void *halt, void *arraydump,
 }
 EXPORT_SYMBOL_GPL(dbg_snapshot_register_debug_ops);
 
-static void dbg_snapshot_ipi_stop(void *ignore, struct pt_regs *regs)
+static void __maybe_unused dbg_snapshot_ipi_stop(void *ignore, struct pt_regs *regs)
 {
 	dbg_snapshot_save_context(regs, true);
 }
@@ -1241,6 +1353,11 @@ static void dbg_snanpshot_event(struct input_handle *handle, unsigned int type,
 
 	if (!is_event_supported(type, code))
 		return;
+
+	if (!dbg_snapshot_is_scratch()) {
+		dev_info(dss_desc.dev, "KEY event happend, but scratch is not set\n");
+		return;
+	}
 
 	dev_info(dss_desc.dev, "KEY(%d) %s\n",
 			code, value ? "pressed" : "released");
@@ -1378,9 +1495,11 @@ void dbg_snapshot_init_utils(struct device *dev)
 	register_restart_handler(&nb_restart_block);
 	atomic_notifier_chain_register(&panic_notifier_list, &nb_pre_panic_block);
 	atomic_notifier_chain_register(&panic_notifier_list, &nb_post_panic_block);
+#if IS_ENABLED(CONFIG_TRACEPOINTS) && IS_ENABLED(CONFIG_ANDROID_VENDOR_HOOKS)
 	register_trace_android_vh_ipi_stop(dbg_snapshot_ipi_stop, NULL);
 #if IS_ENABLED(CONFIG_SEC_DEBUG_AVOID_UNNECESSARY_TRAP)
 	register_trace_android_rvh_do_sea(secdbg_android_rvh_do_sea, NULL);
+#endif
 #endif
 #if !IS_ENABLED(CONFIG_SEC_KEY_NOTIFIER)
 	if (input_register_handler(&dbg_snapshot_input_handler))

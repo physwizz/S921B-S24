@@ -163,6 +163,7 @@
 
 &cps4038_charger {
 	battery,unknown_cmb_ctrl;
+	battery,pcr_fix_mode;
 	battery,default_clamp_volt;
 	battery,tx_max_op_freq = <1450>;
 	battery,tx_min_op_freq = <1120>;

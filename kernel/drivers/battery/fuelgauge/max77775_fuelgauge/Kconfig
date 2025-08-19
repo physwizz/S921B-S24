@@ -45,5 +45,13 @@ config UI_SOC_PROLONGING
 	  Support for UI Soc prolonging.
 	  This is to enable UI Soc prolonging concept.
 
+config WRL_MODE4_FG_SETTING
+	bool "Wireless mode 04 FG setting"
+	default n
+	help
+	  Say Y here to enable
+	  Support for Wireless mode 04 FG setting.
+	  This is to update FG reg in Wireless mode 04.
+
 endmenu
 

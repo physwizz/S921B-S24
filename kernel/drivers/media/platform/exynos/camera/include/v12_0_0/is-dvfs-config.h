@@ -38,6 +38,7 @@ enum IS_DVFS_SN {
 	IS_DVFS_SN_REAR_SINGLE_VIDEO_UHD30_RECURSIVE,
 	IS_DVFS_SN_REAR_SINGLE_VIDEO_UHD60,
 	IS_DVFS_SN_REAR_SINGLE_VIDEO_UHD60_SUPERSTEADY,
+	IS_DVFS_SN_REAR_SINGLE_VIDEO_UHD60_PSM,
 	IS_DVFS_SN_REAR_SINGLE_VIDEO_UHD120,
 	IS_DVFS_SN_REAR_SINGLE_VIDEO_8K24,
 	IS_DVFS_SN_REAR_SINGLE_VIDEO_8K24_HF,
@@ -181,6 +182,11 @@ static struct is_dvfs_dt_t is_dvfs_dt_arr[IS_DVFS_SN_END] = {
 	{
 		.parse_scenario_nm = "rear_single_video_uhd60_supersteady_",
 		.scenario_id = IS_DVFS_SN_REAR_SINGLE_VIDEO_UHD60_SUPERSTEADY,
+		.keep_frame_tick = -1,
+	},
+	{
+		.parse_scenario_nm = "rear_single_video_uhd60_psm_",
+		.scenario_id = IS_DVFS_SN_REAR_SINGLE_VIDEO_UHD60_PSM,
 		.keep_frame_tick = -1,
 	},
 	{

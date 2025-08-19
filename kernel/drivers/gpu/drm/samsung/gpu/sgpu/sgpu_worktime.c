@@ -7,9 +7,7 @@
 #include <linux/ktime.h>
 
 #include "amdgpu.h"
-
-#define CREATE_TRACE_POINTS
-#include "sgpu_worktime_trace.h"
+#include "sgpu_power_trace.h"
 
 static DEFINE_IDR(wt_mgr_idr);
 static DEFINE_MUTEX(wt_mgr_lock);

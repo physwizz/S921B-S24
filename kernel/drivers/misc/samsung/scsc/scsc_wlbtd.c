@@ -42,6 +42,7 @@ static DECLARE_COMPLETION(event_done);
 static DECLARE_COMPLETION(fw_sable_done);
 static DECLARE_COMPLETION(fw_panic_done);
 static DECLARE_COMPLETION(write_file_done);
+static DECLARE_COMPLETION(ramsd_dump_done);
 #if defined(SCSC_SEP_VERSION) && SCSC_SEP_VERSION >= 12
 static DECLARE_COMPLETION(chipset_logging_done);
 static DEFINE_MUTEX(chipset_logging_lock);
@@ -76,6 +77,10 @@ const char *response_code_to_str(enum scsc_wlbtd_response_codes response_code)
 		return "SCSC_WLBTD_FW_PANIC_ERR_SABLE_FILE";
 	case SCSC_WLBTD_FW_PANIC_ERR_TAR:
 		return "SCSC_WLBTD_FW_PANIC_ERR_TAR";
+	case SCSC_WLBTD_RAMSD_DUMP_GENERATED:
+		return "SCSC_WLBTD_RAMSD_DUMP_GENERATED";
+	case SCSC_WLBTD_RAMSD_DUMP_ERR:
+		return "SCSC_WLBTD_RAMSD_DUMP_ERR";
 	case SCSC_WLBTD_OTHER_SBL_GENERATED:
 		return "SCSC_WLBTD_OTHER_SBL_GENERATED";
 	case SCSC_WLBTD_OTHER_TAR_GENERATED:
@@ -350,6 +355,29 @@ error_complete:
 }
 #endif
 
+static int msg_from_wlbtd_ramsd(struct sk_buff *skb, struct genl_info *info)
+{
+	int status = nla_get_u16(info->attrs[2]);
+
+	(void)skb;
+
+	switch (status) {
+	case SCSC_WLBTD_RAMSD_DUMP_ERR:
+	case SCSC_WLBTD_RAMSD_DUMP_GENERATED:
+		SCSC_TAG_INFO(WLBTD, "completing ramsd_dump_done\n");
+		complete(&ramsd_dump_done);
+		break;
+	default:
+		SCSC_TAG_ERR(WLBTD, "UNKNOWN reponse from WLBTD\n");
+	}
+	SCSC_TAG_INFO(WLBTD, "%s\n", nla_data(info->attrs[ATTR_STR]));
+
+	if (status == SCSC_WLBTD_RAMSD_DUMP_GENERATED)
+		return 0;
+	else
+		return -EINVAL;
+}
+
 /**
  * Here you can define some constraints for the attributes so Linux will
  * validate them for you.
@@ -380,6 +408,11 @@ static struct nla_policy policy_write_chipset_logging_file[] = {
 	[ATTR_INT] = { .type = NLA_U32, },
 };
 #endif
+
+static struct nla_policy policy_ramsd[] = {
+	[ATTR_STR] = { .type = NLA_STRING, },
+	[ATTR_INT] = { .type = NLA_U32, },
+};
 
 #endif
 
@@ -421,6 +454,15 @@ const struct genl_ops scsc_ops[] = {
 		.policy = policy_write_file,
 #endif
 		.doit = msg_from_wlbtd_write_file_cb,
+		.dumpit = NULL,
+	},
+	{
+		.cmd = EVENT_RAMSD,
+		.flags = 0,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0) || LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 25))
+		.policy = policy_ramsd,
+#endif
+		.doit = msg_from_wlbtd_ramsd,
 		.dumpit = NULL,
 	},
 #if defined(SCSC_SEP_VERSION) && SCSC_SEP_VERSION >= 12
@@ -929,6 +971,94 @@ void scsc_wlbtd_wait_for_sable_logging(void)
 EXPORT_SYMBOL(scsc_wlbtd_wait_for_sable_logging);
 #endif
 
+int call_wlbtd_ramsd(u32 s2m_size_octets)
+{
+	struct sk_buff *skb;
+	void *msg;
+	int rc = 0;
+	unsigned long completion_jiffies = 0;
+	unsigned long max_timeout_jiffies = msecs_to_jiffies(MAX_TIMEOUT);
+
+	mutex_lock(&sable_lock);
+	wake_lock(&wlbtd_wakelock);
+
+	skb = nlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	if (!skb) {
+		SCSC_TAG_ERR(WLBTD, "Failed to construct message\n");
+		goto ramsd_error;
+	}
+
+	SCSC_TAG_DEBUG(WLBTD, "create message\n");
+	msg = genlmsg_put(skb,
+			0,				// PID is whatever
+			0,				// Sequence number (don't care)
+			&scsc_nlfamily,	// Pointer to family struct
+			0,				// Flags
+			EVENT_RAMSD		// Generic netlink command
+			);
+	if (!msg) {
+		SCSC_TAG_ERR(WLBTD, "Failed to create message\n");
+		goto ramsd_error;
+	}
+
+	rc = nla_put_u32(skb, ATTR_INT, s2m_size_octets);
+	if (rc) {
+		SCSC_TAG_ERR(WLBTD, "nla_put_u32 failed. rc = %d\n", rc);
+		genlmsg_cancel(skb, msg);
+		goto ramsd_error;
+	}
+#if 0
+	rc = nla_put_string(skb, ATTR_STR, script_path);
+	if (rc) {
+		SCSC_TAG_ERR(WLBTD, "nla_put_string failed. rc = %d\n", rc);
+		genlmsg_cancel(skb, msg);
+		goto error;
+	}
+#endif
+
+	genlmsg_end(skb, msg);
+	rc = genlmsg_multicast_allns(&scsc_nlfamily, skb, 0, 0, GFP_KERNEL);
+
+	if (rc) {
+		if (rc == -ESRCH) {
+			/* If no one registered to scsc_mcgrp (e.g. in case
+			 * wlbtd is not running) genlmsg_multicast_allns
+			 * returns -ESRCH. Ignore and return.
+			 */
+			SCSC_TAG_WARNING(WLBTD, "WLBTD not running ?\n");
+			goto done;
+		}
+		SCSC_TAG_ERR(WLBTD, "Failed to send message. rc = %d\n", rc);
+		goto done;
+	}
+
+	SCSC_TAG_INFO(WLBTD, "waiting for completion\n");
+
+	completion_jiffies = wait_for_completion_timeout(&ramsd_dump_done,
+						max_timeout_jiffies);
+
+	if (completion_jiffies) {
+		completion_jiffies = max_timeout_jiffies - completion_jiffies;
+		SCSC_TAG_INFO(WLBTD, "done in %dms\n",
+			(int)jiffies_to_msecs(completion_jiffies) ? : 1);
+	} else
+		SCSC_TAG_ERR(WLBTD, "wait for completion timed out !\n");
+
+	/* reinit so completion can be re-used */
+	reinit_completion(&ramsd_dump_done);
+
+done:
+	wake_unlock(&wlbtd_wakelock);
+	mutex_unlock(&sable_lock);
+	return rc;
+
+ramsd_error:
+	/* free skb */
+	nlmsg_free(skb);
+	wake_unlock(&wlbtd_wakelock);
+	mutex_unlock(&sable_lock);
+	return -1;
+}
 
 int call_wlbtd(const char *script_path)
 {

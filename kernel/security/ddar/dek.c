@@ -13,20 +13,15 @@
  * GNU General Public License for more details.
  */
 
+#include <ddar/dek_common.h>
+#include <linux/err.h>
 #include <linux/fs.h>
-#include <linux/fcntl.h>
-#include <linux/module.h>
-#include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/miscdevice.h>
-#include <linux/uaccess.h>
-#include <linux/syscalls.h>
+#include <linux/module.h>
 #include <linux/time.h>
 #include <linux/list.h>
 #include <linux/wait.h>
-#include <linux/random.h>
-#include <linux/err.h>
-#include <ddar/dek_common.h>
 
 #define DEK_LOG_COUNT		100
 #define DEK_LOG_BUF_SIZE	1024
@@ -238,10 +233,6 @@ static int __init dek_init(void)
 
 	printk("dek: initialized\n");
 	dek_add_to_log(000, "Initialized");
-
-#ifdef CONFIG_FSCRYPT_SDP
-	fscrypt_sdp_cache_init();
-#endif
 
 	return 0;
 }

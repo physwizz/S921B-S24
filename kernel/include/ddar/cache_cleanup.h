@@ -23,6 +23,6 @@
 #include <ddar/common.h>
 #include <linux/pagemap.h>
 
-void sdp_page_cleanup(struct page *page);
+void ddar_page_cleanup(struct page *page);
 
 #endif /* PAGEMAP_H_ */

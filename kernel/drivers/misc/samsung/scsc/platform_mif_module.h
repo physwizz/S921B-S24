@@ -8,6 +8,9 @@
 #define __PLATFORM_MIF_MODULE_H
 
 #define DRV_NAME "scsc_wlbt"
+#ifdef CONFIG_SOC_S5E5535
+#define IRQ_NAME_ALIVE "alive_irq"
+#endif
 #define IRQ_NAME_MBOX "wlan_mbox_irq"
 #define IRQ_NAME_MBOX_WPAN "bt_mbox_irq"
 #define IRQ_NAME_WDOG "wlbt_wdog_irq"

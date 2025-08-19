@@ -6641,7 +6641,6 @@ typedef enum {
  * @enable_tdls_offchannel: Enable tdls offchannel
  * @enable_tdls_capability_enhance: Enable tdls capability enhance
  * @max_tdls_peers: Max tdls peers
- * @sta_dual_p2p_support: Indicates sta+p2p+p2p support
  * @peer_bigdata_getbssinfo_support: Indicates bigdata getbssinfo support
  * @peer_bigdata_assocreject_info_support: Indicates bigdata assoc reject
  *                                         info support
@@ -6649,6 +6648,7 @@ typedef enum {
  * @feature_set_version: Indicates feature set version info
  * @num_antennas: Indicates number of antennas supported
  * @sta_dump_support: Indicates sta dump info support
+ * @iface_combinations: Iface combination bit map
  */
 struct target_feature_set {
 	WMI_HOST_WIFI_STANDARD wifi_standard;
@@ -6702,13 +6702,13 @@ struct target_feature_set {
 	bool enable_tdls_offchannel;
 	bool enable_tdls_capability_enhance;
 	uint8_t max_tdls_peers;
-	bool sta_dual_p2p_support;
 	bool peer_bigdata_getbssinfo_support;
 	bool peer_bigdata_assocreject_info_support;
 	bool peer_getstainfo_support;
 	uint16_t feature_set_version;
 	WMI_HOST_NUM_ANTENNAS num_antennas;
 	bool sta_dump_support;
+	uint32_t iface_combinations;
 };
 #endif
 
@@ -9358,6 +9358,7 @@ struct wmi_roam_scan_data {
  * @status:             0 - Roaming is success ; 1 - Roaming failed ;
  * 2 - No roam
  * @fail_reason:        One of WMI_ROAM_FAIL_REASON_ID
+ * @roam_abort_reason:  Roam abort reason codes
  * @fail_bssid:         BSSID of the last attempted roam failed AP
  */
 struct wmi_roam_result {
@@ -9365,6 +9366,7 @@ struct wmi_roam_result {
 	uint32_t timestamp;
 	uint32_t status;
 	uint32_t fail_reason;
+	uint32_t roam_abort_reason;
 	struct qdf_mac_addr fail_bssid;
 };
 

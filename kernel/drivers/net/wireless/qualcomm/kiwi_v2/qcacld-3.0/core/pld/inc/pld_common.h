@@ -223,6 +223,9 @@ enum pld_uevent {
 
 enum pld_bus_event {
 	PLD_BUS_EVENT_PCIE_LINK_DOWN = 0,
+#if defined(SEC_CONFIG_FORCE_CHANGE_BT_EN)
+        PLD_BUS_EVENT_PCIE_LINK_DOWN_BT_EN_DOWN = 0x1000,
+#endif /* SEC_CONFIG_FORCE_CHANGE_BT_EN */
 
 	PLD_BUS_EVENT_INVALID = 0xFFFF,
 };

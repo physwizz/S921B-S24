@@ -1199,6 +1199,12 @@
 			samsung,pin-drv = <0>;
 		};
 
+		fm_spdy_default: fm-spdy-default {
+			samsung,pins = "gpb0-5";
+			samsung,pin-function = <0>;
+			samsung,pin-pud = <1>;
+
+		};
 	};
 
 	/* PERICMMC */
@@ -1214,28 +1220,36 @@
 			samsung,pins = "gpf2-0";
 			samsung,pin-function = <2>;
 			samsung,pin-pud = <0>;
-			samsung,pin-drv = <2>;
+			samsung,pin-drv = <5>;
+			samsung,pin-con-pdn = <3>;
+			samsung,pin-pud-pdn = <0>;
 		};
 
 		sd2_cmd: sd2-cmd {
 			samsung,pins = "gpf2-1";
 			samsung,pin-function = <2>;
-			samsung,pin-pud = <3>;
-			samsung,pin-drv = <2>;
+			samsung,pin-pud = <0>;
+			samsung,pin-drv = <5>;
+			samsung,pin-con-pdn = <3>;
+			samsung,pin-pud-pdn = <0>;
 		};
 
 		sd2_bus1: sd2-bus-width1 {
 			samsung,pins = "gpf2-2";
 			samsung,pin-function = <2>;
-			samsung,pin-pud = <3>;
-			samsung,pin-drv = <2>;
+			samsung,pin-pud = <0>;
+			samsung,pin-drv = <5>;
+			samsung,pin-con-pdn = <3>;
+			samsung,pin-pud-pdn = <0>;
 		};
 
 		sd2_bus4: sd2-bus-width4 {
 			samsung,pins = "gpf2-3", "gpf2-4", "gpf2-5";
 			samsung,pin-function = <2>;
-			samsung,pin-pud = <3>;
-			samsung,pin-drv = <2>;
+			samsung,pin-pud = <0>;
+			samsung,pin-drv = <5>;
+			samsung,pin-con-pdn = <3>;
+			samsung,pin-pud-pdn = <0>;
 		};
 	};
 

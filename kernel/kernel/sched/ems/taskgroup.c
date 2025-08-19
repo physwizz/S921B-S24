@@ -65,25 +65,31 @@ static int update_taskgroup(const char *buf, enum taskgroup_type type,
 	}
 
 	switch (type) {
-		case TASK_GROUP:
-			ep = (struct ems_task_struct *)p->android_vendor_data1;
-			ep->cgroup = cgroup;
+        case TASK_GROUP:
+		ep = (struct ems_task_struct *)p->android_vendor_data1;
+		ep->cgroup = cgroup;
+
+		if (gsc_enabled())
 			gsc_manage_task_group(p, cgroup == CGROUP_TOPAPP, false);
-			trace_ems_update_taskgroup(p, cgroup);
-			break;
-		case PROC_GROUP:
-			for_each_thread(p, t) {
-				get_task_struct(t);
-				ep = (struct ems_task_struct *)t->android_vendor_data1;
-				ep->cgroup = cgroup;
+
+		trace_ems_update_taskgroup(p, cgroup);
+		break;
+        case PROC_GROUP:
+		for_each_thread(p, t) {
+			get_task_struct(t);
+			ep = (struct ems_task_struct *)t->android_vendor_data1;
+			ep->cgroup = cgroup;
+
+			if (gsc_enabled())
 				gsc_manage_task_group(t, cgroup == CGROUP_TOPAPP, false);
-				put_task_struct(t);
-				trace_ems_update_taskgroup(t, cgroup);
-			}
-			break;
-		default:
-			break;
-	}
+
+			put_task_struct(t);
+			trace_ems_update_taskgroup(t, cgroup);
+		}
+		break;
+	default:
+		break;
+        }
 
 	put_task_struct(p);
 	rcu_read_unlock();
@@ -162,10 +168,10 @@ static struct kobj_attribute task_attr = __ATTR_RW(task);
 
 static u64 power_of_ten(int power)
 {
-	u64 v = 1;
-	while (power--)
-		v *= 10;
-	return v;
+        u64 v = 1;
+        while (power--)
+                v *= 10;
+        return v;
 }
 
 /**
@@ -184,22 +190,22 @@ static u64 power_of_ten(int power)
  */
 int parse_float(const char *input, unsigned dec_shift, s64 *v)
 {
-	s64 whole, frac = 0;
-	int fstart = 0, fend = 0, flen;
+        s64 whole, frac = 0;
+        int fstart = 0, fend = 0, flen;
 
-	if (!sscanf(input, "%lld.%n%lld%n", &whole, &fstart, &frac, &fend))
-		return -EINVAL;
-	if (frac < 0)
-		return -EINVAL;
+        if (!sscanf(input, "%lld.%n%lld%n", &whole, &fstart, &frac, &fend))
+                return -EINVAL;
+        if (frac < 0)
+                return -EINVAL;
 
-	flen = fend > fstart ? fend - fstart : 0;
-	if (flen < dec_shift)
-		frac *= power_of_ten(dec_shift - flen);
-	else
-		frac = DIV_ROUND_CLOSEST_ULL(frac, power_of_ten(flen - dec_shift));
+        flen = fend > fstart ? fend - fstart : 0;
+        if (flen < dec_shift)
+                frac *= power_of_ten(dec_shift - flen);
+        else
+                frac = DIV_ROUND_CLOSEST_ULL(frac, power_of_ten(flen - dec_shift));
 
-	*v = whole * power_of_ten(dec_shift) + frac;
-	return 0;
+        *v = whole * power_of_ten(dec_shift) + frac;
+        return 0;
 }
 
 /*
@@ -213,37 +219,37 @@ int parse_float(const char *input, unsigned dec_shift, s64 *v)
 struct uclamp_request {
 #define UCLAMP_PERCENT_SHIFT    2
 #define UCLAMP_PERCENT_SCALE    (100 * POW10(UCLAMP_PERCENT_SHIFT))
-	s64 percent;
-	u64 util;
-	int ret;
+        s64 percent;
+        u64 util;
+        int ret;
 };
 
 static inline struct uclamp_request
 capacity_from_percent(const char *buf)
 {
 	char *cbuf = (char *)buf;
-	struct uclamp_request req = {
-		.percent = UCLAMP_PERCENT_SCALE,
-		.util = SCHED_CAPACITY_SCALE,
-		.ret = 0,
-	};
+        struct uclamp_request req = {
+                .percent = UCLAMP_PERCENT_SCALE,
+                .util = SCHED_CAPACITY_SCALE,
+                .ret = 0,
+        };
 
-	cbuf = strim(cbuf);
-	if (strcmp(buf, "max")) {
-		req.ret = parse_float(cbuf, UCLAMP_PERCENT_SHIFT,
-					     &req.percent);
-		if (req.ret)
-			return req;
-		if ((u64)req.percent > UCLAMP_PERCENT_SCALE) {
-			req.ret = -ERANGE;
-			return req;
-		}
+        cbuf = strim(cbuf);
+        if (strcmp(buf, "max")) {
+                req.ret = parse_float(cbuf, UCLAMP_PERCENT_SHIFT,
+                                             &req.percent);
+                if (req.ret)
+                        return req;
+                if ((u64)req.percent > UCLAMP_PERCENT_SCALE) {
+                        req.ret = -ERANGE;
+                        return req;
+                }
 
-		req.util = req.percent << SCHED_CAPACITY_SHIFT;
-		req.util = DIV_ROUND_CLOSEST_ULL(req.util, UCLAMP_PERCENT_SCALE);
-	}
+                req.util = req.percent << SCHED_CAPACITY_SHIFT;
+                req.util = DIV_ROUND_CLOSEST_ULL(req.util, UCLAMP_PERCENT_SCALE);
+        }
 
-	return req;
+        return req;
 }
 
 static ssize_t uclamp_min_show(struct kobject *kobj,
@@ -251,8 +257,8 @@ static ssize_t uclamp_min_show(struct kobject *kobj,
 {
 	struct ems_task_group *tg = container_of(kobj, struct ems_task_group, kobj);
 	u64 util_clamp;
-	u64 percent;
-	u32 rem;
+        u64 percent;
+        u32 rem;
 
 	util_clamp = tg->uc_req[UCLAMP_MIN].value;
 
@@ -261,7 +267,7 @@ static ssize_t uclamp_min_show(struct kobject *kobj,
 	}
 
 	percent = tg->uclamp_pct[UCLAMP_MIN];
-	percent = div_u64_rem(percent, POW10(UCLAMP_PERCENT_SHIFT), &rem);
+        percent = div_u64_rem(percent, POW10(UCLAMP_PERCENT_SHIFT), &rem);
 	return sprintf(buf, "%llu.%0*u\n", percent, UCLAMP_PERCENT_SHIFT, rem);
 }
 
@@ -269,11 +275,11 @@ static ssize_t uclamp_min_store(struct kobject *kobj,
 		struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	struct ems_task_group *tg = container_of(kobj, struct ems_task_group, kobj);
-	struct uclamp_request req;
+        struct uclamp_request req;
 
-	req = capacity_from_percent(buf);
-	if (req.ret)
-		return req.ret;
+        req = capacity_from_percent(buf);
+        if (req.ret)
+                return req.ret;
 
 	if (req.util == tg->uc_req[UCLAMP_MIN].value)
 		return count;
@@ -296,7 +302,7 @@ static ssize_t uclamp_max_show(struct kobject *kobj,
 	struct ems_task_group *tg = container_of(kobj, struct ems_task_group, kobj);
 	u64 util_clamp;
 	u64 percent;
-	u32 rem;
+        u32 rem;
 
 	util_clamp = tg->uc_req[UCLAMP_MAX].value;
 
@@ -305,7 +311,7 @@ static ssize_t uclamp_max_show(struct kobject *kobj,
 	}
 
 	percent = tg->uclamp_pct[UCLAMP_MAX];
-	percent = div_u64_rem(percent, POW10(UCLAMP_PERCENT_SHIFT), &rem);
+        percent = div_u64_rem(percent, POW10(UCLAMP_PERCENT_SHIFT), &rem);
 	return sprintf(buf, "%llu.%0*u\n", percent, UCLAMP_PERCENT_SHIFT, rem);
 }
 
@@ -313,14 +319,14 @@ static ssize_t uclamp_max_store(struct kobject *kobj,
 		struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	struct ems_task_group *tg = container_of(kobj, struct ems_task_group, kobj);
-	struct uclamp_request req;
+        struct uclamp_request req;
 
-	req = capacity_from_percent(buf);
-	if (req.ret)
-		return req.ret;
+        req = capacity_from_percent(buf);
+        if (req.ret)
+                return req.ret;
 
-	if (req.util == tg->uc_req[UCLAMP_MAX].value)
-		return count;
+        if (req.util == tg->uc_req[UCLAMP_MAX].value)
+                return count;
 
 	tg->uc_req[UCLAMP_MAX].value = req.util;
 	tg->uc_req[UCLAMP_MAX].bucket_id = get_bucket_id(req.util);

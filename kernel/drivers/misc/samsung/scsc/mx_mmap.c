@@ -28,9 +28,7 @@
 #include "scsc_mx_impl.h"
 #include "scsc_mif_abs.h"
 #include "gdb_transport.h"
-
-#if defined(CONFIG_SCSC_PCIE_CHIP)
-#include "pcie_s6165.h"
+#if defined(CONFIG_SCSC_PCIE_CHIP) || defined(CONFIG_WLBT_SPLIT_RECOVERY)
 #include "mxman.h"
 #endif
 
@@ -44,9 +42,6 @@
 
 #define MAXWELL_MMAP_RAMRP_DRIVER		"Maxwell ramrp Driver"
 #define SCSC_MAX_INTERFACES     (7 * (SCSC_MMAP_NODE + SCSC_GDB_NODE))
-#define CEILING(x,y) (((x) + (y) - 1) / (y))
-#define MAX_RAMRP_SZ			33 * 1024
-#define MAX_RAMRP_SZ_ALIGNED	((CEILING(MAX_RAMRP_SZ, PAGE_SIZE)) * (PAGE_SIZE))	/* Maximum memory for ramrp, note that it has to be page aligned*/
 #else
 #define SCSC_MAX_INTERFACES     (6 * (SCSC_MMAP_NODE + SCSC_GDB_NODE))
 #endif
@@ -173,6 +168,9 @@ int mx_gdb_open(struct inode *inode, struct file *filp)
 {
 	struct mx_mmap_dev *mx_dev;
 	int                ret;
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	struct mxman *mxman;
+#endif
 
 	mx_dev = container_of(inode->i_cdev, struct mx_mmap_dev, cdev);
 
@@ -191,7 +189,19 @@ int mx_gdb_open(struct inode *inode, struct file *filp)
 		SCSC_TAG_ERR(MX_MMAP, "already open %p\n", filp);
 		return -EBUSY;
 	}
-
+#if defined(CONFIG_WLBT_SPLIT_RECOVERY)
+	/* Filter the request to create gdb channel un-related to paniced subsystem */
+	mxman = scsc_mx_get_mxman(mx_dev->gdb_transport->mx);
+	if (mxman_if_warm_reset_in_progress()) {
+		if ((mxman->scsc_panic_sub == SCSC_SUBSYSTEM_WLAN && mx_dev->gdb_transport->target == SCSC_MIF_ABS_TARGET_WPAN)
+			|| (mxman->scsc_panic_sub== SCSC_SUBSYSTEM_WPAN && mx_dev->gdb_transport->target == SCSC_MIF_ABS_TARGET_WLAN)) {
+			SCSC_TAG_ERR(MX_MMAP, "This gdb transport cannot open because %s normally operates.\n",
+					mx_dev->gdb_transport->target == SCSC_MIF_ABS_TARGET_WPAN ? "WPAN" : "WLAN");
+			clear_bit_unlock(0, &mx_dev->lock);
+			return -EINVAL;
+		}
+	}
+#endif
 	/* Prevent channel teardown while client has open */
 	mutex_lock(&mx_dev->gdb_transport->channel_open_mutex);
 #if defined(CONFIG_SCSC_PCIE_CHIP)
@@ -484,19 +494,13 @@ void client_gdb_remove(struct gdb_transport_client *gdb_client, struct gdb_trans
 }
 
 #if defined(CONFIG_SCSC_PCIE_CHIP)
-
-static inline int read_ramrp(u32 *ramrp_buff, int count, loff_t f_pos) {
-	u16 i = 0;
-	const __iomem void *registers_ramrp_glob = pcie_get_ramrp_ref();
-
-	if (registers_ramrp_glob == NULL)
-		return -EPERM;
-
-	for (i = 0; i < (count / 4); i++) {
-		ramrp_buff[i] = readl((registers_ramrp_glob) + (4 * i) + (f_pos));
-		udelay(10);
-	}
-	return 0;
+static inline int read_ramrp(struct mx_mmap_dev* mx_dev, int count, loff_t f_pos)
+{
+	int bytes = 0;
+	if(mx_dev->mif_abs->get_ramrp_buff == NULL)
+		return -EINVAL;
+	bytes = mx_dev->mif_abs->get_ramrp_buff(mx_dev->mif_abs, &(mx_dev->mem), count, f_pos);
+	return bytes;
 }
 
 int mx_ramrp_open(struct inode *inode, struct file *filp)
@@ -521,33 +525,19 @@ int mx_ramrp_mmap(struct file *filp, struct vm_area_struct *vma)
 	int                err;
 	struct mx_mmap_dev *mx_dev;
 	struct page *page = NULL;
+	int bytes = 0;
 
-	if (vma->vm_end - vma->vm_start > MAX_RAMRP_SZ_ALIGNED) {
-		SCSC_TAG_ERR(MX_MMAP, "Incorrect mapping size %ld, should be less than %ld\n",
-		       vma->vm_end - vma->vm_start, MAX_RAMRP_SZ_ALIGNED);
-		return -EINVAL;
-	}
 	mx_dev = filp->private_data;
 
 	SCSC_TAG_INFO(MX_MMAP, "mxman state is %d %d\n", mxman_is_failed(), mxman_is_frozen());
 	if((!mxman_is_failed() && !mxman_is_frozen()))
 		return -EPERM;
-
-	SCSC_TAG_INFO(MX_MMAP, "Setting pgprot_noncached, pgprot_writecombine\n");
-	vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
-
-	/* Get the memory */
-	if (!mx_dev->mem)
-	{
-		SCSC_TAG_ERR(MX_MMAP, "fatal err mem does not exist \n");
-		return -ENODEV;
-	}
-
-	if(read_ramrp(mx_dev->mem, vma->vm_end - vma->vm_start, 0) < 0)
-		return -EPERM;
+	bytes = read_ramrp(mx_dev, vma->vm_end - vma->vm_start, 0);
+	if(bytes < 0)
+		return bytes;
 
 	/* remap kernel memory to userspace */
-	page = virt_to_page((unsigned long)(mx_dev->mem) + (vma->vm_pgoff << PAGE_SHIFT));
+	page = virt_to_page((uintptr_t)(mx_dev->mem) + (vma->vm_pgoff << PAGE_SHIFT));
 
 	err = remap_pfn_range(vma, vma->vm_start, page_to_pfn(page), vma->vm_end - vma->vm_start, vma->vm_page_prot);
 
@@ -557,25 +547,32 @@ int mx_ramrp_mmap(struct file *filp, struct vm_area_struct *vma)
 
 ssize_t mx_ramrp_read(struct file *filp, char __user *buff, size_t count, loff_t *f_pos)
 {
+	int bytes = 0;
 	struct mx_mmap_dev *mx_dev;
+	int buff_offset = 0;
 	mx_dev = filp->private_data;
 
 	if(!mxman_is_failed() && !mxman_is_frozen())
 		return -EPERM;
-	/* Adjust the 'count' */
-	if((*f_pos + count) > MAX_RAMRP_SZ)
-		count = MAX_RAMRP_SZ - *f_pos;
+	bytes = read_ramrp(mx_dev, count, *f_pos);
+	if (bytes < 0)
+		return bytes;
 
-	if (read_ramrp(mx_dev->mem, count, *f_pos) < 0)
-		return -EPERM;
-
+	if (bytes > count) {
+		/* We have read more than what was requested due to the memory alignment */
+		/* The offset needs to be adjusted if it is not aligned to read the correct data of the buff*/
+		if ((*f_pos % 4))
+			buff_offset = *f_pos - (((*f_pos/4) - 1) * 4);
+	}
+	else {
+		count = bytes;
+	}
 	/*copy to user */
-	if(copy_to_user(buff, (u8*)(mx_dev->mem), count)){
+	if(copy_to_user(buff, (u8*)(mx_dev->mem) + buff_offset, count)){
 		return -EFAULT;
 	}
 	/*update the current file postion */
 	*f_pos += count;
-
 	/*Return number of bytes which have been successfully read */
 	return count;
 }
@@ -594,8 +591,6 @@ void scsc_mx_ramrp_module_remove(struct scsc_mif_abs *mif_abs)
 
 	while (i--)
 		if (mx_mmap.devs[i].mif_abs == mif_abs) {
-			if (mx_mmap.devs[i].mem)
-				kfree(mx_mmap.devs[i].mem);
 			device_destroy(mx_mmap.class_mx_mmap, mx_mmap.devs[i].cdev.dev);
 			cdev_del(&mx_mmap.devs[i].cdev);
 			memset(&mx_mmap.devs[i].cdev, 0, sizeof(struct cdev));
@@ -658,7 +653,7 @@ void scsc_mx_mmap_module_probe(struct scsc_mif_mmap_driver *abs_driver, struct s
 		snprintf(dev_name, sizeof(dev_name), "%s_%d_%s", "mx", (int)uid, "ramrp");
 		cdev_init(&mx_mmap.devs[minor].cdev, &mx_ramrp_fops);
 		mx_mmap.devs[minor].cdev.ops = &mx_ramrp_fops;
-		mx_mmap.devs[minor].mem = kzalloc(MAX_RAMRP_SZ_ALIGNED, GFP_KERNEL);
+		mx_mmap.devs[minor].mem = NULL;
 	}
 #endif
 	else {

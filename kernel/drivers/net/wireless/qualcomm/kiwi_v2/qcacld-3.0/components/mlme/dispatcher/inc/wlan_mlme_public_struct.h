@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -222,6 +222,7 @@ struct mlme_edca_ac_vo {
 /**
  * enum mlme_dot11_mode - Dot11 mode of the vdev
  * @MLME_DOT11_MODE_ALL: vdev supports all dot11 modes
+ * @MLME_DOT11_MODE_ABG: vdev supports just 11A, 11B and 11G modes
  * @MLME_DOT11_MODE_11A: vdev just supports 11A mode
  * @MLME_DOT11_MODE_11B: vdev supports 11B mode, and modes above it
  * @MLME_DOT11_MODE_11G: vdev supports 11G mode, and modes above it
@@ -237,6 +238,8 @@ struct mlme_edca_ac_vo {
  */
 enum mlme_dot11_mode {
 	MLME_DOT11_MODE_ALL,
+	/* Initial dot11 modes should come first */
+	MLME_DOT11_MODE_ABG,
 	MLME_DOT11_MODE_11A,
 	MLME_DOT11_MODE_11B,
 	MLME_DOT11_MODE_11G,
@@ -248,7 +251,7 @@ enum mlme_dot11_mode {
 	MLME_DOT11_MODE_11AX,
 	MLME_DOT11_MODE_11AX_ONLY,
 	MLME_DOT11_MODE_11BE,
-	MLME_DOT11_MODE_11BE_ONLY
+	MLME_DOT11_MODE_11BE_ONLY,
 };
 
 /**
@@ -794,6 +797,7 @@ struct wlan_mlme_cfg_sap {
  * @dfs_disable_japan_w53: Disable W53 channels
  * @sap_tx_leakage_threshold: sap tx leakage threshold
  * @dfs_pri_multiplier: dfs_pri_multiplier for handle missing pulses
+ * @dfs_discard_mode: Modes for which DFS channels need to discard
  */
 struct wlan_mlme_dfs_cfg {
 	bool dfs_master_capable;
@@ -805,6 +809,7 @@ struct wlan_mlme_dfs_cfg {
 	bool dfs_disable_japan_w53;
 	uint32_t sap_tx_leakage_threshold;
 	uint32_t dfs_pri_multiplier;
+	uint8_t dfs_discard_mode;
 };
 
 /**
@@ -1816,6 +1821,7 @@ enum station_prefer_bw {
  * @mlo_support_link_band:          band bitmap that sta mlo supports
  * @mlo_max_simultaneous_links:     number of simultaneous links
  * @mlo_prefer_percentage:          percentage to boost/reduce mlo scoring
+ * @mlo_5gl_5gh_mlsr:               enable/disable 5GL+5GH MLSR
  * @epcs_capability:                epcs capability enable or disable flag
  * @usr_disable_eht:                user disable the eht for STA
  * @eht_disable_punct_in_us_lpi:    Disable eht puncture in us lpi mode
@@ -1853,6 +1859,7 @@ struct wlan_mlme_sta_cfg {
 	uint8_t mlo_support_link_band;
 	uint8_t mlo_max_simultaneous_links;
 	int8_t mlo_prefer_percentage;
+	bool mlo_5gl_5gh_mlsr;
 #endif
 #ifdef WLAN_FEATURE_11BE
 	bool epcs_capability;
@@ -1895,6 +1902,8 @@ enum roaming_dfs_channel_type {
  * @threshold: Bss load threshold value above which roaming should start
  * @sample_time: Time duration in milliseconds for which the bss load value
  * should be monitored
+ * @bss_load_alpha: Factor for computing average bss load from current channel
+ * utilization
  * @rssi_threshold_6ghz: RSSI threshold of the current connected AP below which
  * roam should be triggered if bss load threshold exceeds the configured value.
  * This value is applicable only when we are connected in 6GHz band.
@@ -1909,6 +1918,7 @@ struct bss_load_trigger {
 	bool enabled;
 	uint32_t threshold;
 	uint32_t sample_time;
+	uint32_t bss_load_alpha;
 	uint32_t rssi_threshold_6ghz;
 	int32_t rssi_threshold_5ghz;
 	int32_t rssi_threshold_24ghz;
@@ -2073,6 +2083,8 @@ struct fw_scan_channels {
  * only on prior discovery of any 6 GHz support in the environment.
  * @disconnect_on_nud_roam_invoke_fail: indicate whether disconnect ap when
  * roam invoke fail on nud.
+ * @hs20_btm_offload_disable: indicate whether btm offload is enable/disable
+ * for Hotspot 2.0
  */
 struct wlan_mlme_lfr_cfg {
 	bool mawc_roam_enabled;
@@ -2200,6 +2212,7 @@ struct wlan_mlme_lfr_cfg {
 	uint8_t exclude_rm_partial_scan_freq;
 	uint8_t roam_full_scan_6ghz_on_disc;
 	bool disconnect_on_nud_roam_invoke_fail;
+	bool hs20_btm_offload_disable;
 };
 
 /**
@@ -2748,7 +2761,7 @@ struct wlan_mlme_reg {
 	bool is_afc_reg_noaction;
 #endif
 #ifdef FEATURE_WLAN_CH_AVOID_EXT
-	bool coex_unsafe_chan_nb_user_prefer;
+	uint32_t coex_unsafe_chan_nb_user_prefer;
 	bool coex_unsafe_chan_reg_disable;
 #endif
 };
@@ -2832,6 +2845,8 @@ struct wlan_mlme_iot {
  * @eml_cap: EML capability subfield present in ML IE common info
  * @dynamic_nss_chains_support : intersection of host and fw capability of
  *				 dynamic NSS chain support
+ * @reduce_pwr_scan_mode : reduce power scan mode enable/disable
+ * @passive_chan_discard_mode: discard passive channels
  */
 struct wlan_mlme_cfg {
 	struct wlan_mlme_chainmask chainmask_cfg;
@@ -2883,6 +2898,8 @@ struct wlan_mlme_cfg {
 	bool connection_roaming_ini_flag;
 	struct wlan_mlme_eml_cap eml_cap;
 	bool dynamic_nss_chains_support;
+	bool reduce_pwr_scan_mode;
+	uint8_t passive_chan_discard_mode;
 };
 
 /**
@@ -2952,6 +2969,42 @@ struct wlan_change_bi {
 
 #ifdef FEATURE_SET
 /**
+ * enum wlan_mlme_iface_combinations - Iface combinations
+ * @MLME_IFACE_STA_P2P_SUPPORT: STA + P2P concurrency bit
+ * @MLME_IFACE_STA_SAP_SUPPORT: STA + SAP concurrency bit
+ * @MLME_IFACE_STA_NAN_SUPPORT: STA + NAN concurrency bit
+ * @MLME_IFACE_STA_TDLS_SUPPORT: STA + TDLS concurrency bit
+ * @MLME_IFACE_STA_DUAL_P2P_SUPPORT: STA + P2P + P2P concurrency bit
+ * @MLME_IFACE_STA_SAP_P2P_SUPPORT: STA + SAP + P2P concurrency bit
+ * @MLME_IFACE_STA_SAP_NAN_SUPPORT: STA + SAP + NAN concurrency bit
+ * @MLME_IFACE_STA_P2P_NAN_SUPPORT: STA + P2P + NAN concurrency bit
+ * @MLME_IFACE_STA_P2P_TDLS_SUPPORT: STA + P2P + TDLS concurrency bit
+ * @MLME_IFACE_STA_SAP_TDLS_SUPPORT: STA + SAP + TDLS concurrency bit
+ * @MLME_IFACE_STA_NAN_TDLS_SUPPORT: STA + NAN + TDLS concurrency bit
+ * @MLME_IFACE_STA_SAP_P2P_TDLS_SUPPORT: STA + SAP + P2P + TDLS concurrency bit
+ * @MLME_IFACE_STA_SAP_NAN_TDLS_SUPPORT: STA + SAP + NAN + TDLS concurrency bit
+ * @MLME_IFACE_STA_P2P_P2P_TDLS_SUPPORT: STA + P2P + P2P + TDLS concurrency bit
+ * @MLME_IFACE_STA_P2P_NAN_TDLS_SUPPORT: STA + P2P + NAN + TDLS concurrency bit
+ */
+enum wlan_mlme_iface_combinations {
+	MLME_IFACE_STA_P2P_SUPPORT = 0x1,
+	MLME_IFACE_STA_SAP_SUPPORT = 0x2,
+	MLME_IFACE_STA_NAN_SUPPORT = 0x4,
+	MLME_IFACE_STA_TDLS_SUPPORT = 0x8,
+	MLME_IFACE_STA_DUAL_P2P_SUPPORT = 0x10,
+	MLME_IFACE_STA_SAP_P2P_SUPPORT = 0x20,
+	MLME_IFACE_STA_SAP_NAN_SUPPORT = 0x40,
+	MLME_IFACE_STA_P2P_NAN_SUPPORT = 0x80,
+	MLME_IFACE_STA_P2P_TDLS_SUPPORT = 0x100,
+	MLME_IFACE_STA_SAP_TDLS_SUPPORT = 0x200,
+	MLME_IFACE_STA_NAN_TDLS_SUPPORT = 0x400,
+	MLME_IFACE_STA_SAP_P2P_TDLS_SUPPORT = 0x800,
+	MLME_IFACE_STA_SAP_NAN_TDLS_SUPPORT = 0x1000,
+	MLME_IFACE_STA_P2P_P2P_TDLS_SUPPORT = 0x2000,
+	MLME_IFACE_STA_P2P_NAN_TDLS_SUPPORT = 0x4000,
+};
+
+/**
  * struct wlan_mlme_features - Mlme feature set structure
  * @enable_wifi_optimizer: indicates wifi optimizer is enabled or disabled
  * @sap_max_num_clients: maximum number of SoftAP clients
@@ -2970,8 +3023,8 @@ struct wlan_change_bi {
  * @roaming_ctrl_get_cu: Roaming ctrl get cu enabled or disabled
  * @vendor_req_1_version: Vendor requirement version 1
  * @vendor_req_2_version: Vendor requirement version 2
- * @sta_dual_p2p_support: STA + dual p2p support enabled or not
  * @enable2x2: Enable 2x2
+ * @iface_combinations: iface combination bitmask
  */
 struct wlan_mlme_features {
 	bool enable_wifi_optimizer;
@@ -2990,8 +3043,8 @@ struct wlan_mlme_features {
 	bool roaming_ctrl_get_cu;
 	WMI_HOST_VENDOR1_REQ1_VERSION vendor_req_1_version;
 	WMI_HOST_VENDOR1_REQ2_VERSION vendor_req_2_version;
-	bool sta_dual_p2p_support;
 	bool enable2x2;
+	uint32_t iface_combinations;
 };
 #endif
 

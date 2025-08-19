@@ -348,6 +348,7 @@ int csi_hw_s_config_dma(u32 __iomem *ctl_reg, u32 __iomem *vc_reg,
 	case HW_FORMAT_USER1:
 	case HW_FORMAT_USER2:
 	case HW_FORMAT_EMBEDDED_8BIT:
+	case HW_FORMAT_EMBEDDED_8BIT_POTF:
 	case HW_FORMAT_YUV420_8BIT:
 	case HW_FORMAT_YUV420_10BIT:
 	case HW_FORMAT_YUV422_8BIT:

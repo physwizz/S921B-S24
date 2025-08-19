@@ -227,9 +227,10 @@
 				bypass = <0>;
 				arqos = <0x8>;
 				awqos = <0xF>;
-				rmo = <0x20>;
-				wmo = <0x20>;
-				qurgent_on = <0>;
+				rmo = <0x30>;
+				wmo = <0x30>;
+				qurgent_on = <0x1>;
+				qurgent_th_r = <0x14>;
 				blocking_on = <0>;
 			};
 			mfc_uhd_enc60 {
@@ -294,9 +295,10 @@
 				bypass = <0>;
 				arqos = <0x8>;
 				awqos = <0xF>;
-				rmo = <0x20>;
-				wmo = <0x20>;
-				qurgent_on = <0>;
+				rmo = <0x30>;
+				wmo = <0x30>;
+				qurgent_on = <0x1>;
+				qurgent_th_r = <0x14>;
 				blocking_on = <0>;
 			};
 			mfc_uhd_enc60 {

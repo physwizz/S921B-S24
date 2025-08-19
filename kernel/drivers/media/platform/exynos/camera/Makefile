@@ -28,9 +28,9 @@ pablo-spis-objs := is-spi.o
 obj-$(CONFIG_PABLO_SPI) += pablo-spis.o
 
 # testing
-fimc-is-$(CONFIG_PABLO_UNIT_TEST) += testing/pablo-self-test-result.o
-fimc-is-$(CONFIG_PABLO_UNIT_TEST) += testing/pablo-sensor-self-test.o
-fimc-is-$(CONFIG_PABLO_UNIT_TEST) += testing/pablo-phy-tune.o
+fimc-is-objs += testing/pablo-self-test-result.o
+fimc-is-objs += testing/pablo-sensor-self-test.o
+fimc-is-objs += testing/pablo-phy-tune.o
 
 obj-$(CONFIG_VIDEO_EXYNOS_PABLO_ISP) += fimc-is.o
 obj-$(CONFIG_VIDEO_EXYNOS_PABLO_ISP) += post/

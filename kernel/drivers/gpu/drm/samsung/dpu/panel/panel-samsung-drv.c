@@ -70,6 +70,8 @@ const char exynos_panel_cmd_string[][DRM_PROP_NAME_LEN] = {
 	"exynos,vref-cmds",
 	"exynos,tectrl-cmds",
 	"exynos,lp-mode-cmds",
+	"exynos,panel-close-cmds",
+	"exynos,panel-open-cmds",
 	"cmd:out-of-range",
 };
 
@@ -1268,6 +1270,17 @@ static void exynos_panel_bridge_post_disable(struct exynos_drm_bridge *exynos_br
 	mutex_unlock(&ctx->mode_lock);
 }
 
+static void exynos_panel_bridge_lastclose(struct exynos_drm_bridge *exynos_bridge)
+{
+	struct exynos_panel *ctx = exynos_bridge_to_exynos_panel(exynos_bridge);
+	const struct exynos_panel_funcs *funcs = ctx->func_set->exynos_panel_func;
+
+	mutex_lock(&ctx->mode_lock);
+	if (!ctx->lastclosed && funcs && funcs->lastclose)
+		funcs->lastclose(ctx, true);
+	mutex_unlock(&ctx->mode_lock);
+}
+
 static void exynos_panel_bridge_mode_set(struct exynos_drm_bridge *exynos_bridge,
 				  const struct drm_display_mode *mode,
 				  const struct drm_display_mode *adjusted_mode)
@@ -1293,6 +1306,9 @@ static void exynos_panel_bridge_mode_set(struct exynos_drm_bridge *exynos_bridge
 		const struct drm_connector *conn = &ctx->exynos_connector.base;
 		struct exynos_drm_connector_state *exynos_state =
 			to_exynos_connector_state(conn->state);
+
+		if (ctx->lastclosed && funcs->lastclose)
+			funcs->lastclose(ctx, false);
 
 		if (is_lp_mode && funcs->set_lp_mode)
 			funcs->set_lp_mode(ctx, pmode);
@@ -1382,6 +1398,7 @@ static const struct exynos_drm_bridge_funcs exynos_panel_bridge_funcs = {
 	.reset = exynos_panel_bridge_reset,
 	.psr_stop = exynos_panel_bridge_psr_stop,
 	.psr_start = exynos_panel_bridge_psr_start,
+	.lastclose = exynos_panel_bridge_lastclose,
 };
 
 static void exynos_panel_parse_vendor_params(struct device *dev, struct exynos_panel *ctx)
@@ -2517,10 +2534,12 @@ void exynos_panel_shutdown(struct mipi_dsi_device *dsi)
 {
 	struct exynos_panel *ctx = mipi_dsi_get_drvdata(dsi);
 
+	pr_info("%s+\n", __func__);
 	mutex_lock(&ctx->mode_lock);
 	drm_panel_disable(&ctx->panel);
 	drm_panel_unprepare(&ctx->panel);
 	mutex_unlock(&ctx->mode_lock);
+	pr_info("%s-\n", __func__);
 }
 EXPORT_SYMBOL(exynos_panel_shutdown);
 

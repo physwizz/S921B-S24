@@ -20,7 +20,7 @@
 enum wlbt_irqs {
        PLATFORM_MIF_MBOX,
 #if defined(CONFIG_SOC_S5E5515) || defined(CONFIG_SOC_S5E8825) || defined(CONFIG_SOC_S5E8535) \
-       || defined(CONFIG_SOC_S5E8835) || defined(CONFIG_SOC_S5E8845)
+       || defined(CONFIG_SOC_S5E8835) || defined(CONFIG_SOC_S5E8845) || defined(CONFIG_SOC_S5E5535)
        PLATFORM_MIF_MBOX_WPAN,
 #endif
        PLATFORM_MIF_ALIVE,
@@ -28,7 +28,7 @@ enum wlbt_irqs {
 #if defined(CONFIG_SOC_EXYNOS9610) || defined(CONFIG_SOC_EXYNOS9630) \
 	|| defined(CONFIG_SOC_EXYNOS3830) || defined(CONFIG_SOC_S5E9815) || \
 	defined(CONFIG_SOC_S5E5515) || defined(CONFIG_SOC_S5E8825) || defined(CONFIG_SOC_S5E8535) \
-       || defined(CONFIG_SOC_S5E8835) || defined(CONFIG_SOC_S5E8845)
+       || defined(CONFIG_SOC_S5E8835) || defined(CONFIG_SOC_S5E8845) || defined(CONFIG_SOC_S5E5535)
        PLATFORM_MIF_CFG_REQ,
 #endif
 #if defined(CONFIG_WLBT_PMU2AP_MBOX)

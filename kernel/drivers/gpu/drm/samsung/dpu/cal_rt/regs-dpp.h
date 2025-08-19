@@ -40,8 +40,10 @@ enum dpp_regs_id {
 	REGS_DPP13_ID,
 	REGS_DPP14_ID,
 	REGS_DPP15_ID,
-	REGS_DPP16_ID, /* WB */
-	REGS_DPP17_ID, /* WB */
+	REGS_DPP16_ID, /* WB -> RCD */
+	REGS_DPP17_ID, /* WB -> RCD */
+	REGS_DPP18_ID, /* NA -> WB */
+	REGS_DPP19_ID, /* NA -> WB */
 	REGS_DPP_ID_MAX
 };
 
@@ -710,6 +712,172 @@ enum dpp_regs_type {
 #define ODMA_CFG_ERR_DST_HEIGHT			(1 << 1)
 #define ODMA_CFG_ERR_DST_WIDTH			(1 << 0)
 #define ODMA_CFG_ERR_GET(_v)			(((_v) >> 0) & 0x1FFF)
+
+/*
+ *-------------------------------------------------------------------
+ * RCDISP(L12)x2 DMA SFR list
+ * base address : 0x1990_0000 / 0x19B0_0000
+ * < Layer.offset >
+ *  L12 - 0xC000
+ * - EDMA : DMA for RCD - Decorative Layer
+ *-------------------------------------------------------------------
+ */
+#define RCDISP_SHD_OFFSET		   (0x0400)
+
+#define RCDISP_ENABLE                      (0x0000)
+#define RCDISP_SRESET                      (1 << 8)
+#define RCDISP_SFR_UPDATE_FORCE            (1 << 4)
+#define RCDISP_OP_STATUS                   (1 << 2)
+#define OP_STATUS_IDLE                     (0)
+#define OP_STATUS_BUSY                     (1)
+#define RCDISP_INST_OFF_PEND	           (1 << 1)
+#define INST_OFF_PEND                      (1)
+#define INST_OFF_NOT_PEND                  (0)
+
+#define RCDISP_IRQ                         (0x0004)
+#define RCDISP_DECODER_ERR_IRQ		   (1 << 23)
+#define RCDISP_RECOVERY_TRG_IRQ            (1 << 22)
+#define RCDISP_CONFIG_ERR_IRQ              (1 << 21)
+#define RCDISP_INST_OFF_DONE               (1 << 20)
+#define RCDISP_READ_SLAVE_ERR_IRQ          (1 << 19)
+#define RCDISP_DEADLOCK_IRQ                (1 << 17)
+#define RCDISP_FRAME_DONE_IRQ              (1 << 16)
+#define RCDISP_ALL_IRQ_CLEAR               (0xFB << 16)
+#define RCDISP_DECODER_ERR_TRG_MASK	   (1 << 8)
+#define RCDISP_RECOVERY_TRG_MASK           (1 << 7)
+#define RCDISP_CONFIG_ERR_MASK             (1 << 6)
+#define RCDISP_INST_OFF_DONE_MASK          (1 << 5)
+#define RCDISP_READ_SLAVE_ERR_MASK         (1 << 4)
+#define RCDISP_DEADLOCK_MASK               (1 << 2)
+#define RCDISP_FRAME_DONE_MASK             (1 << 1)
+#define RCDISP_ALL_IRQ_MASK                (0xFB << 1) // 0x1F6 -> (0xFB << 1)
+#define RCDISP_IRQ_ENABLE                  (1 << 0)
+
+#define RCDISP_IN_CTRL_0                   (0x0008)
+#define RCDISP_IC_MAX(_v)                  ((_v) << 16)
+#define RCDISP_IC_MAX_MASK                 (0xFF << 16)
+#define RCDISP_MODE			   (1 << 1)
+#define RCDISP_BLOCK_EN                    (1 << 0)
+
+#define RCDISP_SRC_WIDTH                   (0x0010)
+#define RCD_SRC_WIDTH(_v)                ((_v) << 0)
+#define RCD_SRC_WIDTH_MASK                 (0xFFFFFF << 0)
+
+#define RCDISP_SRC_HEIGHT		   (0x0014)
+#define RCD_SRC_HEIGHT(_v)                 ((_v) << 0)
+#define RCD_SRC_HEIGHT_MASK                (0xFFFFFF << 0)
+
+#define RCDISP_SRC_OFFSET                  (0x0018)
+#define RCDISP_SRC_OFFSET_Y(_v)            ((_v) << 16)
+#define RCDISP_SRC_OFFSET_Y_MASK           (0xFFFF << 16)
+#define RCDISP_SRC_OFFSET_X(_v)            ((_v) << 0)
+#define RCDISP_SRC_OFFSET_X_MASK           (0xFFFF << 0)
+
+#define RCDISP_IMG_SIZE                    (0x001C)
+#define RCDISP_IMG_HEIGHT(_v)              ((_v) << 16)
+#define RCDISP_IMG_HEIGHT_MASK             (0xFFFF << 16)
+#define RCDISP_IMG_WIDTH(_v)               ((_v) << 0)
+#define RCDISP_IMG_WIDTH_MASK              (0xFFFF << 0)
+
+#define RCDISP_BLOCK_OFFSET                (0x0020)
+#define RCDISP_BLK_OFFSET_Y(_v)            ((_v) << 16)
+#define RCDISP_BLK_OFFSET_Y_MASK           (0xFFFF << 16)
+#define RCDISP_BLK_OFFSET_X(_v)            ((_v) << 0)
+#define RCDISP_BLK_OFFSET_X_MASK           (0xFFFF << 0)
+
+#define RCDISP_BLOCK_SIZE                  (0x0024)
+#define RCDISP_BLK_HEIGHT(_v)              ((_v) << 16)
+#define RCDISP_BLK_HEIGHT_MASK             (0x3FFF << 16)
+#define RCDISP_BLK_WIDTH(_v)               ((_v) << 0)
+#define RCDISP_BLK_WIDTH_MASK              (0x3FFF << 0)
+
+#define RCDISP_BLOCK_VALUE                 (0x0028)
+#define RCDISP_PIX_VALUE_ARGB(_v)          ((_v) << 0)
+#define RCDISP_PIX_VALUE_ARGB_MASK         (0xFFFFFFFF << 0)
+
+#define RCDISP_BASEADDR_P0		   (0x0040)
+
+#define RCDISP_RECOVERY_CTRL               (0x0070)
+#define RCDISP_RECOVERY_NUM(_v)            ((_v) << 1)
+#define RCDISP_RECOVERY_NUM_MASK           (0x7fffffff << 1)
+#define RCDISP_RECOVERY_EN                 (1 << 0)
+
+#define RCDISP_DEADLOCK_CTRL               (0x0100)
+#define RCDISP_DEADLOCK_NUM(_v)            ((_v) << 1)
+#define RCDISP_DEADLOCK_NUM_MASK           (0x7FFFFFFF << 1)
+#define RCDISP_DEADLOCK_NUM_EN             (1 << 0)
+
+#define RCDISP_BUS_CTRL                    (0x0110)
+#define RCDISP_ARCACHE_P0(_v)              ((_v) << 0)
+#define RCDISP_ARCACHE_P0_MASK             (0xf << 0)
+
+#define RCDISP_LLC_CTRL                    (0x0114)
+#define RCDISP_DATA_SAHRE_TYPE_P0(_v)      ((_v) << 4)
+#define RCDISP_DATA_SAHRE_TYPE_P0_MASK     (0x3 << 4)
+#define RCDISP_LLC_HINT_P0(_v)             ((_v) << 0)
+#define RCDISP_LLC_HINT_P0_MASK            (0x7 << 0)
+
+#define RCDISP_PERF_CTRL                   (0x0120)
+#define RCDISP_DEGRADATION_TIME(_v)        ((_v) << 16)
+#define RCDISP_DEGRADATION_TIME_MASK       (0xFFFF << 16)
+#define RCDISP_IC_MAX_DEG(_v)              ((_v) << 4)
+#define RCDISP_IC_MAX_DEG_MASK             (0xFF << 4)
+#define RCDISP_DEGRADATION_EN              (1 << 0)
+
+/* _n: [0,7], _v: [0x0, 0xF] */
+#define RCDISP_QOS_LUT_LOW                 (0x0130)
+#define RCDISP_QOS_LUT_HIGH                (0x0134)
+#define RCDISP_QOS_LUT(_n, _v)             ((_v) << (4*(_n)))
+#define RCDISP_QOS_LUT_MASK(_n)            (0xF << (4*(_n)))
+
+#define RCDISP_DYNAMIC_GATING_EN           (0x0140)
+#define RCDISP_SRAM_CG_EN                  (1 << 31)
+#define RCDISP_DG_EN(_n, _v)               ((_v) << (_n))
+#define RCDISP_DG_EN_MASK(_n)              (1 << (_n))
+#define RCDISP_DG_EN_ALL                   (0x7FFFFFFF << 0)
+
+#define RCDISP_MST_SECURITY                (0x0200)
+#define RCDISP_SLV_SECURITY                (0x0204)
+
+#define RCDISP_DEBUG_CTRL                  (0x0300)
+#define RCDISP_DEBUG_CTRL_SEL(_v)          ((_v) << 16)
+#define RCDISP_DEBUG_CTRL_SEL_MASK         (0xFFFF << 16)
+#define RCDISP_DEBUG_CTRL_EN               (1 << 0)
+
+#define RCDISP_DEBUG_DATA                  (0x0304)
+
+#define RCDISP_IN_REQ_DEST                 (0x0308)
+#define RCDISP_REQ_DEST_SEL(_v)            ((_v) << 0)
+#define RCDISP_REQ_DEST_SEL_MASK           (0x3 << 0)
+
+#define RCDISP_PSLV_ERR_CTRL               (0x030C)
+#define RCDISP_PSLV_ERR_CTRL_EN            (1 << 0)
+
+#define RCDISP_S_CONFIG_ERR_STATUS         (0x0740)
+#define RCDISP_CFG_ERR_ROTATION            (1 << 21)
+#define RCDISP_CFG_ERR_IMG_HEIGHT_ROTATION (1 << 20)
+#define RCDISP_CFG_ERR_AFBC                (1 << 18)
+#define RCDISP_CFG_ERR_SAJC                IDMA_CFG_ERR_AFBC
+#define RCDISP_CFG_ERR_SBWC                (1 << 17)
+#define RCDISP_CFG_ERR_BLOCK               (1 << 16)
+#define RCDISP_CFG_ERR_FORMAT              (1 << 15)
+#define RCDISP_CFG_ERR_STRIDE3             (1 << 14)
+#define RCDISP_CFG_ERR_STRIDE2             (1 << 13)
+#define RCDISP_CFG_ERR_STRIDE1             (1 << 12)
+#define RCDISP_CFG_ERR_STRIDE0             (1 << 11)
+#define RCDISP_CFG_ERR_CHROM_STRIDE        (1 << 10)
+#define RCDISP_CFG_ERR_BASE_ADDR_P3        (1 << 9) // C2
+#define RCDISP_CFG_ERR_BASE_ADDR_P2        (1 << 8) // Y2
+#define RCDISP_CFG_ERR_BASE_ADDR_P1        (1 << 7) // C8
+#define RCDISP_CFG_ERR_BASE_ADDR_P0        (1 << 6) // Y8
+#define RCDISP_CFG_ERR_SRC_OFFSET_Y        (1 << 5)
+#define RCDISP_CFG_ERR_SRC_OFFSET_X        (1 << 4)
+#define RCDISP_CFG_ERR_IMG_HEIGHT          (1 << 3)
+#define RCDISP_CFG_ERR_IMG_WIDTH           (1 << 2)
+#define RCDISP_CFG_ERR_SRC_HEIGH           (1 << 1)
+#define RCDISP_CFG_ERR_SRC_WIDTH           (1 << 0)
+#define RCDISP_CFG_ERR_GET(_v)             (((_v) >> 0) & 0x37FFFF)
+
 
 /*
  *-------------------------------------------------------------------

@@ -89,24 +89,6 @@ static int exynos_change_power_mode(struct ufs_hba *hba, struct uic_pwr_mode *pm
 	return ret;
 }
 
-static int ufs_set_affinity(unsigned int irq, u32 affinity)
-{
-       int num_cpu;
-
-#if defined(CONFIG_VENDOR_NR_CPUS)
-       num_cpu = CONFIG_VENDOR_NR_CPUS;
-#else
-       num_cpu = 8;
-#endif
-       if (affinity >= num_cpu) {
-               pr_err("%s: idx:%d affinity:%d error. cpu max:%d\n", __func__,
-                       irq, affinity, num_cpu);
-               return -EINVAL;
-       }
-
-       return irq_set_affinity_hint(irq, cpumask_of(affinity));
-}
-
 int ufs_gear_change(struct ufs_hba *hba, bool en)
 {
 	struct exynos_ufs *ufs = to_exynos_ufs(hba);
@@ -114,7 +96,6 @@ int ufs_gear_change(struct ufs_hba *hba, bool en)
 	struct uic_pwr_mode *act_pmd = &ufs->device_pmd_parm;
 	struct ufs_perf *perf = ufs->perf;
 	struct ufs_perf_stat_v2 *stat = &perf->stat_v2;
-	struct irq_inform *vendor_irq = &ufs->vendor_irq;
 	unsigned long flags;
 	int prev, ret = 0, val;
 
@@ -188,16 +169,10 @@ int ufs_gear_change(struct ufs_hba *hba, bool en)
 #if IS_ENABLED(CONFIG_EXYNOS_PM_QOS) || IS_ENABLED(CONFIG_EXYNOS_PM_QOS_MODULE)
 		exynos_pm_qos_update_request(&ufs->pm_qos_int, val);
 #endif
-		/* set irq-affinity */
-		if (!vendor_irq->num && !ufs->cal_param.evt_ver)
-			ufs_set_affinity(hba->irq, 4);
 	} else {
 #if IS_ENABLED(CONFIG_EXYNOS_PM_QOS) || IS_ENABLED(CONFIG_EXYNOS_PM_QOS_MODULE)
 		exynos_pm_qos_update_request(&ufs->pm_qos_int, 0);
 #endif
-		/* release irq-affinity */
-		if (!vendor_irq->num && !ufs->cal_param.evt_ver)
-			ufs_set_affinity(hba->irq, 0);
 	}
 
 	/* release gear-scale minlock */

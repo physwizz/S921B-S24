@@ -1448,6 +1448,13 @@ static void pablo_hw_api_cstat_hw_s_ds_cfg_kunit_test(struct kunit *test)
 
 		ret = cstat_hw_s_ds_cfg(ctx->test_addr, dma_id, &size_cfg, &param);
 		KUNIT_EXPECT_EQ(test, ret, 0);
+
+		/* Invalid crop offset */
+		dma_out->dma_crop_offset_x = size_cfg.bns.w;
+		dma_out->dma_crop_offset_y = size_cfg.bns.h;
+
+		ret = cstat_hw_s_ds_cfg(ctx->test_addr, dma_id, &size_cfg, &param);
+		KUNIT_EXPECT_NE(test, ret, 0);
 	}
 }
 

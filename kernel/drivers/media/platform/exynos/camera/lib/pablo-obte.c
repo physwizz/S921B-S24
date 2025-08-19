@@ -1116,12 +1116,19 @@ ssize_t __nocfi pablo_user_read_json(struct file *file, char *buf, size_t count,
 		dump_id = reg_dump_temp_info->dump_id;
 
 		if (dump_id >= HW_REG_DUMP_ID_MAX) {
-			err_obte("dump_id is out-of-range, dump id: %d", dump_id);
+			err_obte("dump_id(%d) is out-of-range (MAX:%d)\n",
+					dump_id, HW_REG_DUMP_ID_MAX);
+			return -EFAULT;
+		}
+
+		if (reg_dump_temp_info->image_num >= MAX_STRIPE_NUM) {
+			err_obte("image_num(%d) is out-of-range (MAX:%d)\n",
+					reg_dump_temp_info->image_num, MAX_STRIPE_NUM);
 			return -EFAULT;
 		}
 
 		pablo_obte_stripe_buf_alloc(dump_id,
-					    reg_dump_temp_info->image_num, ALL_REGISTER_MAX * 4);
+					reg_dump_temp_info->image_num, ALL_REGISTER_MAX * 4);
 
 		reg_dump_ip_info =
 			pablo_obte_get_register_dump_buffer(dump_id);

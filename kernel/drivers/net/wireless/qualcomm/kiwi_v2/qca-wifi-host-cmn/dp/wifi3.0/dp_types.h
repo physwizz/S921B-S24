@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2016-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -2645,15 +2645,25 @@ struct test_qaddr_del {
 
 #ifdef DP_RX_MSDU_DONE_FAIL_HISTORY
 
-#define DP_MSDU_DONE_FAIL_HIST_MAX 32
+#define DP_MSDU_DONE_FAIL_HIST_MAX 128
 
 struct dp_msdu_done_fail_entry {
 	qdf_dma_addr_t paddr;
+	uint32_t sw_cookie;
 };
 
 struct dp_msdu_done_fail_history {
 	qdf_atomic_t index;
 	struct dp_msdu_done_fail_entry entry[DP_MSDU_DONE_FAIL_HIST_MAX];
+};
+#endif
+
+#ifdef DP_RX_PEEK_MSDU_DONE_WAR
+#define DP_MSDU_DONE_FAIL_DESCS_MAX 64
+
+struct dp_rx_msdu_done_fail_desc_list {
+	qdf_atomic_t index;
+	struct dp_rx_desc *msdu_done_fail_descs[DP_MSDU_DONE_FAIL_DESCS_MAX];
 };
 #endif
 
@@ -3229,6 +3239,11 @@ struct dp_soc {
 #ifdef DP_RX_MSDU_DONE_FAIL_HISTORY
 	struct dp_msdu_done_fail_history *msdu_done_fail_hist;
 #endif
+#ifdef DP_RX_PEEK_MSDU_DONE_WAR
+	struct dp_rx_msdu_done_fail_desc_list msdu_done_fail_desc_list;
+#endif
+	/* monitor interface flags */
+	uint32_t mon_flags;
 };
 
 #ifdef IPA_OFFLOAD
@@ -3932,6 +3947,7 @@ struct dp_vdev_stats {
 
 /* VDEV structure for data path state */
 struct dp_vdev {
+	struct cdp_vdev cdp_vdev;
 	/* OS device abstraction */
 	qdf_device_t osdev;
 
@@ -4083,6 +4099,9 @@ struct dp_vdev {
 
 	/* callback to classify critical packets */
 	ol_txrx_classify_critical_pkt_fp tx_classify_critical_pkt_cb;
+
+	/* delete notifier to DP component */
+	ol_txrx_vdev_del_notify_cb vdev_del_notify;
 
 	/* deferred vdev deletion state */
 	struct {

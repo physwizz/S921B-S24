@@ -8,5 +8,5 @@
 #define __CPIF_VERSION_H__
 
 /* Should not exceed CPIF_VERSION_SIZE */
-static const char cpif_driver_version[] = "CPIF-20231214R1";
+static const char cpif_driver_version[] = "CPIF-20250107R1";
 #endif /* __CPIF_VERSION_H__ */

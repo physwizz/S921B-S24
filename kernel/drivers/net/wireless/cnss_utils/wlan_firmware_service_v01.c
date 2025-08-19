@@ -6712,7 +6712,7 @@ static bool wlfw_is_valid_dt_node_found(void)
 static int __init wlfw_init(void)
 {
 	if (!wlfw_is_valid_dt_node_found())
-		return -ENODEV;
+		return 0;
 
 	return 0;
 }

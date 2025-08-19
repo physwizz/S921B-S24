@@ -504,6 +504,7 @@ static int memlat_cpuhp_up(unsigned int cpu)
 unlock_out:
 	srcu_read_unlock(&lealt_srcu, srcu_idx);
 	mutex_unlock(&cpu_grp->mons_lock);
+	srcu_read_unlock(&lealt_srcu, srcu_idx);
 	kfree(attr);
 	return ret;
 }
@@ -530,7 +531,6 @@ static int memlat_cpuhp_down(unsigned int cpu)
 		srcu_read_unlock(&lealt_srcu, srcu_idx);
 		return -EINVAL;
 	}
-
 	mutex_lock(&cpu_grp->mons_lock);
 	if (!cpu_grp->num_active_mons)
 		goto unlock_out;
@@ -555,6 +555,7 @@ static int memlat_cpuhp_down(unsigned int cpu)
 unlock_out:
 	srcu_read_unlock(&lealt_srcu, srcu_idx);
 	mutex_unlock(&cpu_grp->mons_lock);
+	srcu_read_unlock(&lealt_srcu, srcu_idx);
 	return ret;
 }
 

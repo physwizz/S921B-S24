@@ -25,7 +25,7 @@ static void adder_real_init(struct adder *adder)
 }
 
 DECLARE_STRUCT_CLASS_MOCK_PREREQS(adder);
-DEFINE_STRUCT_CLASS_MOCK(METHOD(mock_add), CLASS(adder), RETURNS(int),
+DEFINE_STRUCT_CLASS_MOCK(METHOD(mock_add), CLASS_NAME(adder), RETURNS(int),
 				     PARAMS(struct adder*, int, int));
 DECLARE_STRUCT_CLASS_MOCK_INIT(adder);
 

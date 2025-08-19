@@ -688,7 +688,7 @@ static int hdr_init_resources(struct exynos_hdr *hdr, struct device *dev)
 	}
 
 	sprintf(name, "hdr%d", hdr->id);
-	hdr->dev = device_create(hdr_cls, NULL, 0, &hdr, name);
+	hdr->dev = device_create(hdr_cls, NULL, 0, &hdr, "%s", name);
 	if (IS_ERR_OR_NULL(hdr->dev)) {
 		hdr_err(hdr, "failed to create hdr device\n");
 		goto err;

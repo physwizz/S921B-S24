@@ -32,6 +32,7 @@
 struct pcie_mif *g_pcie;
 struct scsc_mif_abs *g_if;
 bool global_enable;
+static void* ramrp_buff;
 
 static bool fw_compiled_in_kernel;
 module_param(fw_compiled_in_kernel, bool, S_IRUGO | S_IWUSR);
@@ -64,6 +65,10 @@ MODULE_PARM_DESC(wake_pmu, "Write wakeup to PMU when in deep sleep");
 #define NUM_TO_HOST_IRQ_WPAN_START	(NUM_TO_HOST_IRQ_WLAN_END + 1)
 #define NUM_TO_HOST_IRQ_WPAN_END	((NUM_TO_HOST_IRQ_WPAN_START + NUM_TO_HOST_IRQ_WPAN) - 1)
 #define NUM_TO_HOST_IRQ_TOTAL		(NUM_TO_HOST_IRQ_PMU + NUM_TO_HOST_IRQ_WLAN + NUM_TO_HOST_IRQ_WPAN)
+
+#define CEILING(x,y) (((x) + (y) - 1) / (y))
+#define MAX_RAMRP_SZ			33 * 1024
+#define MAX_RAMRP_SZ_ALIGNED	((CEILING(MAX_RAMRP_SZ, PAGE_SIZE)) * (PAGE_SIZE))	/* Maximum memory for ramrp, note that it has to be page aligned*/
 
 /* Types */
 struct msi_emul {
@@ -128,6 +133,57 @@ struct pcie_mif {
 
 /** Upcast from interface member to pcie_mif */
 #define pcie_mif_from_mif_abs(MIF_ABS_PTR) container_of(MIF_ABS_PTR, struct pcie_mif, interface)
+
+__iomem void *__pcie_get_ramrp_ptr(struct pcie_mif *pcie)
+{
+	SCSC_TAG_INFO_DEV(PCIE_MIF, pcie->dev, "base 0x%lx\n", (uintptr_t)pcie->registers_ramrp);
+	return pcie->registers_ramrp;
+}
+
+int __pcie_get_ramrp_buff(struct pcie_mif *pcie, void** buff, int count, u64 offset)
+{
+	int i = 0;
+	if (pcie->registers_ramrp == NULL)
+		return -EPERM;
+
+	/* Adjust the 'count' */
+	if((offset + count) > MAX_RAMRP_SZ)
+		count = MAX_RAMRP_SZ - offset;
+
+	if (count % 4)
+		count = ((count/4) + 1) * 4;
+
+	if ((offset % 4) && (offset > 4))
+		offset = ((offset/4) - 1) * 4;
+	else if (offset <= 3)
+		offset = 0;
+
+	if (*buff == NULL) {
+		*buff = kzalloc(MAX_RAMRP_SZ_ALIGNED, GFP_KERNEL);
+		if (*buff == NULL)
+			return -ENOMEM;
+		else
+			ramrp_buff = *buff;
+	}
+	for (i = 0; i < (count / 4); i++) {
+		((u32 *)*buff)[i] = readl((pcie->registers_ramrp) + (4 * i) + (offset));
+	}
+	return count;
+}
+
+int pcie_get_ramrp_buff(struct scsc_mif_abs *interface, void** buff, int count, u64 offset)
+{
+	struct pcie_mif *pcie = pcie_mif_from_mif_abs(interface);
+
+	return __pcie_get_ramrp_buff(pcie, buff, count, offset);
+}
+
+static __iomem void *pcie_get_ramrp_ptr(struct scsc_mif_abs *interface)
+{
+	struct pcie_mif *pcie = pcie_mif_from_mif_abs(interface);
+
+	return __pcie_get_ramrp_ptr(pcie);
+}
 
 static inline void pcie_mif_reg_write(struct pcie_mif *pcie, u32 offset, u32 value)
 {
@@ -236,6 +292,8 @@ irqreturn_t pcie_mif_isr_wpan(int irq, void *data)
 
 static void pcie_mif_destroy(struct scsc_mif_abs *interface)
 {
+	if (ramrp_buff)
+		kfree(ramrp_buff);
 }
 
 static char *pcie_mif_get_uid(struct scsc_mif_abs *interface)
@@ -904,7 +962,8 @@ struct scsc_mif_abs *pcie_mif_create(struct pci_dev *pdev, const struct pci_devi
 	/* Suspend/resume not supported in PCIe MIF */
 	pcie_if->suspend_reg_handler = NULL;
 	pcie_if->suspend_unreg_handler = NULL;
-
+	pcie_if->get_ramrp_ptr = pcie_get_ramrp_ptr;
+	pcie_if->get_ramrp_buff = pcie_get_ramrp_buff;
 	pcie_if->get_mbox_pmu = pcie_mif_get_mbox_pmu;
 	pcie_if->set_mbox_pmu = pcie_mif_set_mbox_pmu;
 	pcie_if->load_pmu_fw = pcie_load_pmu_fw;

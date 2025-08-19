@@ -37,6 +37,9 @@ struct amdgpu_ctx_entity {
 	struct dma_fence	*fences[];
 };
 
+/* DRM_SCHED_PRIORITY_UNSET is removed from 6.1 kernel */
+#define DRM_SCHED_PRIORITY_UNSET_FOR_SGPU -2
+
 struct amdgpu_ctx {
 	struct kref			refcount;
 	struct amdgpu_device		*adev;
@@ -48,7 +51,7 @@ struct amdgpu_ctx {
 	struct amdgpu_ctx_entity        *priv_entities; /* tmz and cwsr */
 	bool				preamble_presented;
 	enum drm_sched_priority		init_priority;
-	enum drm_sched_priority		override_priority;
+	int				override_priority;
 	int				ctx_priority;
 	atomic_t			guilty;
 	unsigned long			ras_counter_ce;
@@ -96,8 +99,7 @@ void amdgpu_ctx_add_fence(struct amdgpu_ctx *ctx,
 struct dma_fence *amdgpu_ctx_get_fence(struct amdgpu_ctx *ctx,
 				       struct drm_sched_entity *entity,
 				       uint64_t seq);
-void amdgpu_ctx_priority_override(struct amdgpu_ctx *ctx,
-				  enum drm_sched_priority priority);
+void amdgpu_ctx_priority_override(struct amdgpu_ctx *ctx, int drm_priority);
 
 int amdgpu_ctx_ioctl(struct drm_device *dev, void *data,
 		     struct drm_file *filp);

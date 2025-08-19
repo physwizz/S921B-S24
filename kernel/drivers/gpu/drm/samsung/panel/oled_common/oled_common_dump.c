@@ -376,7 +376,7 @@ int oled_dump_show_dsi_err(struct dumpinfo *dump)
 #if IS_ENABLED(CONFIG_SEC_ABC)
 	if (dsi_err[0] > 0)
 #if IS_ENABLED(CONFIG_SEC_FACTORY)
-		sec_abc_send_event("MODULE=display@dump=act_section_dsierr0");
+		sec_abc_send_event("MODULE=display@INFO=act_section_dsierr0");
 #else
 		sec_abc_send_event("MODULE=display@WARN=act_section_dsierr0");
 #endif

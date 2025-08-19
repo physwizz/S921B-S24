@@ -31,6 +31,8 @@ int wait_for_result = 1;
 #define scsc_lerna_init()	((void *)0)
 #define whdr_crc_wq_start(arg)  ((void*)0)
 #define whdr_crc_wq_stop(arg)  ((void*)0)
+#define sysfs_create_file(args...) (1)
+#define sysfs_remove_file(args...) ((void)0)
 
 static int fw_runtime_flags_setter(const char *val, const struct kernel_param *kp);
 static int fw_runtime_flags_setter_wpan(const char *val, const struct kernel_param *kp);
@@ -41,6 +43,18 @@ static int mxman_minimoredump_collect_wpan(struct scsc_log_collector_client *col
 (*fp_fw_runtime_flags_setter_wpan)(const char *val, const struct kernel_param *kp) = &fw_runtime_flags_setter_wpan;
 (*fp_syserr_setter)(const char *val, const struct kernel_param *kp) = &syserr_setter;
 (*fp_mxman_minimoredump_collect_wpan)(struct scsc_log_collector_client *collect_client, size_t size) = &mxman_minimoredump_collect_wpan;
+
+static struct mxman *active_mxman;
+void set_active_mxman(struct mxman *mxman)
+{
+	active_mxman = mxman;
+}
+
+static ssize_t sysfs_show_memdump(struct kobject *kobj, struct kobj_attribute *attr, char *buf);
+ssize_t (*fp_sysfs_show_memdump)(struct kobject *kobj, struct kobj_attribute *attr, char *buf) = &sysfs_show_memdump;
+
+static ssize_t sysfs_store_memdump(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count);
+ssize_t (*fp_sysfs_store_memdump)(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count) = &sysfs_store_memdump;
 
 static char *chip_version(u32 rf_hw_ver);
 char *kunit_chip_version(u32 rf_hw_ver)
@@ -162,3 +176,31 @@ void kunit_mxman_fail_level8(struct mxman *mxman, u16 scsc_panic_code, const cha
 	mxman_fail_level8(mxman, scsc_panic_code, reason, sub);
 }
 
+static void mxman_set_reset_failed(void);
+void kunit_mxman_set_reset_failed(void)
+{
+	mxman_set_reset_failed();
+}
+
+static int fw_runtime_flags_setter(const char *val, const struct kernel_param *kp);
+int kunit_fw_runtime_flags_setter(const char *val, const struct kernel_param *kp)
+{
+	return fw_runtime_flags_setter(val, kp);
+}
+static int fw_runtime_flags_setter_wpan(const char *val, const struct kernel_param *kp);
+int kunit_fw_runtime_flags_setter_wpan(const char *val, const struct kernel_param *kp)
+{
+	return fw_runtime_flags_setter_wpan(val, kp);
+}
+
+ static int syserr_setter(const char *val, const struct kernel_param *kp);
+ int kunit_syserr_setter(const char *val, const struct kernel_param *kp)
+{
+	return syserr_setter(val, kp);
+}
+
+static bool mxman_in_started_state_subsystem(struct mxman *mxman, enum scsc_subsystem sub);
+bool kunit_mxman_in_started_state_subsystem(struct mxman *mxman, enum scsc_subsystem sub)
+{
+	return mxman_in_started_state_subsystem(mxman, sub);
+}

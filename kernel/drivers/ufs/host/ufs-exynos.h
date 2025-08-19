@@ -12,6 +12,12 @@
 #ifndef _UFS_EXYNOS_H_
 #define _UFS_EXYNOS_H_
 
+#include "ufs-cal-if.h"
+#include "ufs-cal-snr-if.h"
+#include "ufs-vs-mmio.h"
+#include "ufs-vs-regs.h"
+#include <soc/samsung/exynos-smc.h>
+
 #if IS_ENABLED(CONFIG_EXYNOS_PM_QOS)
 #include <soc/samsung/exynos_pm_qos.h>
 #endif
@@ -93,6 +99,7 @@ struct ufs_eom40_data {
 	int v_max_offset;
 	int t_max_step;
 	int t_max_offset;
+	int scrambling;
 
 	int start;
 	int end;

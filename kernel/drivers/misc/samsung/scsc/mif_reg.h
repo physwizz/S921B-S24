@@ -14,17 +14,21 @@
 #if defined(CONFIG_WLBT_REFACTORY)
 
 #if IS_ENABLED(CONFIG_SOC_S5E5515)
-#include "s5e5515/mif_reg.h"
+#include "modap/s5e5515/mif_reg.h"
 #elif IS_ENABLED(CONFIG_SOC_S5E8535)
-#include "s5e8535/mif_reg.h"
+#include "modap/s5e8535/mif_reg.h"
 #elif IS_ENABLED(CONFIG_SOC_S5E8825)
-#include "s5e8825/mif_reg.h"
+#include "modap/s5e8825/mif_reg.h"
 #elif IS_ENABLED(CONFIG_SOC_S5E8835)
-#include "s5e8835/mif_reg.h"
+#include "modap/s5e8835/mif_reg.h"
 #elif IS_ENABLED(CONFIG_SOC_S5E8845)
-#include "s5e8845/mif_reg.h"
-#elif IS_ENABLED(CONFIG_SOC_S5E8845)
-#include "s5e8845/mif_reg.h"
+#include "modap/s5e8845/mif_reg.h"
+#elif IS_ENABLED(CONFIG_SOC_S5E5535)
+#include "modap/s5e5535/mif_reg.h"
+#elif IS_ENABLED(CONFIG_SCSC_BB_PAEAN)
+#include "pcie/s6165/mif_reg.h"
+#elif IS_ENABLED(CONFIG_SCSC_BB_REDWOOD)
+#include "pcie/s6175/mif_reg.h"
 #endif
 
 #else

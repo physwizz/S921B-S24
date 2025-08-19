@@ -138,7 +138,7 @@ static ssize_t profiler_fops_write(struct file *filp, const char __user *buf,
 		return -EINVAL;
 	}
 
-	if (id >= SVC_RESERVED) {
+	if (id < 0 || id >= SVC_RESERVED) {
 		pr_info("%s: invalid id(%d)", __func__, id);
 		return -EINVAL;
 	}
@@ -159,7 +159,7 @@ static ssize_t profiler_fops_read(struct file *filp, char __user *buf,
 {
 	struct profiler_fops_priv *priv = (struct profiler_fops_priv *)filp->private_data;
 
-	if (!priv || priv->id >= SVC_RESERVED)
+	if (!priv || priv->id < 0 || priv->id >= SVC_RESERVED)
 		return -EINVAL;
 
 	if (!access_ok(buf, sizeof(s32)))
@@ -176,7 +176,7 @@ static __poll_t profiler_fops_poll(struct file *filp, struct poll_table_struct *
 	struct profiler_fops_priv *priv = (struct profiler_fops_priv *)filp->private_data;
 	__poll_t mask = 0;
 
-	if (!priv || priv->id >= SVC_RESERVED)
+	if (!priv || priv->id < 0 || priv->id >= SVC_RESERVED)
 		return -EINVAL;
 
 	if (priv == NULL) {
@@ -197,7 +197,7 @@ static long profiler_fops_ioctl(struct file *filp, unsigned int cmd, unsigned lo
 {
 	struct profiler_fops_priv *priv = (struct profiler_fops_priv *)filp->private_data;
 
-	if (!priv || priv->id >= SVC_RESERVED)
+	if (!priv || priv->id < 0 || priv->id >= SVC_RESERVED)
 		return -EINVAL;
 
 	switch (cmd) {
@@ -265,7 +265,7 @@ static int profiler_fops_release(struct inode *node, struct file *filp)
 {
 	struct profiler_fops_priv *priv = (struct profiler_fops_priv *)filp->private_data;
 
-	if (!priv || priv->id >= SVC_RESERVED)
+	if (!priv || priv->id < 0 || priv->id >= SVC_RESERVED)
 		return -EINVAL;
 
 	if (priv->id == SVC_GFX) {

@@ -51,13 +51,16 @@ void pcie_irq_bit_clear(struct pcie_mif *pcie, int bit_num, enum scsc_mif_abs_ta
 void pcie_irq_bit_mask(struct pcie_mif *pcie, int bit_num, enum scsc_mif_abs_target target);
 void pcie_irq_bit_unmask(struct pcie_mif *pcie, int bit_num, enum scsc_mif_abs_target target);
 void pcie_get_msi_range(struct pcie_mif *pcie, u8 *start, u8 *end, enum scsc_mif_abs_target target);
+bool pcie_mif_get_scan2mem_mode(struct pcie_mif *pcie);
+void pcie_mif_set_scan2mem_mode(struct pcie_mif *pcie, bool enable);
 int pcie_mif_poweron(struct pcie_mif *pcie);
 void pcie_mif_poweroff(struct pcie_mif *pcie);
 void pcie_mif_l1ss_ctrl(struct pcie_mif *pcie, int enable);
 void pcie_prepare_boot(struct pcie_mif *pcie);
-__iomem void *pcie_get_scoreboard(struct pcie_mif *pcie);
-int pcie_get_scoreboard_ref(struct pcie_mif *pcie, __iomem void *addr, uintptr_t *addr_ref);
-const __iomem void * pcie_get_ramrp_ref(void);
+__iomem void *pcie_get_ramrp_ptr(struct pcie_mif *pcie);
+int pcie_get_ramrp_buff(struct pcie_mif *pcie, void **buff, int count, u64 offset);
 void pcie_s6165_irqdump(struct pcie_mif *pcie);
 bool pcie_is_on(struct pcie_mif *pcie);
+void pcie_set_s2m_dram_offset(struct pcie_mif *pcie, u32 offset);
+u32 pcie_get_s2m_size_octets(struct pcie_mif *pcie);
 #endif

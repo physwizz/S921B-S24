@@ -164,6 +164,7 @@ enum flash_drv_name {
 	FLADRV_NAME_S2MU107	= 17,
 	FLADRV_NAME_GENERIC	= 18,
 	FLADRV_NAME_S2MF301	= 19,
+	FLADRV_NAME_AW36518	= 21,
 	FLADRV_NAME_END,
 	FLADRV_NAME_NOTHING	= 100,
 };
@@ -433,6 +434,7 @@ struct is_sensor_cfg {
 	int img_vc[CSI_OTF_OUT_CH_NUM];
 	u32 hpd_vc[CSI_OTF_OUT_CH_NUM];
 	u32 vpd_vc[CSI_OTF_OUT_CH_NUM];
+	u32 emb_vc[CSI_OTF_OUT_CH_NUM];
 	int special_vc_sensor_mode;
 	u32 dma_num;
 	u32 link_vc[CSIS_MAX_NUM_DMA_ATTACH][DMA_VIRTUAL_CH_MAX];
